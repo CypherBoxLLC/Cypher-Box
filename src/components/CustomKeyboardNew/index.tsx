@@ -7,6 +7,7 @@ import { Text } from "@Cypher/component-library";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
 import GradientTabNew from "../GradientTabNew";
+import loc from "../../../loc";
 
 interface Props {
     onPress(): void;
@@ -105,7 +106,7 @@ export default function CustomKeyBoardNew({ vaultTab, isEdit, prevSats, title, d
                 </TouchableOpacity>
             </View>
             <TouchableOpacity onPress={onPress} disabled={disabled} style={[styles.nextBtn, vaultTab && { backgroundColor: colors.coldGreen }, disabled && {backgroundColor: colors.gray.disable}]}>
-                <Text h3>Next</Text>
+                <Text h3>{loc.send.details_next}</Text>
             </TouchableOpacity>
         </View>
     )

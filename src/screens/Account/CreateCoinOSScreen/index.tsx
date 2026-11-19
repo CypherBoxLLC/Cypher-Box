@@ -8,10 +8,11 @@ import { InputEmailPhone } from "@Cypher/screens/Components";
 import { Button, Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
-import { emailRegex, passwordRegex, strongPasswordMessage } from "@Cypher/helpers/regex";
+import { emailRegex, passwordRegex } from "@Cypher/helpers/regex";
 import { loginUser, registerUser } from "@Cypher/api/coinOSApis";
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchReset } from "@Cypher/helpers/navigation";
+import loc from "../../../../loc";
 
 export default function CreateCoinOSScreen() {
     const [username, setUsername] = useState('');
@@ -31,11 +32,11 @@ export default function CreateCoinOSScreen() {
     const createClickHandler = async () => {
         setIsLoading(true);
         if(email == "") {
-            SimpleToast.show('Please enter your username', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.enter_username, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         } else if(password == ""){
-            SimpleToast.show('Please enter your password', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.enter_password, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         } 
@@ -45,7 +46,7 @@ export default function CreateCoinOSScreen() {
         //     return;
         // } 
         else if (!validatePassword(password)) {
-            SimpleToast.show(strongPasswordMessage, SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.account.create_coinos.password_rules, SimpleToast.LONG);
             setIsLoading(false);
             return;
         }
@@ -64,7 +65,7 @@ export default function CreateCoinOSScreen() {
                     setEmail('');
                     setPassword('');
                 } else {
-                    SimpleToast.show("Invalid usernmae or password", SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.account.common.invalid_credentials, SimpleToast.SHORT);
                 }
     
             } else {
@@ -97,7 +98,7 @@ export default function CreateCoinOSScreen() {
                 </View>
                 <Text style={styles.create}>Already have an an account with Coinos?</Text> */}
                 <View style={styles.innerView}>
-                    <GradientText>Create Coinos Account</GradientText>
+                    <GradientText>{loc.cypherbox.account.create_coinos.title}</GradientText>
                     <View style={styles.space} />
                     {/* <GradientCard style={styles.gradient} colors_={username ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}>
                         <Input onChange={setUsername}
@@ -117,7 +118,7 @@ export default function CreateCoinOSScreen() {
                             returnKeyType="next"
                             onSubmitEditing={() => passwordRef?.current?.focus() }
                             // keyboardType="email-address"
-                            label="Username"
+                            label={loc.cypherbox.account.common.username}
                         />
                     </GradientCard>
                     <View style={styles.extra} />
@@ -128,12 +129,12 @@ export default function CreateCoinOSScreen() {
                             style={styles.textInput}
                             secureTextEntry
                             maxLength={15}
-                            label="Password"
+                            label={loc.cypherbox.account.common.password}
                         />
                     </GradientCard>
                 </View>
                 <GradientButton 
-                    title="Create Account" 
+                    title={loc.cypherbox.account.create_coinos.create_account} 
                     onPress={createClickHandler} 
                     disabled={!email.length || !password.length || isLoading}
                 />

@@ -13,9 +13,7 @@ import com.facebook.react.defaults.DefaultReactHost;
 import com.facebook.react.defaults.DefaultReactNativeHost;
 import com.facebook.react.soloader.OpenSourceMergedSoMapping;
 import com.facebook.soloader.SoLoader;
-import com.facebook.react.modules.i18nmanager.I18nUtil;
 import java.util.List;
-import com.bugsnag.android.Bugsnag;
 
 public class MainApplication extends Application implements ReactApplication, Configuration.Provider {
 
@@ -29,9 +27,10 @@ public class MainApplication extends Application implements ReactApplication, Co
         @Override
         protected List<ReactPackage> getPackages() {
           List<ReactPackage> packages = new PackageList(this).getPackages();
-          // Hand-registered: not auto-linked because the package lives in
-          // app/src/main/java rather than a published RN module.
+          // Hand-registered: not auto-linked because these packages live in
+          // app/src/main/java rather than in published RN modules.
           packages.add(new ArkSafBackupPackage());
+          packages.add(new CypherRegionSignalsPackage());
           return packages;
         }
 
@@ -64,10 +63,11 @@ public class MainApplication extends Application implements ReactApplication, Co
   @Override
   public void onCreate() {
     super.onCreate();
-    Bugsnag.start(this);
+    // No crash reporting: Bugsnag is linked but never started, so no crash report leaves the phone.
+    // The key it shipped with was BlueWallet's, so every report went to BlueWallet's account.
 
-    I18nUtil sharedI18nUtilInstance = I18nUtil.getInstance();
-    sharedI18nUtilInstance.allowRTL(getApplicationContext(), true);
+    // No I18nUtil.allowRTL here: loc/index.ts stores the direction for the chosen language on every launch, and
+    // allowing right-to-left from here as well mirrored English on a phone set to Arabic, Hebrew or Persian.
 
     try {
       SoLoader.init(this, OpenSourceMergedSoMapping.INSTANCE);

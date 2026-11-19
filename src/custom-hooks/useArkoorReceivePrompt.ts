@@ -20,6 +20,7 @@ import {
 } from '@Cypher/services/ark';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
+import loc from '../../loc';
 
 /**
  * Foreground orchestrator for a received Bark capsule (Lightning receive /
@@ -89,20 +90,20 @@ function formatCapsuleTimeLeft(
     let ms: number;
     if (expiryHeight && expiryHeight > 0 && typeof tip === 'number') {
         const blocksLeft = expiryHeight - tip;
-        if (blocksLeft <= 0) return 'less than an hour';
+        if (blocksLeft <= 0) return loc.cypherbox.services.arkoor_receive.less_than_hour;
         ms = blocksLeft * AVG_BLOCK_MINUTES * 60 * 1000;
     } else if (observedAt) {
         ms = observedAt + ARK_ARKOOR_ASSUMED_DAYS * 24 * 60 * 60 * 1000 - Date.now();
     } else {
         return '';
     }
-    if (ms <= 0) return 'less than an hour';
+    if (ms <= 0) return loc.cypherbox.services.arkoor_receive.less_than_hour;
     const totalHours = Math.floor(ms / (60 * 60 * 1000));
     const days = Math.floor(totalHours / 24);
     const hours = totalHours % 24;
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h`;
-    return 'less than an hour';
+    if (days > 0) return String(loc.formatString(loc.cypherbox.services.arkoor_receive.time_days_hours, { days, hours }));
+    if (hours > 0) return String(loc.formatString(loc.cypherbox.services.arkoor_receive.time_hours, { hours }));
+    return loc.cypherbox.services.arkoor_receive.less_than_hour;
 }
 
 export default function useArkoorReceivePrompt(): void {
@@ -328,7 +329,7 @@ export default function useArkoorReceivePrompt(): void {
                 // a fallback for the rare case the vtxo carries no amount.
                 const sats = vtxo.sats ?? entry.sats ?? null;
                 const vtxoIdPrefix = firstId.slice(0, 12);
-                const amountPhrase = sats != null ? `${sats.toLocaleString()} sats` : 'these sats';
+                const amountPhrase = sats != null ? `${sats.toLocaleString()} sats` : loc.cypherbox.services.arkoor_receive.these_sats;
 
                 // Ask the SDK what refreshing JUST this capsule would do: the
                 // fee, and crucially which vtxos the round would consume.
@@ -432,7 +433,7 @@ export default function useArkoorReceivePrompt(): void {
                     const ex = cur[firstId];
                     if (ex) setArkArkoorPromptState({ ...cur, [firstId]: { ...ex, status: 'refreshed' } });
                     if (sats != null) {
-                        SimpleToast.show(`Received ${sats.toLocaleString()} sats. Refreshing now so they are yours to exit, not the server's.`, SimpleToast.LONG);
+                        SimpleToast.show(String(loc.formatString(loc.cypherbox.services.arkoor_receive.received_refreshing, { amount: sats.toLocaleString() })), SimpleToast.LONG);
                     }
                     // Fire-and-forget. Expiry warnings stay armed until the
                     // refreshed replacement lands and the prune (step 1b)
@@ -467,7 +468,7 @@ export default function useArkoorReceivePrompt(): void {
                                 try { scheduleVtxoExpiryWarnings(firstId, exp, sats ?? undefined); } catch (schedErr) {
                                     console.warn('[arkoor auto-refresh] re-schedule after failure threw:', schedErr);
                                 }
-                                SimpleToast.show('These sats are safe and spendable. You can refresh them from Capsules.', SimpleToast.LONG);
+                                SimpleToast.show(loc.cypherbox.services.arkoor_receive.safe_and_spendable, SimpleToast.LONG);
                             }
                         })
                         .finally(release);
@@ -570,7 +571,7 @@ export default function useArkoorReceivePrompt(): void {
                             });
                         }
                         SimpleToast.show(
-                            `Received ${amountPhrase}. Combining your small capsules to keep them longer.`,
+                            String(loc.formatString(loc.cypherbox.services.arkoor_receive.received_combining, { amount: amountPhrase })),
                             SimpleToast.SHORT,
                         );
                         // The sweep owns its own in-flight lock, pacing and
@@ -622,11 +623,12 @@ export default function useArkoorReceivePrompt(): void {
                 // Capsules tab carries the per-capsule state for anyone who
                 // wants to act sooner.
                 const reason = belowFloor
-                    ? 'too small to refresh on its own'
-                    : 'not refreshable on its own right now';
+                    ? loc.cypherbox.services.arkoor_receive.reason_too_small
+                    : loc.cypherbox.services.arkoor_receive.reason_not_refreshable;
                 SimpleToast.show(
-                    `Received ${amountPhrase}, ${reason}. Spend them in a payment` +
-                        `${timeLeft ? ` within ${timeLeft}` : ' before they expire'}.`,
+                    timeLeft
+                        ? String(loc.formatString(loc.cypherbox.services.arkoor_receive.notice_within, { amount: amountPhrase, reason, time: timeLeft }))
+                        : String(loc.formatString(loc.cypherbox.services.arkoor_receive.notice_before_expiry, { amount: amountPhrase, reason })),
                     SimpleToast.LONG,
                 );
                 release();

@@ -38,7 +38,7 @@ export default function PaymentCodesList({ route }: NativeStackScreenProps<Payme
   return (
     <View style={styles.container}>
       {!walletID ? (
-        <Text>Internal error</Text>
+        <Text>{loc.cypherbox.legacy.payment_codes_list.internal_error}</Text>
       ) : (
         <View>
           <SectionList

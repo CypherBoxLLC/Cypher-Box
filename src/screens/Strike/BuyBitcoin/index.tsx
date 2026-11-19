@@ -14,6 +14,7 @@ import { btc, getStrikeCurrency, SATS } from "@Cypher/helpers/coinosHelper";
 import LinearGradient from "react-native-linear-gradient";
 import { bitcoinRecommendedFee, getInvoiceByLightening } from "../../../api/coinOSApis";
 import styles from "./styles";
+import loc from "../../../../loc";
 
 
 export function startsWithLn(str: string) {
@@ -72,11 +73,11 @@ export default function BuyBitcoin({ navigation, route }: any) {
             const granted = await PermissionsAndroid.request(
                 PermissionsAndroid.PERMISSIONS.CAMERA,
                 {
-                    title: 'Camera Permission',
-                    message: 'We need access to your camera to scan QR codes',
-                    buttonNeutral: 'Ask Me Later',
-                    buttonNegative: 'Cancel',
-                    buttonPositive: 'OK',
+                    title: loc.cypherbox.strike.buy_bitcoin.camera_permission_title,
+                    message: loc.cypherbox.strike.buy_bitcoin.camera_permission_message,
+                    buttonNeutral: loc.cypherbox.strike.buy_bitcoin.ask_me_later,
+                    buttonNegative: loc._.cancel,
+                    buttonPositive: loc._.ok,
                 },
             );
             if (granted === PermissionsAndroid.RESULTS.GRANTED) {
@@ -94,7 +95,7 @@ export default function BuyBitcoin({ navigation, route }: any) {
         const clipboardContent = await Clipboard.getString();
         setSender(clipboardContent);
         setIsPaste(true)
-        SimpleToast.show('Pasted from clipboard', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.strike.buy_bitcoin.pasted_from_clipboard, SimpleToast.SHORT);
     };
 
     // useEffect(() => {
@@ -125,7 +126,7 @@ export default function BuyBitcoin({ navigation, route }: any) {
             }
         } catch (error) {
             console.error('Error handleLighteningInvoice:', error);
-            SimpleToast.show('Failed to generate lightening. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.strike.buy_bitcoin.lightning_failed, SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
         }
@@ -316,7 +317,7 @@ export default function BuyBitcoin({ navigation, route }: any) {
         // console.log('feeForBamskki 3: ', feeForBamskki)
         // console.log('remainingAmount: ', remainingAmount)
         if (remainingAmount <= 0 && !info?.fiatTotal) {
-            SimpleToast.show("You don't have enough balance", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.strike.buy_bitcoin.not_enough_balance, SimpleToast.SHORT);
             setIsLoading(false);
             return;
         }
@@ -343,7 +344,7 @@ export default function BuyBitcoin({ navigation, route }: any) {
             }
         } catch (error) {
             console.error('Error Send to bitcoin:', error);
-            SimpleToast.show('Failed to Send to bitcoin. Please try again.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.strike.buy_bitcoin.send_bitcoin_failed, SimpleToast.SHORT);
         } finally {
             setIsLoading(false);
         }
@@ -354,7 +355,7 @@ export default function BuyBitcoin({ navigation, route }: any) {
     return (
         <>
             {isScannerActive ? (
-                <ScreenLayout disableScroll showToolbar isBackButton onBackPress={() => setIsScannerActive(false)} title="Scan QR Code">
+                <ScreenLayout disableScroll showToolbar isBackButton onBackPress={() => setIsScannerActive(false)} title={loc.cypherbox.strike.buy_bitcoin.scan_qr_code}>
                     <View style={styles.scannerContainer}>
                         <QRCodeScanner
                             onRead={handleScan}
@@ -371,7 +372,7 @@ export default function BuyBitcoin({ navigation, route }: any) {
             )
                 :
                 (
-                    <ScreenLayout keyboardAware showToolbar isBackButton title={info?.isWithdrawal ? "Edit Amount" : info?.fiatType == "BUY" ? "Buy Bitcoin" : "Sell Bitcoin"}>
+                    <ScreenLayout keyboardAware showToolbar isBackButton title={info?.isWithdrawal ? loc.cypherbox.strike.buy_bitcoin.edit_amount : info?.fiatType == "BUY" ? loc.cypherbox.strike.buy_bitcoin.buy_bitcoin : loc.cypherbox.strike.buy_bitcoin.sell_bitcoin}>
                         <View style={styles.container}>
                             <View>
                                 <BlackBGView linearFirstStyle={styles.fiatBalanceBox2}
@@ -387,12 +388,12 @@ export default function BuyBitcoin({ navigation, route }: any) {
                                 <LinearGradient style={styles.maxBtc}
                                     colors={['#2A2A2A', '#1E1E1E']}
                                 >
-                                    <Text>Max: {info?.fiatType == "BUY" ? `${getStrikeCurrency(info?.currency || 'USD')}${Number(info?.fiatTotal || 0).toFixed(2)}` : `${(Number(info?.fiatTotal || 0) / btc(1)).toFixed(0)} sats`}</Text>
+                                    <Text>{loc.formatString(loc.cypherbox.strike.buy_bitcoin.max, { amount: info?.fiatType == "BUY" ? `${getStrikeCurrency(info?.currency || 'USD')}${Number(info?.fiatTotal || 0).toFixed(2)}` : `${(Number(info?.fiatTotal || 0) / btc(1)).toFixed(0)} sats` })}</Text>
                                 </LinearGradient>
                             </TouchableOpacity>
                         </View>
                         <CustomKeyboard
-                            title="Next"
+                            title={loc.cypherbox.strike.common.next}
                             prevSats={info?.value ? String(info?.value) : false}
                             onPress={handleSendNext}
                             disabled={isLoading || sats?.length == 0 || (isSats ? Number(sats || 0) > Number(info?.fiatTotal / btc(1) || 0) : Number(usd || 0) > (Number(info?.fiatTotal || 0) * SATS))}

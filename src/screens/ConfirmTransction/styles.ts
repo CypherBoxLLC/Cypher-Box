@@ -14,6 +14,11 @@ interface Style {
     value: TextStyle;
     fees: TextStyle;
     recipientView: ViewStyle;
+    details: ViewStyle;
+    capsuleGrid: ViewStyle;
+    capsuleRow: ViewStyle;
+    capsuleCell: ViewStyle;
+    moreCapsules: TextStyle;
     recipientTitle: TextStyle;
     nextBtn: ViewStyle;
     noteInput: TextStyle;
@@ -85,10 +90,39 @@ export default StyleSheet.create<Style>({
         fontSize: 18,
         marginTop: 5,
     },
+    // the details scroll: this is their content, the ScrollView takes the space
     recipientView: {
         padding: 20,
         paddingHorizontal: 40,
+        flexGrow: 1,
+    },
+    details: {
         flex: 1,
+    },
+    capsuleGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        marginTop: 10,
+        marginBottom: 10,
+    },
+    capsuleRow: {
+        flexDirection: 'row',
+        marginTop: 8,
+    },
+    // a row, like the review's capsule cells: the capsule inside is flex: 1 with a
+    // fixed height, and in a column cell it got no height of its own to take up
+    capsuleCell: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        width: '17%',
+        marginLeft: 2,
+        marginRight: 2,
+        marginVertical: 3,
+    },
+    moreCapsules: {
+        fontSize: 14,
+        marginLeft: 6,
     },
     recipientTitle: {
         fontSize: 18,

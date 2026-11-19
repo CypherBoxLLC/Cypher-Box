@@ -1,8 +1,9 @@
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { GradientCard } from "@Cypher/components";
 import { colors } from "@Cypher/style-guide";
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, LayoutChangeEvent, TouchableOpacity, View } from "react-native";
+import { Animated, I18nManager, LayoutChangeEvent, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "../styles";
 
@@ -60,7 +61,8 @@ export default function TabBar({ isVault, scrollProgress, coldStorageClickHandle
                 transform: [{
                   translateX: animValue.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [0, halfWidth],
+                    // The indicator starts on the right in RTL, so it slides left.
+                    outputRange: [0, I18nManager.isRTL ? -halfWidth : halfWidth],
                     extrapolate: 'clamp',
                   }),
                 }],
@@ -83,7 +85,7 @@ export default function TabBar({ isVault, scrollProgress, coldStorageClickHandle
           >
             <View style={styles.linearGradientbottom}>
               <Text h3 bold style={{ color: colors.redLight }}>
-                Hot Storage
+                {loc.cypherbox.home.hot_storage}
               </Text>
             </View>
           </TouchableOpacity>
@@ -95,7 +97,7 @@ export default function TabBar({ isVault, scrollProgress, coldStorageClickHandle
           >
             <View style={styles.linearGradientbottom}>
               <Text h3 bold style={{ color: colors.coldGreen }}>
-                Cold Storage
+                {loc.cypherbox.home.cold_storage}
               </Text>
             </View>
           </TouchableOpacity>

@@ -1,6 +1,7 @@
 import { ARK_VTXO_DUST_SATS, ESPLORA_URL } from './config';
 import { ensureArkOnchainHandle } from './walletHandle';
 import { runBroadcastCall } from './indeterminate';
+import loc from '../../../loc';
 
 /**
  * Sweep a stuck on-chain Ark *boarding* deposit back out to a Hot Vault
@@ -120,7 +121,7 @@ export async function recoverArkOnchainBoard(
     feeRateSatPerVb?: number,
 ): Promise<ArkOnchainRecoverResult> {
     if (!destAddress || typeof destAddress !== 'string') {
-        throw new Error('No Bitcoin address to recover to.');
+        throw new Error(loc.cypherbox.services.ark_recover.no_address);
     }
     // `confirmedSats` is the amount the user confirmed (the capsule's displayed
     // value). We don't re-read the on-chain balance (racy / empty-until-synced);
@@ -135,7 +136,7 @@ export async function recoverArkOnchainBoard(
     const feeSats = computeFeeSats(rate);
     const amount = confirmedSats - feeSats;
     if (amount <= ARK_VTXO_DUST_SATS) {
-        throw new Error('Too small to recover. The network fee is larger than the stuck amount.');
+        throw new Error(loc.cypherbox.services.ark_recover.too_small);
     }
 
     const onchain = await ensureArkOnchainHandle();
@@ -153,7 +154,7 @@ export async function recoverArkOnchainBoard(
     );
     const txid = await runBroadcastCall(
         () => onchain.send(destAddress, BigInt(amount), BigInt(rate)),
-        'release',
+        loc.cypherbox.services.indeterminate.what_release,
     );
     console.log('[Ark recover] drain broadcast, txid=', txid);
 

@@ -7,6 +7,17 @@
 // re-exports from here for backwards compatibility while the rest of the
 // codebase migrates its imports.
 
+import loc from '../../loc';
+import { inReadingDirection } from '../style-guide/rtl';
+
+/**
+ * The unit names written after an amount, in the app's language: "BTC" and "sats" in English, "بيتكوين" and "سات"
+ * in Arabic. They come from loc `units`, which BlueWallet's formatBalance uses too, and are read at call time so a
+ * language switch applies on the next render. The fallbacks cover tests that mock loc without `units`.
+ */
+export const btcUnit = (): string => loc.units?.BTC ?? 'BTC';
+export const satsUnit = (): string => loc.units?.sats ?? 'sats';
+
 /** 1 BTC = 100,000,000 sats. */
 export const SATS = 100_000_000;
 
@@ -62,12 +73,13 @@ export function formatSats(num: number): string {
  *
  * Trailing zeros and the trailing decimal point are stripped from the
  * BTC formatting so whole-BTC amounts read as "1 BTC" rather than
- * "1.00000000 BTC".
+ * "1.00000000 BTC". The unit is the app language's (see btcUnit / satsUnit), and in right-to-left the label
+ * starts with a right-to-left mark (see inReadingDirection) so "1.5K سات" keeps the figure on the right.
  */
 export function formatCapsuleAmount(satsAmount: number): string {
     const n = Math.round(Number(satsAmount) || 0);
-    if (n < 1_000_000) return `${formatSats(n)} sats`;
+    if (n < 1_000_000) return inReadingDirection(`${formatSats(n)} ${satsUnit()}`);
     const fixed = (n / SATS).toFixed(8);
     const trimmed = fixed.replace(/\.?0+$/, '');
-    return `${trimmed} BTC`;
+    return inReadingDirection(`${trimmed} ${btcUnit()}`);
 }

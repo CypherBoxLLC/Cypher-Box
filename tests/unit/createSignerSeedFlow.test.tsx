@@ -1,0 +1,600 @@
+/**
+ * Making a seed on the signer: Generate shows the backup at once (words and SeedQR as two tabs of one screen), then
+ * "Seed-Signer created!" with what's next, the last warnings and the check of the copy; only a copy that checks out
+ * leads to the public key, worked out once. The back arrow steps back from "created" and asks before dropping a seed
+ * that's being backed up. Expected keys: BIP84's published vectors for the public "abandon … about" phrase.
+ */
+
+import React from 'react';
+import { Alert, Switch, Text as RNText, TextInput, TouchableOpacity } from 'react-native';
+import renderer, { act } from 'react-test-renderer';
+import * as bip39 from 'bip39';
+
+import CreateSignerSeed from '../../src/screens/CreateSignerSeed';
+import { takeSeedBackedUp } from '../../src/screens/SigningHome/seedSigner';
+import { mnemonicToSeedQR, seedQRGrid } from '../../src/helpers/seedQR';
+import useAuthStore from '../../src/stores/authStore';
+import { randomBytes } from '../../class/rng';
+import { EntropyUnsafeError, assertNativeRngHealthy } from '../../class/rngHealth';
+import { SeedUnsafeError, assertMnemonicHealthy } from '../../class/seedHealth';
+
+jest.mock('../../src/stores/index', () => ({
+    __esModule: true,
+    zustandStorage: {
+        getItem: jest.fn().mockResolvedValue(null),
+        setItem: jest.fn().mockResolvedValue(undefined),
+        removeItem: jest.fn().mockResolvedValue(undefined),
+    },
+}));
+jest.mock('@Cypher/component-library', () => {
+    const { Text } = require('react-native');
+    return { ScreenLayout: ({ children }: any) => children, Text };
+});
+jest.mock('@Cypher/components/OfflineSeedWarning', () => () => null);
+jest.mock('@Cypher/components/SeedQRGrid', () => {
+    const { View } = require('react-native');
+    return (props: any) => <View testID="seedqr-grid" {...props} />;
+});
+jest.mock('@Cypher/components/ScannableQR', () => {
+    const { View } = require('react-native');
+    return () => <View />;
+});
+jest.mock('../../src/custom-hooks/useProtectSecret', () => () => {});
+jest.mock('../../src/custom-hooks/useElectrumConnection', () => () => 'no-answer');
+jest.mock('../../helpers/scan-qr', () => ({ requestCameraAuthorization: () => Promise.resolve() }));
+jest.mock('react-native-simple-toast', () => ({ show: () => {}, SHORT: 0 }));
+// the phone's randomness, made predictable: sixteen zero bytes are the public "abandon … about" phrase
+jest.mock('../../class/rng', () => ({ randomBytes: jest.fn(async (size: number) => Buffer.alloc(size, 0)) }));
+// Those zeros are exactly what the seed check refuses (one repeated byte), so it's stood in for here, and so is the
+// check of the phone's randomness; both are still called, and their refusals are tested below.
+jest.mock('../../class/seedHealth', () => ({
+    ...jest.requireActual('../../class/seedHealth'),
+    assertMnemonicHealthy: jest.fn(),
+}));
+jest.mock('../../class/rngHealth', () => ({
+    ...jest.requireActual('../../class/rngHealth'),
+    assertNativeRngHealthy: jest.fn(async () => {}),
+}));
+// the real SeedQR check, with the scanner it opens stood in for by the test
+const mockNavigation: any = {};
+jest.mock('@react-navigation/native', () => ({
+    ...jest.requireActual('@react-navigation/native'),
+    useNavigation: () => mockNavigation,
+}));
+
+const ABANDON = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
+const ZPUB = 'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+const BIP84_RECEIVE_0 = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu';
+const LEGAL = 'legal winner thank year wave sausage worth useful legal winner thank yellow';
+
+const textOf = (node: renderer.ReactTestInstance) =>
+    node.findAllByType(RNText).map(t => [].concat(t.props.children).filter(c => typeof c === 'string').join('')).join('\n');
+
+const buttonFor = (root: renderer.ReactTestInstance, label: RegExp) =>
+    root.findAllByType(TouchableOpacity).find(b => label.test(textOf(b)));
+
+const press = async (root: renderer.ReactTestInstance, label: RegExp) => {
+    const button = buttonFor(root, label);
+    if (!button) throw new Error(`no button ${label}`);
+    await act(async () => {
+        await button.props.onPress();
+    });
+};
+
+const type = (root: renderer.ReactTestInstance, placeholder: RegExp, text: string) => {
+    const input = root.findAllByType(TextInput).find(i => placeholder.test(i.props.placeholder));
+    if (!input) throw new Error(`no field ${placeholder}`);
+    act(() => input.props.onChangeText(text));
+};
+
+let beforeRemove: ((e: any) => void) | undefined;
+let scanned: ((ret: any) => void) | undefined;
+
+const open = (params?: any) => {
+    beforeRemove = undefined;
+    scanned = undefined;
+    Object.assign(mockNavigation, {
+        goBack: jest.fn(),
+        dispatch: jest.fn(),
+        getParent: () => ({ pop: jest.fn() }),
+        navigate: jest.fn((_route: string, opts: any) => {
+            scanned = opts?.params?.onBarScanned;
+        }),
+        addListener: jest.fn((event: string, handler: (e: any) => void) => {
+            if (event === 'beforeRemove') beforeRemove = handler;
+            return () => {};
+        }),
+    });
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+        tree = renderer.create(<CreateSignerSeed route={{ params }} navigation={mockNavigation} />);
+    });
+    return tree!.root;
+};
+
+// what the back arrow, a swipe or Android's back button sends
+const goBack = (actionType = 'GO_BACK') => {
+    const e = { data: { action: { type: actionType } }, preventDefault: jest.fn() };
+    act(() => beforeRemove!(e));
+    return e;
+};
+
+let seedSpy: jest.SpyInstance;
+beforeEach(() => {
+    seedSpy = jest.spyOn(bip39, 'mnemonicToSeedSync');
+    (randomBytes as jest.Mock).mockClear();
+    (assertMnemonicHealthy as jest.Mock).mockClear();
+    (assertNativeRngHealthy as jest.Mock).mockClear();
+    useAuthStore.setState({ signerAccounts: {}, signerKeyShown: false });
+    takeSeedBackedUp();
+});
+afterEach(() => {
+    seedSpy.mockRestore();
+    jest.restoreAllMocks();
+});
+
+const generated = async (passphrase = '') => {
+    const root = open();
+    if (passphrase) {
+        const toggle = root.findByType(require('react-native').Switch);
+        act(() => toggle.props.onValueChange(true));
+        type(root, /^Passphrase$/, passphrase);
+        type(root, /^Passphrase again$/, passphrase);
+    }
+    await press(root, /^Generate Seed$/);
+    return root;
+};
+
+describe('Create a Seed', () => {
+    it('shows the backup straight after Generate, without making the seed', async () => {
+        const root = await generated();
+        const text = textOf(root);
+        expect(text).toContain('Back up your seed');
+        expect(text).toContain('Tap to reveal your seed phrase');
+        // 128 bits from the phone's generator
+        expect(randomBytes).toHaveBeenCalledWith(16);
+        // the slow step waits for the checked copy
+        expect(seedSpy).not.toHaveBeenCalled();
+        // hidden until View, and nothing to go on with yet
+        expect(text).not.toContain('1. abandon');
+        expect(buttonFor(root, /I've backed it up/)!.props.disabled).toBe(true);
+    });
+
+    it('checks the phone\'s randomness first and the new seed before showing it', async () => {
+        await generated();
+        expect(assertNativeRngHealthy).toHaveBeenCalled();
+        expect(assertMnemonicHealthy).toHaveBeenCalledWith(ABANDON);
+    });
+
+    it('makes no seed when the phone\'s randomness isn\'t working, and says so', async () => {
+        (assertNativeRngHealthy as jest.Mock).mockRejectedValueOnce(new EntropyUnsafeError('constant-output'));
+        const root = await generated();
+        const text = textOf(root);
+        expect(randomBytes).not.toHaveBeenCalled();
+        expect(text).not.toContain('Back up your seed');
+        expect(text).toContain("This phone can't supply secure randomness right now");
+    });
+
+    it('drops a seed the check refuses, and says so', async () => {
+        (assertMnemonicHealthy as jest.Mock).mockImplementationOnce(() => {
+            throw new SeedUnsafeError('constant-entropy');
+        });
+        const root = await generated();
+        const text = textOf(root);
+        expect(text).not.toContain('Back up your seed');
+        expect(text).toContain("The wallet couldn't be created safely on this phone");
+    });
+
+    it('has the words and the SeedQR as two tabs of the same screen', async () => {
+        const root = await generated();
+        expect(buttonFor(root, /^12 words$/)).toBeTruthy();
+        expect(buttonFor(root, /^SeedQR$/)).toBeTruthy();
+        await press(root, /^View$/);
+        let text = textOf(root);
+        expect(text).toContain('1. abandon');
+        expect(text).toContain('12. about');
+        expect(root.findAllByProps({ testID: 'seedqr-grid' })).toHaveLength(0);
+
+        await press(root, /^SeedQR$/);
+        text = textOf(root);
+        expect(text).not.toContain('1. abandon');
+        const grid = root.findAllByProps({ testID: 'seedqr-grid' })[0];
+        expect(grid.props.grid).toEqual(seedQRGrid(mnemonicToSeedQR(ABANDON)));
+        expect(textOf(root)).toContain('Back up your seed');
+
+        await press(root, /^12 words$/);
+        expect(textOf(root)).toContain('1. abandon');
+        expect(buttonFor(root, /I've backed it up/)!.props.disabled).toBe(false);
+    });
+
+    it('then says the seed-signer is made, what comes next and the last warnings, before any public key', async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        const text = textOf(root);
+        expect(text).toContain('Seed-Signer created!');
+        for (const line of ["What's next", 'Check your backup', 'Set up your watch-only wallet', 'Sign by scanning', 'Before you go']) {
+            expect(text).toContain(line);
+        }
+        expect(text).toContain("This phone doesn't keep your seed.");
+        expect(text).toContain('Anyone who sees your words or SeedQR can take the coins.');
+        expect(text).not.toContain('passphrase');
+        expect(buttonFor(root, /Scan my SeedQR copy/)).toBeTruthy();
+        expect(text).not.toContain(ZPUB);
+        expect(seedSpy).not.toHaveBeenCalled();
+    });
+
+    it('checks typed words, then works out the public key once', async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+
+        type(root, /Type your 12 words/, LEGAL);
+        await press(root, /^Check the words$/);
+        expect(textOf(root)).toContain("That isn't the same phrase.");
+        expect(textOf(root)).toContain('Seed-Signer created!');
+
+        type(root, /Type your 12 words/, ABANDON.toUpperCase());
+        await press(root, /^Check the words$/);
+        const text = textOf(root);
+        expect(text).toContain('Your seed is backed up');
+        expect(text).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        expect(text).toContain('73C5DA0A');
+        expect(text).toContain(BIP84_RECEIVE_0);
+        expect(seedSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('checks a scanned SeedQR copy, and refuses one of another seed', async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+
+        await press(root, /Scan my SeedQR copy/);
+        await act(async () => scanned!({ data: mnemonicToSeedQR(LEGAL) }));
+        expect(textOf(root)).toContain('That copy gives a different seed.');
+        expect(seedSpy).not.toHaveBeenCalled();
+
+        await press(root, /Scan my SeedQR copy/);
+        await act(async () => {
+            scanned!({ data: mnemonicToSeedQR(ABANDON) });
+            await new Promise(resolve => setTimeout(resolve, 100));
+        });
+        expect(textOf(root)).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        expect(seedSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses the passphrase for the key and reminds about it', async () => {
+        const root = await generated('TREZOR');
+        expect(textOf(root)).toContain("Your passphrase isn't part of this backup.");
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        expect(textOf(root)).toContain("Your passphrase isn't in the words or the SeedQR.");
+        type(root, /Type your 12 words/, ABANDON);
+        await press(root, /^Check the words$/);
+        expect(seedSpy).toHaveBeenCalledWith(ABANDON, 'TREZOR');
+        expect(textOf(root)).not.toContain(ZPUB);
+        expect(textOf(root)).not.toContain('73C5DA0A');
+    });
+
+    it('takes dice rolls as the entropy', async () => {
+        const root = open();
+        const navigation = require('../../src/helpers/navigation');
+        const dispatch = jest.spyOn(navigation, 'default').mockImplementation((_route: any, params: any) => {
+            params.onGenerated(Buffer.alloc(16, 0));
+        });
+        await press(root, /Add your own dice rolls/);
+        await act(async () => {});
+        // from 50 real-looking six-sided rolls the seed is the rolls' own hash, else the mix (diceRollsOnlyScreen.test)
+        expect(dispatch).toHaveBeenCalledWith('ProvideEntropy', expect.objectContaining({ rollsOnlyFrom: 50, mixWithRng: true }));
+        expect(dispatch.mock.calls[0][1]).not.toHaveProperty('minBits');
+        // as in the Hot Vault: back on Create a Seed, which says the rolls were added; Generate Seed makes the seed
+        expect(textOf(root)).not.toContain('Back up your seed');
+        expect(textOf(root)).toContain("✓ Dice rolls added, mixed with the phone's randomness");
+        await press(root, /^Generate Seed$/);
+        // the backup, with the cross-check as a third tab
+        expect(textOf(root)).toContain('Back up your seed');
+        expect(buttonFor(root, /^Cross-check$/)).toBeTruthy();
+        expect(randomBytes).not.toHaveBeenCalled();
+        // the dice screen checks the phone's randomness before mixing it in; the result is still checked here
+        expect(assertNativeRngHealthy).not.toHaveBeenCalled();
+        expect(assertMnemonicHealthy).toHaveBeenCalledWith(ABANDON);
+        await press(root, /^View$/);
+        // sixteen zero bytes are "abandon … about"
+        expect(textOf(root)).toContain('12. about');
+    });
+});
+
+describe('Create a Seed from dice', () => {
+    // 50 rolls from EntropyLab's vectors (diceSeed.test.ts)
+    const rolls = [...'36261515636232342244625365616314551523335564321634'].map(face => ({ sides: 6, face: Number(face) }));
+    const withDice = async (from: any) => {
+        const root = open();
+        const navigation = require('../../src/helpers/navigation');
+        const dispatch = jest.spyOn(navigation, 'default').mockImplementation((_route: any, params: any) => {
+            params.onGenerated(Buffer.alloc(16, 0), from);
+        });
+        await press(root, /Add your own dice rolls/);
+        await act(async () => {});
+        // back on Create a Seed, as in the Hot Vault; Generate Seed makes the seed from the rolls
+        await press(root, /^Generate Seed$/);
+        return { root, dispatch };
+    };
+
+    it('comes back to Create a Seed after the dice, which says they were added and are recommended', async () => {
+        const root = open();
+        expect(textOf(root)).toContain('Add your own dice rolls (recommended) 🎲');
+        const navigation = require('../../src/helpers/navigation');
+        jest.spyOn(navigation, 'default').mockImplementation((_route: any, params: any) => {
+            params.onGenerated(Buffer.alloc(16, 0), { source: 'rolls', count: 50, rolls });
+        });
+        await press(root, /Add your own dice rolls/);
+        await act(async () => {});
+        // no seed yet: nothing is made until Generate Seed
+        expect(textOf(root)).not.toContain('Back up your seed');
+        expect(assertMnemonicHealthy).not.toHaveBeenCalled();
+        expect(textOf(root)).toContain('✓ 50 dice rolls added: they alone make the seed, so EntropyLab can check it');
+        expect(buttonFor(root, /^Generate Seed$/)).toBeTruthy();
+    });
+
+    it('goes to the backup from Generate Seed, with the cross-check of the rolls a tab away from the words', async () => {
+        const { root } = await withDice({ source: 'rolls', count: 50, rolls });
+        expect(textOf(root)).toContain('Back up your seed');
+        expect(randomBytes).not.toHaveBeenCalled();
+        expect(assertMnemonicHealthy).toHaveBeenCalledWith(ABANDON);
+        await press(root, /^Cross-check$/);
+        // hidden like the words until View
+        expect(textOf(root)).not.toContain('3626151563');
+        await press(root, /^View$/);
+        const text = textOf(root);
+        expect(text).toContain('Your rolls alone make this seed');
+        expect(text).toContain('Your 50 rolls');
+        expect(text).toContain(rolls.map(r => r.face).join(''));
+        expect(text).toContain('Dice roll options to Base 10 [1-6] / Hashed rolls');
+        expect(text).toContain('set Entropy Type to Base 10. Not Dice');
+        expect(text).toContain('set Mnemonic Length to 12 Words, not Use Raw Entropy');
+        expect(text).toContain('destroy the paper with your rolls');
+        await press(root, /^12 words$/);
+        expect(textOf(root)).toContain('12. about');
+    });
+
+    it('says why mixed dice can only be checked from the result, and how', async () => {
+        const { root } = await withDice({ source: 'mix', reason: 'too-few', rolls: rolls.slice(0, 4) });
+        await press(root, /^Cross-check$/);
+        await press(root, /^View$/);
+        const text = textOf(root);
+        expect(text).toContain("Fewer than 50 rolls of a six-sided die, so the phone's randomness was mixed in.");
+        expect(text).toContain('0'.repeat(32));
+        expect(text).toContain('set Derivation method to Number bases');
+        expect(text).toContain('set Mnemonic Length to Use Raw Entropy');
+        expect(text).not.toContain('Your 4 rolls');
+    });
+
+    it('goes back to the rolls when the seed is discarded, and the dice can then be removed', async () => {
+        const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+        const { root, dispatch } = await withDice({ source: 'rolls', count: 50, rolls });
+        goBack();
+        const [title, message, buttons] = alert.mock.calls[0] as any[];
+        expect(title).toBe('Discard this seed?');
+        expect(message).toContain('You go back to your dice rolls');
+        // this time the dice screen opens and stays open
+        dispatch.mockImplementation(() => {});
+        act(() => buttons[1].onPress());
+        expect(dispatch).toHaveBeenLastCalledWith('ProvideEntropy', expect.objectContaining({ initialRolls: rolls }));
+        // under it, Create a Seed with the dice kept
+        expect(textOf(root)).not.toContain('Back up your seed');
+        expect(textOf(root)).toContain('50 dice rolls added: they alone make the seed');
+        await press(root, /^Remove$/);
+        expect(textOf(root)).toContain('Add your own dice rolls');
+    });
+});
+
+describe('Create a Seed, going back', () => {
+    it('goes back from "created" to the backup', async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        const e = goBack();
+        expect(e.preventDefault).toHaveBeenCalled();
+        expect(textOf(root)).toContain('Back up your seed');
+        expect(textOf(root)).toContain('1. abandon');
+    });
+
+    it('asks before dropping the backup, and goes back to the start on Discard, not out of Create a Seed', async () => {
+        const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+        const root = await generated();
+        const e = goBack('POP');
+        expect(e.preventDefault).toHaveBeenCalled();
+        expect(alert).toHaveBeenCalledTimes(1);
+        const [title, message, buttons] = alert.mock.calls[0] as any[];
+        expect(title).toBe('Discard this seed?');
+        expect(message).toContain("isn't saved anywhere");
+        expect(message).toContain('You go back to Create a Seed');
+        expect(textOf(root)).toContain('Back up your seed');
+
+        // Stay does nothing; Discard drops the seed and stays in Create a Seed
+        expect(buttons[0].style).toBe('cancel');
+        act(() => buttons[1].onPress());
+        expect(mockNavigation.dispatch).not.toHaveBeenCalled();
+        expect(textOf(root)).not.toContain('Back up your seed');
+        expect(textOf(root)).toContain('Generate Seed');
+        // from the start, a back leaves as usual
+        expect(goBack().preventDefault).not.toHaveBeenCalled();
+    });
+
+    it("doesn't hold up anything but a back, or a back from the first and last steps", async () => {
+        const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+        open();
+        expect(goBack().preventDefault).not.toHaveBeenCalled();
+
+        const root = await generated();
+        expect(goBack('RESET').preventDefault).not.toHaveBeenCalled();
+        expect(goBack('NAVIGATE').preventDefault).not.toHaveBeenCalled();
+        expect(alert).not.toHaveBeenCalled();
+
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        type(root, /Type your 12 words/, ABANDON);
+        await press(root, /^Check the words$/);
+        expect(goBack().preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('drops the words with Done', async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        type(root, /Type your 12 words/, ABANDON);
+        await press(root, /^Check the words$/);
+        await press(root, /^Done$/);
+        expect(mockNavigation.goBack).toHaveBeenCalled();
+        expect(textOf(root)).not.toContain('abandon');
+    });
+});
+
+describe("Create a Seed, for the signer's home", () => {
+    it('notes only once the copy checks out that a key was shown, and which seed was backed up', async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        type(root, /Type your 12 words/, LEGAL);
+        await press(root, /^Check the words$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(false);
+        expect(takeSeedBackedUp()).toBeNull();
+
+        type(root, /Type your 12 words/, ABANDON);
+        await press(root, /^Check the words$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(true);
+        // for one line on the home, then gone
+        expect(takeSeedBackedUp()).toBe('73C5DA0A');
+        expect(takeSeedBackedUp()).toBeNull();
+    });
+
+    it("tells the user to sign from the home's Sign a Transaction", async () => {
+        const root = await generated();
+        await press(root, /^View$/);
+        await press(root, /I've backed it up/);
+        expect(textOf(root)).toContain("To sign, tap Sign a Transaction on this phone's home");
+    });
+
+    it('notes that a key was shown when a seed is loaded, but not that one was made', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(useAuthStore.getState().signerKeyShown).toBe(true);
+        expect(takeSeedBackedUp()).toBeNull();
+        // the public key may be remembered, the seed isn't
+        expect(textOf(root)).toContain("The seed isn't kept on this phone.");
+    });
+});
+
+describe('A remembered public key', () => {
+    const remember = async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        seedSpy.mockClear();
+    };
+
+    it('shows again without the seed, with its first addresses but not the multisig key', async () => {
+        await remember();
+        const root = open({ mode: 'remembered', fingerprint: '73c5da0a' });
+        const text = textOf(root);
+        expect(text).toContain("This seed's public key");
+        expect(text).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        expect(text).toContain(BIP84_RECEIVE_0);
+        expect(text).toContain("The multisig key comes from the seed, so it isn't shown here.");
+        expect(buttonFor(root, /Using this seed as one key of a multisig/)).toBeUndefined();
+        expect(seedSpy).not.toHaveBeenCalled();
+    });
+
+    it('can be forgotten there, and stays on screen until Done', async () => {
+        await remember();
+        const root = open({ mode: 'remembered', fingerprint: '73C5DA0A' });
+        const toggle = root.findAllByType(Switch).find(s => s.props.accessibilityLabel === 'Remember this public key on this phone')!;
+        expect(toggle.props.value).toBe(true);
+        act(() => toggle.props.onValueChange(false));
+        expect(useAuthStore.getState().signerAccounts).toEqual({});
+        expect(textOf(root)).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        await press(root, /^Done$/);
+        expect(mockNavigation.goBack).toHaveBeenCalled();
+    });
+
+    it('asks for the SeedQR when the key is no longer remembered', () => {
+        const root = open({ mode: 'remembered', fingerprint: '73c5da0a' });
+        expect(textOf(root)).toContain("Show a Seed's Public Key");
+        expect(textOf(root)).not.toContain(ZPUB);
+    });
+});
+
+describe('Show a Seed\'s Public Key', () => {
+    it('works out the key once from typed words', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(textOf(root)).toContain(`[73c5da0a/84h/0h/0h]${ZPUB}`);
+        expect(seedSpy).toHaveBeenCalledTimes(1);
+        expect(goBack().preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('uses the passphrase typed with the words', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /^Passphrase/, 'TREZOR');
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(seedSpy).toHaveBeenCalledWith(ABANDON, 'TREZOR');
+        expect(textOf(root)).toContain("This seed's public key");
+        expect(textOf(root)).not.toContain(ZPUB);
+        // nothing of it is kept for later
+        expect(textOf(root)).toContain("The seed isn't kept on this phone.");
+    });
+
+    it('remembers the public key for address checks by default, and forgets it when switched off', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        const remembered = useAuthStore.getState().signerAccounts['73c5da0a'];
+        expect(remembered).toEqual({ fingerprint: '73c5da0a', path: "m/84'/0'/0'", xpub: expect.stringMatching(/^xpub/), addedAt: expect.any(Number) });
+        const toggle = root.findAllByType(Switch).find(s => s.props.accessibilityLabel === 'Remember this public key on this phone')!;
+        expect(toggle.props.value).toBe(true);
+        expect(textOf(root)).toContain('Only the public key is kept');
+
+        act(() => toggle.props.onValueChange(false));
+        expect(useAuthStore.getState().signerAccounts).toEqual({});
+        expect(textOf(root)).toContain("Nothing is kept. To check a new receive address of this seed, you'll have to bring out its SeedQR, which is security sensitive");
+    });
+
+    it("doesn't remember a key with a passphrase unless asked", async () => {
+        const root = open({ mode: 'show' });
+        type(root, /^Passphrase/, 'TREZOR');
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(useAuthStore.getState().signerAccounts).toEqual({});
+        expect(textOf(root)).toContain("It's off because of the passphrase");
+        const toggle = root.findAllByType(Switch).find(s => s.props.accessibilityLabel === 'Remember this public key on this phone')!;
+        act(() => toggle.props.onValueChange(true));
+        expect(Object.keys(useAuthStore.getState().signerAccounts)).toHaveLength(1);
+    });
+
+    it('cross-checks the fingerprint and first addresses in another tool, on request', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, ABANDON);
+        await press(root, /^Continue$/);
+        expect(textOf(root)).toContain(BIP84_RECEIVE_0);
+        expect(textOf(root)).not.toContain('Under Derivation Path, choose BIP84.');
+        await press(root, /^Cross-check the addresses$/);
+        const text = textOf(root);
+        expect(text).toContain('Master fingerprint must be 73C5DA0A, and First 10 receive addresses must start with the first addresses here.');
+        expect(text).toContain('Choose Native SegWit and tap Derive Key.');
+        expect(text).toContain('Under Derivation Path, choose BIP84.');
+        expect(text).toContain('Then close the tool before you go back online.');
+        await press(root, /^Hide the cross-check$/);
+        expect(textOf(root)).not.toContain('Under Derivation Path, choose BIP84.');
+    });
+
+    it('stays on the form with the reason when the words are wrong', async () => {
+        const root = open({ mode: 'show' });
+        type(root, /12 or 24 words/, 'abandon abandon');
+        await press(root, /^Continue$/);
+        expect(textOf(root)).toContain("Show a Seed's Public Key");
+        expect(seedSpy).not.toHaveBeenCalled();
+    });
+});

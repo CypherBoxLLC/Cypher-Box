@@ -7,10 +7,11 @@ import { colors } from "@Cypher/style-guide";
 import { PrivateKeyGenerater, SavingVault } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchReset } from "@Cypher/helpers/navigation";
+import loc from "../../../loc";
 
 export default function SavingVaultCreated() {
     const [isValidate, setIsValidate] = useState(false);
-    const { vaultTab } = useAuthStore();
+    const { vaultTab, signingMode } = useAuthStore();
 
     const nextClickHandler = () => {
         console.log('next click');
@@ -30,30 +31,41 @@ export default function SavingVaultCreated() {
     return (
         <ScreenLayout disableScroll showToolbar progress={2} color={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]} isBackButton={false} isClose onBackPress={nextClickHandler}>
             <View style={styles.container}>
-                <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? "Cold Storage Vault Created!" : "Savings Vault Created!"}</Text>
+                <Text style={[styles.title, vaultTab ? { color: colors.coldGreen } : { }]} center>{vaultTab ? loc.cypherbox.vault.saving_vault_created.cold_title : signingMode ? loc.cypherbox.vault.saving_vault_created.seed_title : loc.cypherbox.vault.saving_vault_created.hot_title}</Text>
+                {/* what this phone can and can't do with the Cold Vault, said up front rather than inside the paragraph */}
+                {vaultTab ? (
+                    <Text h4 bold center style={[styles.subtitle, { color: colors.coldGreen }]}>
+                        {loc.cypherbox.vault.saving_vault_created.cold_subtitle}
+                    </Text>
+                ) : null}
                 <View style={styles.inner}>
-                    <SavingVault title={vaultTab ? "Cold Vault" : "Hot Vault"} />
+                    {/* a seed-signer's seed isn't a vault, so no vault picture or capsules */}
+                    {signingMode && !vaultTab ? null : <SavingVault title={vaultTab ? loc.cypherbox.home.cold_vault : loc.cypherbox.home.hot_vault} />}
                     <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-                        {vaultTab ?
+                        {signingMode && !vaultTab ? (
+                            <Text h4 style={styles.descption}>{loc.cypherbox.vault.saving_vault_created.seed_next_1}
+                                {'\n\n'}
+                                {loc.cypherbox.vault.saving_vault_created.seed_next_2}
+                            </Text>
+                        ) : vaultTab ?
                             <>
-                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 15 }]}>Remember to keep your seed phrase safe, it's your responsibility!
-                                    This is a Watch-only vault, meaning you can only inspect its balance and grab addresses from it for deposits, but in order to send out funds you need to ‘sign’ or authorize  transactions using your hardware device.
+                                <Text h4 style={[styles.descption, { fontSize: 14, marginTop: 15 }]}>{loc.cypherbox.vault.saving_vault_created.cold_para_1}
                                     {'\n\n'}
-                                    ⚠️ DO NOT use any of its addresses without verifying their authenticity from your  hardware device!
+                                    {loc.cypherbox.vault.saving_vault_created.cold_warning}
                                     {'\n\n'}
-                                    When Bitcoin Network fees become moderately low, you can select the capsules accumulated in your Hot Vault and transfer them to your Cold Storage Vault using the “Move to Cold Vault” button.
+                                    {loc.cypherbox.vault.saving_vault_created.cold_para_3}
                                 </Text>
                             </>
                         :
-                            <Text h4 style={styles.descption}>Remember to keep your seed phrase safe, it's your responsibility!
+                            <Text h4 style={styles.descption}>{loc.cypherbox.vault.saving_vault_created.seed_reminder}
                                 {'\n\n'}
-                                Each slot represents  a materialized Bitcoin capsule (UTXO). You can tap inside the vault to browse its addresses, capsules, transaction history seedphrase, and so on. {'\n\n'}It's recommended that you deposit small to medium sized capsules, and once network fees are low, you can either move them to your Cold Vault, or 'consolidate' them together to save on future network fees.
+                                {loc.cypherbox.vault.saving_vault_created.hot_para_2}{'\n\n'}{loc.cypherbox.vault.saving_vault_created.hot_para_3}
                             </Text>
                         }
                     </ScrollView>
                 </View>
             </View>
-            <Button text="Home"
+            <Button text={loc.cypherbox.vault.saving_vault_created.home}
                 onPress={nextClickHandler}
                 style={{...styles.button, ...{ backgroundColor: vaultTab ? colors.coldGreen : colors.green, marginTop: vaultTab ? 30 : 0 } }}
                 textStyle={styles.btnText}

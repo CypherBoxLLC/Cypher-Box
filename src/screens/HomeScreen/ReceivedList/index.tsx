@@ -12,6 +12,7 @@ import { Icon } from 'react-native-elements';
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore"
 import Clipboard from "@react-native-clipboard/clipboard"
+import loc from "../../../../loc"
 
 interface Props {
     refRBSheet: any;
@@ -25,16 +26,16 @@ export default function ReceivedList({ refRBSheet, receiveType, matchedRate, cur
     const [data, setData] = useState(receiveType ? [
         {
             id: 1,
-            name: 'Bitcoin-Lightning Address',
+            name: loc.cypherbox.home_lists.received_list.lightning_address,
             type: 0,
             description: user+'@coinos.io',
             navigation: {},
         },
         {
             id: 2,
-            name: 'Bitcoin-Lightning invoice',
+            name: loc.cypherbox.home_lists.received_list.lightning_invoice,
             type: 0,
-            description: 'Receive from wallets and exchanges that support the Lightning Network',
+            description: loc.cypherbox.home_lists.received_list.lightning_invoice_desc,
             navigation: {
                 screen: 'CreateInvoice',
                 params: {
@@ -44,9 +45,9 @@ export default function ReceivedList({ refRBSheet, receiveType, matchedRate, cur
         },
         {
             id: 3,
-            name: 'Liquid Federation address',
+            name: loc.cypherbox.home_lists.received_list.liquid_address,
             type: 1,
-            description: 'Receive from wallets and exchanges that support the Liquid Federation',
+            description: loc.cypherbox.home_lists.received_list.liquid_address_desc,
             navigation: {
                 screen: 'QrScreen',
                 params: {
@@ -57,9 +58,9 @@ export default function ReceivedList({ refRBSheet, receiveType, matchedRate, cur
         },
         {
             id: 4,
-            name: 'Bitcoin Network Address',
+            name: loc.cypherbox.home_lists.received_list.bitcoin_address,
             type: 2,
-            description: 'To deposit sizable amounts of bitcoin from the main network',
+            description: loc.cypherbox.home_lists.received_list.bitcoin_address_desc,
             navigation: {
                 screen: 'QrScreen',
                 params: {
@@ -73,16 +74,16 @@ export default function ReceivedList({ refRBSheet, receiveType, matchedRate, cur
     [
         {
             id: 1,
-            name: 'Bitcoin-Lightning Address',
+            name: loc.cypherbox.home_lists.received_list.lightning_address,
             type: 0,
             description: strikeMe?.username+'@strike.me',
             navigation: {},
         },
         {
             id: 2,
-            name: 'Bitcoin-Lightning invoice',
+            name: loc.cypherbox.home_lists.received_list.lightning_invoice,
             type: 0,
-            description: 'Receive from wallets and exchanges that support the Lightning Network',
+            description: loc.cypherbox.home_lists.received_list.lightning_invoice_desc,
             navigation: {
                 screen: 'CreateInvoice',
                 params: {
@@ -92,9 +93,9 @@ export default function ReceivedList({ refRBSheet, receiveType, matchedRate, cur
         },
         {
             id: 4,
-            name: 'Bitcoin Network Address',
+            name: loc.cypherbox.home_lists.received_list.bitcoin_address,
             type: 2,
-            description: 'To deposit sizable amounts of bitcoin from the main network',
+            description: loc.cypherbox.home_lists.received_list.bitcoin_address_desc,
             navigation: {
                 screen: 'QrScreen',
                 params: {
@@ -112,7 +113,7 @@ export default function ReceivedList({ refRBSheet, receiveType, matchedRate, cur
 
         if(item?.id == 1){
             Clipboard.setString(receiveType ? user+'@coinos.io' : strikeMe?.username+'@strike.me');
-            SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home_lists.received_list.copied, SimpleToast.SHORT);
         
         }
         item?.navigation?.screen &&
@@ -130,7 +131,7 @@ export default function ReceivedList({ refRBSheet, receiveType, matchedRate, cur
                 <TouchableOpacity onPress={() => refRBSheet?.current?.close()} style={styles.closeView}>
                     <Icon name="close" size={22} type="iosicons" color={colors.white} />
                 </TouchableOpacity>
-                <Text h2 bold style={styles.bottomtext}>Receive</Text>
+                <Text h2 bold style={styles.bottomtext}>{loc.cypherbox.home_lists.received_list.receive}</Text>
             </View>
             <View style={styles.list}>
                 {data?.map((item) => (

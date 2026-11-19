@@ -22,6 +22,8 @@ export default StyleSheet.create<Style>({
         width: '100%',
     },
     keypad: {
+        // laid out like a phone keypad in every language: right-to-left put 3 2 1 on top and moved delete to the left
+        direction: 'ltr',
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'center',

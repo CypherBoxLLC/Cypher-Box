@@ -11,6 +11,7 @@ import Notifications from '../../blue_modules/notifications';
 import alert from '../../components/Alert';
 import { Button } from '../../components/Button';
 import ListItem from '../../components/ListItem';
+import { colors as cypherColors } from '@Cypher/style-guide';
 
 const NotificationSettings = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -106,7 +107,11 @@ const NotificationSettings = () => {
         title={loc.settings.push_notifications}
         switch={{ onValueChange: onNotificationsSwitch, value: isNotificationsEnabled, testID: 'NotificationsSwitch' }}
       />
-      <BlueSpacing20 />
+      {/* right under the switch, so it's read before turning it on: the switch is the consent to upload */}
+      <BlueCard>
+        <BlueText style={styles.privacyTitle}>{loc.settings.push_privacy_title}</BlueText>
+        <BlueText style={styles.privacyText}>{loc.settings.push_privacy_explain}</BlueText>
+      </BlueCard>
 
       <BlueCard>
         <BlueText>{loc.settings.groundcontrol_explanation}</BlueText>
@@ -182,6 +187,14 @@ const styles = StyleSheet.create({
   },
   centered: {
     textAlign: 'center',
+  },
+  privacyTitle: {
+    color: cypherColors.yellow2,
+    fontWeight: 'bold',
+  },
+  privacyText: {
+    color: cypherColors.yellow2,
+    marginTop: 4,
   },
   uriText: {
     flex: 1,

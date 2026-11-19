@@ -31,13 +31,17 @@ import { Shadow } from "react-native-neomorph-shadows";
 import { colors, heights, shadow } from "@Cypher/style-guide";
 import RBSheet from 'react-native-raw-bottom-sheet';
 import LinearGradient from "react-native-linear-gradient";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { homeTopGap } from './topGap';
 import ReceivedList from "./ReceivedList";
 import useAuthStore from "@Cypher/stores/authStore";
-import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkPushTokenBackfill, useArkoorReceivePrompt } from "@Cypher/custom-hooks";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import { expireStrikeSession } from "@Cypher/services/sessionExpiry";
+import { useArkSync, useArkRestoreOnBoot, useArkExitDestinationBackfill, useArkPushTokenBackfill, useArkoorReceivePrompt, useRegionGate } from "@Cypher/custom-hooks";
 import { processHotVaultTxsForActivity } from "@Cypher/services/hotVaultActivityDiff";
 import { processStrikeInvoicesForActivity } from "@Cypher/services/strikeActivityDiff";
 import { bitcoinRecommendedFee, createInvoice, getInvoiceByLightening, getMe, getTransactionHistory, refreshCoinOSToken } from "@Cypher/api/coinOSApis";
-import { btc, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
+import { btc, btcUnit, formatNumber, SATS } from "@Cypher/helpers/coinosHelper";
 import { AbstractWallet, HDSegwitBech32Wallet, HDSegwitP2SHWallet } from "../../../class";
 import loc, { formatBalance, formatBalanceWithoutSuffix } from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
@@ -54,6 +58,8 @@ import { connect as connectCoinosSocket, disconnect as disconnectCoinosSocket, s
 import Header from "./Header";
 import BalanceView from "./BalanceView";
 import BottomBar from "./BottomBar";
+import SigningHome from "../SigningHome";
+import { daySituation, type HomeNotice } from "@Cypher/services/homeNotices";
 const A = require('../../../blue_modules/analytics');
 import CreateLightningAccount from "./CreateLightningAccount";
 import WalletsView, { WalletsViewHandle } from "./WalletsView";
@@ -63,6 +69,9 @@ import WithdrawList from "./WithdrawList";
 import SwapSheet from "./SwapSheet";
 import { FiatUnit, FiatUnitType } from "models/fiatUnit";
 import untypedFiatUnit from '../../../models/fiatUnits.json';
+
+// iOS: ScreenLayout pads only the sides; Home's top padding comes from homeTopGap (see topGap.ts).
+const HOME_IOS_EDGES = ['right', 'left'];
 
 interface Props {
   route: any;
@@ -169,10 +178,12 @@ function findOrphanHotVaultWallet(
 export default function HomeScreen({ route }: Props) {
   const { navigate } = useNavigation();
   const routeName = useRoute().name;
+  // iOS: the gap under the status bar and notch, never below the one measured at launch (see topGap.ts)
+  const iosTopGap = homeTopGap(useSafeAreaInsets().top);
   const [state, dispatch] = useReducer(walletReducer, initialState);
   const label = state.label;
   const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets, sleep, isElectrumDisabled, startAndDecrypt, setWalletsInitialized } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, clearStrikeAuth, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
+  const { signingMode, isAuth, isStrikeAuth, isArkAuth, strikeToken, walletTab, allBTCWallets, setAllBTCWallets, withdrawStrikeThreshold, reserveStrikeAmount, strikeUser, strikeMe, strikeCurrency, setStrikeCurrency, setWalletTab, setStrikeUser, walletID, setWalletID, coldStorageWalletID, token, user, withdrawThreshold, reserveAmount, vaultTab, setUser, setVaultTab, matchedRateStrike, setMatchedRateStrike, arkBalance } = useAuthStore();
   // Ark boot restore: reopens the wallet from on-disk state (datadir +
   // Keychain mnemonic) once per mount, and reconciles zustand so the
   // carousel reflects reality. Handles Metro reload + zustand/disk drift.
@@ -199,6 +210,9 @@ export default function HomeScreen({ route }: Props) {
   // surface as expiryHeight) and shows a one-time educational popup +
   // schedules a 24h-before-expiry OS push. Opt-out via Vault tab toggle.
   useArkoorReceivePrompt();
+  // Re-render when the App Store storefront resolves after launch, so the
+  // Strike/CoinOS gates read later in render reflect the real region.
+  useRegionGate();
   // const [storage, setStorage] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [carouselPage, setCarouselPage] = useState(0);
@@ -211,9 +225,17 @@ export default function HomeScreen({ route }: Props) {
   // choppy. Opacity 0→1 + a small upward drift gives an iOS-style fade-in
   // that takes the edge off the layout settle.
   //
-  // Uses native driver — opacity + transform are both supported on the
-  // native side, so the animation runs off the JS thread and stays smooth
-  // even while the snap-carousels mount their internal animated values.
+  // JS driver, not the native one. Under Fabric (RN 0.77, iOS) a natively
+  // driven opacity belongs to the animation: React's later commits no longer
+  // reach the view, yet a size change of that view still repaints it with
+  // React's last committed opacity (RCTViewComponentView invalidateLayer),
+  // which mid-fade is a stale 0. On a cold launch the Lightning/Bark carousel
+  // receives its cards just after the fade's last native frame, its wrapper
+  // grows, gets repainted at opacity 0 and stays invisible: a blank gap
+  // where the Bark Vault card should be. Transform has the same flaw on a
+  // size change (updateLayoutMetrics). With the JS driver React is the only
+  // writer of both, so a resize always repaints the current value. The
+  // trade-off: the 320ms fade can stutter while the JS thread is busy.
   const enterAnim = useRef(new Animated.Value(0)).current;
   const enterTranslate = enterAnim.interpolate({
     inputRange: [0, 1],
@@ -227,7 +249,8 @@ export default function HomeScreen({ route }: Props) {
         toValue: 1,
         duration: 320,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
+        // See the comment above enterAnim before switching this back.
+        useNativeDriver: false,
       }).start();
     }, [enterAnim])
   );
@@ -467,8 +490,8 @@ export default function HomeScreen({ route }: Props) {
           const balances = await getBalances();
           if (__DEV__) console.log('[Strike] getBalances DONE', Date.now());
           if (balances.data?.status === 401) {
-              SimpleToast.show("Authorization expired. Please login again to strike account", SimpleToast.SHORT);
-              clearStrikeAuth();
+              // signs out where Strike is offered; where it's hidden, the card stays with its notice
+              expireStrikeSession(loc.cypherbox.home.strike_auth_expired);
           } else if (balances) {
               if (__DEV__) console.log('balances (post-login): ', balances);
               // Normalize: index 0 = BTC, index 1 = fiat (API order is not guaranteed)
@@ -538,6 +561,11 @@ export default function HomeScreen({ route }: Props) {
   const tokenRefreshedRef = useRef(false);
 
   useEffect(() => {
+    // None of this is for a signing phone, whose home is the signer: looking up the vaults' balances and uploading
+    // their addresses for push notifications would show the servers which addresses are this vault's, and the rest
+    // is the Lightning accounts' and rates, which the signer hides.
+    if (signingMode) return;
+
     async function handleToken() {
       if (isAuth && token) {
         // Refresh token once on first load to avoid 401 race
@@ -622,7 +650,7 @@ export default function HomeScreen({ route }: Props) {
       setIsColdWalletLoaded(false);
     }
     Promise.resolve(handleToken()).finally(() => __DEV__ && console.log('[HomeMount] handleToken done +', Date.now() - _t0, 'ms'));
-  }, [isAuth, token, wallets, walletID, coldStorageWalletID]);
+  }, [signingMode, isAuth, token, wallets, walletID, coldStorageWalletID]);
 
   // CoinOS WebSocket for real-time payment notifications.
   //
@@ -744,7 +772,7 @@ export default function HomeScreen({ route }: Props) {
       }
     } catch (error) {
         console.error('Error handleLighteningInvoice:', error);
-        SimpleToast.show('Failed to generate lightening. Please try again.', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.home.lightning_invoice_failed, SimpleToast.SHORT);
     }
 }
   const obtainWalletAddress = async () => {
@@ -780,7 +808,8 @@ export default function HomeScreen({ route }: Props) {
   useFocusEffect(
     useCallback(() => {
       setSendAddress(null)
-      if (wallet) {
+      // not on a signing phone, whose home is the signer (see the wallet loading above)
+      if (wallet && !signingMode) {
         obtainWalletAddress();
         (async () => {
           try {
@@ -791,12 +820,12 @@ export default function HomeScreen({ route }: Props) {
         })();
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [wallet, sleep]),
+    }, [wallet, signingMode, sleep]),
   );
 
   useFocusEffect(
     useCallback(() => {
-      if (coldStorageWallet) {
+      if (coldStorageWallet && !signingMode) {
         obtainColdWalletAddress();
         (async () => {
           try {
@@ -807,7 +836,7 @@ export default function HomeScreen({ route }: Props) {
         })();
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [coldStorageWallet, sleep]),
+    }, [coldStorageWallet, signingMode, sleep]),
   );
 
   const handleUser = async () => {
@@ -857,7 +886,7 @@ export default function HomeScreen({ route }: Props) {
       }
 
       if (coinosCallFailed) {
-        SimpleToast.show("Failed to load CoinOS balance. Pull to refresh.", SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.home.coinos_balance_failed, SimpleToast.SHORT);
       }
     } catch (error) {
       console.error('handleUser unexpected error:', error);
@@ -868,7 +897,7 @@ export default function HomeScreen({ route }: Props) {
       // so Ark-only users don't see a "Failed to load balance" alert
       // for a balance they don't have.
       if (coinosAuthed) {
-        SimpleToast.show("Failed to load balance. Pull to refresh.", SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.home.balance_failed, SimpleToast.SHORT);
       }
     } finally {
       setIsLoading(false)
@@ -882,7 +911,7 @@ export default function HomeScreen({ route }: Props) {
       setPayments(paymentList.payments);
     } catch (error) {
       console.error('Error loading payments:', error);
-      SimpleToast.show("Failed to load payments. Pull to refresh.", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.home.payments_failed, SimpleToast.SHORT);
     }
   };
 
@@ -931,7 +960,7 @@ export default function HomeScreen({ route }: Props) {
         }
       } catch (e) {
         if (__DEV__) console.log('Error refreshing Strike balance:', e);
-        SimpleToast.show("Failed to refresh Strike balance.", SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.home.strike_refresh_failed, SimpleToast.SHORT);
       }
     }
     // Pull-to-refresh also kicks an immediate Ark sync. Cheap (SQLite
@@ -990,23 +1019,32 @@ export default function HomeScreen({ route }: Props) {
   //   cold: ColdStorageTab,
   // });
 
-  // Single contextual message for the homepage — priority ordered
-  const getHomeMessage = (): string | null => {
+  // Single contextual tip for the homepage, priority ordered. Drawn as a green
+  // notice icon on the wallet card (components/HomeNotices); `situation` is
+  // what brings it back after the user ignores it.
+  const getHomeNotice = (): HomeNotice | null => {
     const coinosBalance = Number(balance) || 0;
     const strikeBal = Math.round(Number(strikeUser?.[0]?.available || 0) * SATS);
     const coinosTotal = Number(withdrawThreshold) + Number(reserveAmount);
     const strikeTotal = Number(withdrawStrikeThreshold) + Number(reserveStrikeAmount);
-    const coinosThresholdMet = isAuth && coinosBalance >= coinosTotal;
-    const strikeThresholdMet = isStrikeAuth && strikeBal >= strikeTotal;
+    // A rail that is not offered in this region (services/featureFlags)
+    // cannot be withdrawn from here, so it does not raise the prompt.
+    const coinosThresholdMet = isAuth && isCoinosAllowed() && coinosBalance >= coinosTotal;
+    const strikeThresholdMet = isStrikeAuth && isStrikeAllowed() && strikeBal >= strikeTotal;
     const anyThresholdMet = coinosThresholdMet || strikeThresholdMet;
     const hasVault = !!(walletID || coldStorageWalletID);
 
-    // Priority 1: Threshold met
-    if (anyThresholdMet && hasVault) {
-      return "Your balance is large enough to withdraw to self-custody!";
-    }
-    if (anyThresholdMet && !hasVault) {
-      return "Threshold met! Create a vault to withdraw to self-custody.";
+    // Priority 1: Threshold met. Back after Ignore once a balance passes
+    // another multiple of its threshold.
+    if (anyThresholdMet) {
+      const step = (bal: number, total: number) => (total > 0 ? Math.floor(bal / total) : 0);
+      const situation = [
+        coinosThresholdMet ? `coinos-${step(coinosBalance, coinosTotal)}` : '',
+        strikeThresholdMet ? `strike-${step(strikeBal, strikeTotal)}` : '',
+      ].join('|');
+      return hasVault
+        ? { id: 'threshold-withdraw', severity: 'green', icon: 'shield-checkmark-outline', situation, text: loc.cypherbox.home.threshold_met_withdraw }
+        : { id: 'threshold-create-vault', severity: 'green', icon: 'add-circle-outline', situation, text: loc.cypherbox.home.threshold_met_create_vault };
     }
 
     // Priority 2: UTXO management
@@ -1017,22 +1055,29 @@ export default function HomeScreen({ route }: Props) {
     const fee = recommendedFee?.halfHourFee || recommendedFee?.hourFee || 0;
     const feesAreLow = fee > 0 && fee <= 15;
 
+    // Back after Ignore when the Hot Vault holds a different number of UTXOs.
     if (wallet && !coldStorageWallet && hotUtxos.length > 5) {
-      return "You have more than 5 UTXOs. Consider upgrading to Cold Storage to consolidate and improve security.";
+      return { id: 'utxo-upgrade-cold', severity: 'green', icon: 'snow-outline', situation: String(hotUtxos.length), text: loc.cypherbox.home.utxo_upgrade_cold };
     }
 
+    // Back after Ignore on a later day with low fees.
     if (smallUtxos.length > 5 && feesAreLow) {
-      return "Fees are low, a good time to consolidate your small UTXOs to save on future transaction costs.";
+      return { id: 'utxo-consolidate', severity: 'green', icon: 'git-merge-outline', situation: daySituation(), text: loc.cypherbox.home.utxo_consolidate };
     }
 
     return null;
   };
 
-  const homeMessage = getHomeMessage();
+  const homeNotice = getHomeNotice();
+
+  // "Use this phone only for signing": the whole home becomes the signer. Checked after every hook above, so the
+  // hook order stays the same either way.
+  if (signingMode) return <SigningHome />;
 
   return (
     <ScreenLayout
-      
+      edges={Platform.OS === 'ios' ? HOME_IOS_EDGES : undefined}
+      style={Platform.OS === 'ios' ? { paddingTop: iosTopGap } : undefined}
       RefreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -1108,7 +1153,7 @@ export default function HomeScreen({ route }: Props) {
                   // orphaned `arkBalance` state from a previous wallet
                   // doesn't pollute the headline before the boot-restore
                   // hook clears it.
-                  balance={`${((btc(1) * (Number(balance) || 0)) + (isStrikeAuth ? Number(strikeUser?.[0]?.available || 0) : 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0) + (isArkAuth ? (Number(arkBalance) || 0) * btc(1) : 0)).toFixed(8)} BTC`}
+                  balance={`${((btc(1) * (Number(balance) || 0)) + (isStrikeAuth ? Number(strikeUser?.[0]?.available || 0) : 0) + (Number(ColdStorageBalanceVault?.split(' ')[0]) || 0) + (Number(balanceVault?.split(' ')[0]) || 0) + (isArkAuth ? (Number(arkBalance) || 0) * btc(1) : 0)).toFixed(8)} ${btcUnit()}`}
                   convertedRate={`$${((isStrikeAuth ? (strikeConvertedBalance || 0) : 0) + Number(convertedRate || 0) + ((Number(coldStorageBalanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)) + (Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0))) + (isArkAuth ? (Number(arkBalance) || 0) * Number(matchedRate || 0) * btc(1) : 0)).toFixed(2)}`}
                   // Show "+ Add Account" until the user has all three
                   // distinct rails connected. The previous `length < 2`
@@ -1166,7 +1211,7 @@ export default function HomeScreen({ route }: Props) {
                       style={{ shadowColor: '#040404CC', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.80, shadowRadius: 16, elevation: 8 }}
                       linearGradientStyle={{ shadowColor: '#27272C7A', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
                     >
-                      <Text h3 style={{ ...shadow.text25 }}>Receive</Text>
+                      <Text h3 style={{ ...shadow.text25 }}>{loc.cypherbox.home.receive}</Text>
                     </GradientView>
                     <GradientView
                       onPress={() => { refSendRBSheet.current.open(); }}
@@ -1175,7 +1220,7 @@ export default function HomeScreen({ route }: Props) {
                       style={{ shadowColor: '#040404CC', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.80, shadowRadius: 16, elevation: 8 }}
                       linearGradientStyle={{ shadowColor: '#27272C7A', shadowOffset: { width: -8, height: -8 }, shadowOpacity: 0.48, shadowRadius: 12, elevation: 8 }}
                     >
-                      <Text h3 style={{ ...shadow.text25 }}>Send</Text>
+                      <Text h3 style={{ ...shadow.text25 }}>{loc.cypherbox.home.send}</Text>
                     </GradientView>
                   </View>
                 )}
@@ -1198,7 +1243,7 @@ export default function HomeScreen({ route }: Props) {
                 matchedRateStrike={Number(matchedRateStrike || 0)}
                 strikeConvertedBalance={Number(strikeConvertedBalance || 0)}
                 currencyStrike={strikeUser?.[1]?.currency || 'USD'}
-                homeMessage={homeMessage}
+                homeNotice={homeNotice}
                 onPageChange={(index, total, kinds) => {
                   setCarouselPage(index);
                   setCarouselTotal(total);

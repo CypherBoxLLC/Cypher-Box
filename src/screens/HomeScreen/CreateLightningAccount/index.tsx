@@ -1,9 +1,12 @@
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { colors } from "@Cypher/style-guide";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import styles from "../styles";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 
 // Provider-logo sheet — outlined with the same pink gradient ring as
 // the parent card, dark interior. Mirrors the slick "ring + dark fill"
@@ -47,6 +50,9 @@ interface Props {
 }
 
 export default function CreateLightningAccount({ onPress }: Props) {
+    // Re-render when the App Store storefront resolves after launch, so the
+    // Strike/CoinOS provider tiles below are gated with the real value.
+    useRegionGate();
     // Outlined-only card — pink gradient ring, dark interior. Replaces
     // the previous solid pink fill so the watermark + provider tiles
     // can breathe and the design reads as "this is a wallet I'm about
@@ -116,14 +122,16 @@ export default function CreateLightningAccount({ onPress }: Props) {
                                     resizeMode="contain"
                                 />
                                 <Text h2 style={[styles.shadow, { fontSize: 16 }]} center>
-                                    Unlock Lightning Wallet
+                                    {loc.cypherbox.home.unlock_lightning_wallet}
                                 </Text>
                             </View>
-                            {/* Provider tiles — pink-bordered pills
-                                matching the parent card's ring. */}
+                            {/* Provider tiles, pink-bordered pills
+                                matching the parent card's ring. Only the
+                                providers offered in this region are shown
+                                (services/featureFlags). */}
                             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16 }}>
-                                <ProviderTile logo={require("@Cypher/assets/images/strike.png")} />
-                                <ProviderTile logo={require("@Cypher/assets/images/coinos.png")} />
+                                {isStrikeAllowed() && <ProviderTile logo={require("@Cypher/assets/images/strike.png")} />}
+                                {isCoinosAllowed() && <ProviderTile logo={require("@Cypher/assets/images/coinos.png")} />}
                                 <ProviderTile logo={require("@Cypher/assets/images/second.png")} />
                             </View>
                         </View>

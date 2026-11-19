@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, RefreshControl, Text as RNText, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Animated, Easing, FlatList, Image, ImageBackground, RefreshControl, StyleSheet, Text as RNText, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import { Icon } from "react-native-elements";
 import Svg, { Circle } from "react-native-svg";
@@ -22,6 +22,7 @@ import {
     AVG_BLOCK_MINUTES,
     blocksToDays,
     cancelArkPendingRound,
+    estimateArkOffboardFee,
     estimateArkRefreshFee,
     fetchArkBalance,
     fetchArkPendingRoundStates,
@@ -30,6 +31,7 @@ import {
     getArkWalletHandle,
     isVtxoMidRound,
     ArkRefreshInFlightError,
+    offboardArkVtxos,
     refreshArkVtxosDelegatedAndSync,
     restoreArkWalletFromDisk,
     setArkCancelling,
@@ -54,11 +56,22 @@ import {
 } from "@Cypher/services/ark/chainTipFreshness";
 import { buildRefreshBatch } from "@Cypher/services/ark/refreshBatch";
 import { buildDeferredVtxoIds } from "@Cypher/services/ark/refreshDeferral";
+import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
+import {
+    beginExpiredRecovery,
+    endExpiredRecovery,
+    expiredCapsuleRecoverability,
+    isPastExpiryHeight,
+} from "@Cypher/services/ark/expiredRecovery";
+import { isArkSendIndeterminate } from "@Cypher/services/ark/indeterminate";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed } from "@Cypher/services/featureFlags";
 import RefreshWaitBanner from '@Cypher/components/RefreshWaitBanner';
 import { colors, widths } from "@Cypher/style-guide";
 import vaultStyles from "../../HotStorageVault/styles";
 import rowStyles from "../../HotStorageVault/ListView/styles";
+import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import loc from "../../../../loc";
 
 /**
  * ArkCapsules — VTXO management surface for the Ark wallet menu.
@@ -86,19 +99,23 @@ import rowStyles from "../../HotStorageVault/ListView/styles";
 const VTXO_MAX_DAYS = 28;
 const VTXO_MAX_BLOCKS = Math.round((VTXO_MAX_DAYS * 24 * 60) / AVG_BLOCK_MINUTES);
 
+/** See VtxoRowData.recoverability. */
+type CapsuleRecoverability = 'backed-up' | 'this-phone-only' | 'needs-backup' | 'in-flight';
+
 /**
- * Expired = past its expiry height and not mid-round. The funds can no
- * longer be refreshed, sent, or swept (the ASP can claim them at any
- * time), so expired rows render greyed and non-actionable. Locked rows
- * are excluded even when their daysLeft reads 0: a Locked VTXO's
- * expiryHeight is the PRE-refresh leaf's expiry, which legitimately lags
- * the chain tip while a recovery round is in flight — those keep the
- * transient "Refreshing" treatment instead.
+ * Expired = past its expiry height and not mid-round. The capsule has lost
+ * its exit and the ASP may sweep it at any time, so it renders greyed, stays
+ * out of the balance, and offers only the recovery Second.tech allows today
+ * (see services/ark/expiredRecovery.ts). Locked rows are excluded even when
+ * their daysLeft reads 0: a Locked VTXO's expiryHeight is the PRE-refresh
+ * leaf's expiry, which legitimately lags the chain tip while a recovery
+ * round is in flight. Those keep the transient "Refreshing" treatment
+ * instead.
  */
 function isExpiredCapsule(r: {
     daysLeft: number;
     pendingRound: boolean;
-    recoverability: 'backed-up' | 'needs-backup' | 'in-flight';
+    recoverability: CapsuleRecoverability;
 }): boolean {
     return r.daysLeft <= 0 && !r.pendingRound && r.recoverability !== 'in-flight';
 }
@@ -136,7 +153,7 @@ function formatExpiryLeft(daysLeft: number): string {
     const totalHours = Math.max(0, Math.round(daysLeft * 24));
     const d = Math.floor(totalHours / 24);
     const h = totalHours % 24;
-    return d > 0 ? `${d}d ${h}h left` : `${h}h left`;
+    return d > 0 ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_dh, { d, h })) : String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_h, { h }));
 }
 
 // --- Ring constants ---
@@ -151,6 +168,34 @@ const RING_CIRC = 2 * Math.PI * RING_RADIUS;
 interface VtxoRingProps {
     daysLeft: number;
 }
+
+// RECOVER button on an expired capsule. Same footprint as the DUST REFRESH
+// button (the icon + select columns, flex 2), in the orange the rows use for
+// "needs action".
+const RECOVER_ORANGE = '#FB923C';
+const expiredRowStyles = StyleSheet.create({
+    recoverButton: {
+        flex: 2,
+        marginRight: 8,
+        marginVertical: 6,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: RECOVER_ORANGE,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 4,
+    },
+    recoverButtonBusy: {
+        opacity: 0.5,
+    },
+    recoverText: {
+        fontSize: 10,
+        color: RECOVER_ORANGE,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+});
 
 /**
  * VtxoRing — small static SVG depletion indicator.
@@ -240,19 +285,23 @@ interface VtxoRowData {
      *        taken right now, the in-flight state is non-deterministic
      *        and a restore may land you in a stuck round.
      *
-     *   2. Is there actually a recent backup that captures it?
-     *      - `arkLastBackupAt` is set, AND it postdates this VTXO's
-     *        appearance (we approximate this by "any backup at all"
-     *        since we don't track per-VTXO creation timestamps).
+     *   2. Is there actually a recent backup that captures it, and where?
+     *      - A backup postdates this VTXO's appearance (we approximate this
+     *        by "any backup at all" since we don't track per-VTXO creation
+     *        timestamps).
+     *      - Only a copy outside the app (iCloud Drive, Google Drive, the
+     *        chosen folder) survives losing the phone or deleting the app,
+     *        so only that one is "Backed up". See backupCoverage.ts.
      *      - Otherwise → user must back up before they can recover.
      *
      * Resulting buckets:
-     *   - `'backed-up'`     — Pubkey/Spendable AND `arkLastBackupAt != null`
-     *   - `'needs-backup'`  — Pubkey/Spendable but no backup yet
-     *   - `'in-flight'`     — Locked / Server HTLC / Board / Exit (not
-     *                          backable in this state)
+     *   - `'backed-up'`       — Pubkey/Spendable AND `arkLastOffDeviceBackupAt != null`
+     *   - `'this-phone-only'` — Pubkey/Spendable, backed up inside the app only
+     *   - `'needs-backup'`    — Pubkey/Spendable but no backup yet
+     *   - `'in-flight'`       — Locked / Server HTLC / Board / Exit (not
+     *                            backable in this state)
      */
-    recoverability: 'backed-up' | 'needs-backup' | 'in-flight';
+    recoverability: CapsuleRecoverability;
 }
 
 interface VtxoRowProps {
@@ -274,6 +323,18 @@ interface VtxoRowProps {
      * can't refresh, but bark 0.6.1 takes a batch whose sum clears dust).
      */
     onDustRefresh: () => void;
+    /**
+     * Tap on RECOVER, or on the row, of an expired capsule big enough to
+     * recover. The parent shows the explainer, which says recovery depends on
+     * Second.tech, and only then offers the action.
+     */
+    onRecoverExpired: () => void;
+    /**
+     * True while an expired-capsule recovery runs (dialogs included). RECOVER
+     * reads "…" and ignores taps meanwhile; the module latch in
+     * expiredRecovery.ts is what actually stops a second submission.
+     */
+    recoveringExpired: boolean;
     /**
      * True while the user-initiated cancel is in flight (between tap and
      * post-cancel sync). Drives a "Cancelling" UI state — the per-row
@@ -311,20 +372,23 @@ function formatRoundUpperBound(secs: number): string {
  * Detailed remaining-time label for the refresh / in-flight state. While a
  * round runs the user is racing the capsule's (pre-refresh) expiry, so hours
  * matter, not just whole days. Examples: "2d 2h left", "5h left", "45m left",
- * "expiring" (≈0 or past). Returns null for arkoor / unknown expiry.
+ * "expired". Rows clamp blocks-left at 0, so 0 means the tip has reached the
+ * expiry height: the capsule is already expired (a recovery round can be
+ * running on it), not about to expire.
  */
 function formatTimeLeftDetailed(daysLeft: number): string {
-    if (!Number.isFinite(daysLeft) || daysLeft <= 0) return 'expiring';
+    if (!Number.isFinite(daysLeft)) return loc.cypherbox.strike.ark_capsules.expiring;
+    if (daysLeft <= 0) return loc.cypherbox.strike.ark_capsules.expired_short;
     const totalHours = daysLeft * 24;
     if (totalHours >= 24) {
         const days = Math.floor(daysLeft);
         const hours = Math.round((daysLeft - days) * 24);
         // Carry: "1d 24h" reads wrong, roll it into the next day.
-        if (hours >= 24) return `${days + 1}d left`;
-        return hours > 0 ? `${days}d ${hours}h left` : `${days}d left`;
+        if (hours >= 24) return String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_d, { d: days + 1 }));
+        return hours > 0 ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_dh, { d: days, h: hours })) : String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_d, { d: days }));
     }
-    if (totalHours >= 1) return `${Math.round(totalHours)}h left`;
-    return `${Math.max(1, Math.round(totalHours * 60))}m left`;
+    if (totalHours >= 1) return String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_h, { h: Math.round(totalHours) }));
+    return String(loc.formatString(loc.cypherbox.strike.ark_capsules.left_m, { m: Math.max(1, Math.round(totalHours * 60)) }));
 }
 
 /**
@@ -333,7 +397,7 @@ function formatTimeLeftDetailed(daysLeft: number): string {
  * "coin" column (depletion ring instead of UTXO capsule mask), and the
  * selection halo color is yellow (Ark) instead of green (Vault).
  */
-function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustRefresh, isCancelling, roundIntervalSecs, failedAttempts }: VtxoRowProps) {
+function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustRefresh, onRecoverExpired, recoveringExpired, isCancelling, roundIntervalSecs, failedAttempts }: VtxoRowProps) {
     const view = getExpiryView(vtxo.daysLeft);
     const BTCAmount = formatCapsuleAmount(vtxo.sats);
 
@@ -409,11 +473,14 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
     // behaviour is identical (capsule is locked, unspendable until the
     // operation commits).
     const isTransientForLabel = vtxo.pendingRound || vtxo.recoverability === 'in-flight';
-    // Expired rows render greyed and non-actionable: grey "Expired"
-    // label, grey amount, no recoverability suffix (a backup can't
-    // resurrect an expired VTXO), badge instead of refresh/select, and
-    // tap opens an explainer instead of toggling selection.
+    // Expired rows render greyed: grey "Expired" label, grey amount, no
+    // recoverability suffix (a backup can't resurrect an expired VTXO), and
+    // no refresh/select. A capsule big enough to recover gets a RECOVER
+    // button instead; a smaller one keeps the EXPIRED badge. Tapping the row
+    // opens the explainer either way.
     const isExpired = isExpiredCapsule(vtxo);
+    const expiredRecoverable =
+        isExpired && expiredCapsuleRecoverability(vtxo.sats, ARK_REFRESH_MIN_SATS) === 'recoverable';
     // Too small to refresh: below the round minimum and otherwise a normal
     // spendable capsule. The server rejects sub-minimum inputs, so it can't
     // join a refresh round — non-selectable for batch/refresh. Excludes
@@ -435,15 +502,15 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                 ? '#888'
                 : view.color;
     const labelText = isExiting
-        ? 'Exiting on-chain\n(sweeps after the ~24h timelock)'
+        ? loc.cypherbox.strike.ark_capsules.label_exiting
         : isTransientForLabel
             ? (isCancelling
-                ? 'Cancelling\n(takes less than an hour)'
+                ? loc.cypherbox.strike.ark_capsules.label_cancelling
                 : (failedAttempts && failedAttempts > 0
-                    ? `Refreshing or In-flight\n⚠️ ${failedAttempts} refresh attempt${failedAttempts === 1 ? '' : 's'} failed`
-                    : 'Refreshing or In-flight\n(takes less than an hour)'))
+                    ? String(loc.formatString((failedAttempts === 1 ? loc.cypherbox.strike.ark_capsules.label_refresh_failed_one : loc.cypherbox.strike.ark_capsules.label_refresh_failed_other), { count: failedAttempts }))
+                    : loc.cypherbox.strike.ark_capsules.label_refreshing))
             : isExpired
-                ? 'Expired'
+                ? loc.cypherbox.strike.ark_capsules.label_expired
                 : vtxo.unknownExpiry
                     ? vtxo.kind
                     : formatExpiryLeft(vtxo.daysLeft);
@@ -451,28 +518,27 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
     // reads full/green, no deadline). Matches the red countdown text.
     const ringDaysLeft = vtxo.daysLeft;
 
-    // Explainer for expired capsules, the only "action" the row keeps.
+    // Explainer for expired capsules.
     //
-    // Deliberately does NOT claim the funds are unrecoverable. Second.tech
-    // allows refreshes after the expiry height, during a grace window before
-    // the ASP sweeps, so "lost forever" stated a certainty we cannot back and
-    // told users to give up at the point they might still have acted. What we
-    // can honestly say is that the server may sweep at any time and recovery
-    // is not guaranteed.
+    // Recoverable ones go to the parent, which shows the explainer with the
+    // recovery action on it: the user always reads that recovery depends on
+    // Second.tech before being offered it. The copy says what is true today
+    // (Second.tech returns expired capsules, at its discretion, with no
+    // guarantee) rather than "lost forever", which was wrong, or a promise,
+    // which would be worse. See services/ark/expiredRecovery.ts.
     //
-    // The same correction was applied to every other surface that carried the
-    // "lost forever" / "cannot be recovered" framing: the header tagline
-    // below, the useArkSync expiry alert, the Settings and
-    // CheckingAccountCreated reminder copy, and ArkCapsulesInfoScreen. Keep
-    // them in step if this wording changes again.
+    // Keep the other expiry surfaces in step if this wording changes: the
+    // header tagline below, the useArkSync refresh-failing alert, the Settings
+    // and CheckingAccountCreated reminder copy, and ArkCapsulesInfoScreen.
     const showExpiredExplainer = () => {
+        if (expiredRecoverable) {
+            onRecoverExpired();
+            return;
+        }
         Alert.alert(
-            'Capsule expired',
-            `This ${vtxo.sats.toLocaleString()}-sat capsule passed its expiry without a successful refresh.\n\n` +
-            'After expiry the Second.tech server can sweep these funds at any time, so they may already be gone. ' +
-            'Recovery is not guaranteed.\n\n' +
-            "Refresh your other capsules before they expire so this doesn't happen to them.",
-            [{ text: 'OK' }],
+            loc.cypherbox.strike.ark_capsules.expired_alert_title,
+            String(loc.formatString(loc.cypherbox.strike.ark_capsules.expired_too_small_message, { sats: vtxo.sats.toLocaleString(), min: ARK_REFRESH_MIN_SATS })),
+            [{ text: loc._.ok }],
         );
     };
 
@@ -481,35 +547,41 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
     // Bam finalizes.
     const showDustExplainer = () => {
         Alert.alert(
-            'Too small to refresh',
-            `This ${vtxo.sats.toLocaleString()}-sat capsule is below the ~${ARK_REFRESH_MIN_SATS}-sat round minimum, so it can't be refreshed on its own.\n\n` +
-            'Spend it in a payment before it expires. A normal send folds it in.',
-            [{ text: 'OK' }],
+            loc.cypherbox.strike.ark_capsules.dust_alert_title,
+            String(loc.formatString(loc.cypherbox.strike.ark_capsules.dust_alert_message, { sats: vtxo.sats.toLocaleString(), min: ARK_REFRESH_MIN_SATS })),
+            [{ text: loc._.ok }],
         );
     };
 
-    // Recoverability suffix — appended to the existing expiry/state line as
-    // a second colored span separated by " - ". Three states drive both
-    // the icon and the message; see VtxoRowData.recoverability for the
-    // full classification rationale.
-    //   ✓ Backed up         — Pubkey/Spendable + recent .cbark exists (green)
-    //   ⚠ Back up first     — Pubkey/Spendable but no backup recorded (orange)
-    //   ⚠ In-flight         — Locked / HTLC / Board / Exit (yellow, can't
-    //                          be reliably backed up in this state)
+    // Recoverability line, under the expiry/state line in its own colour.
+    // Three states drive both the icon and the message; see
+    // VtxoRowData.recoverability for the full classification rationale.
+    //   ✓ Backed up          — Pubkey/Spendable + a copy outside the app (green)
+    //   ⚠ On this phone only — Pubkey/Spendable, .cbark inside the app only (orange)
+    //   ⚠ Back up first      — Pubkey/Spendable but no backup recorded (orange)
+    //   ⚠ In-flight          — Locked / HTLC / Board / Exit (yellow, can't
+    //                           be reliably backed up in this state)
     let recoverabilityText: string;
     let recoverabilityColor: string;
     switch (vtxo.recoverability) {
         case 'backed-up':
-            recoverabilityText = "✓ Backed up";
+            recoverabilityText = loc.cypherbox.strike.ark_capsules.backed_up;
             recoverabilityColor = "#4ADE80";
             break;
+        case 'this-phone-only':
+            // Same orange as "Back up to recover": the file is lost with the
+            // phone or the app, which the reminders on Home and in Settings
+            // ask the user to fix.
+            recoverabilityText = loc.cypherbox.strike.ark_capsules.this_phone_only;
+            recoverabilityColor = "#FB923C";
+            break;
         case 'needs-backup':
-            recoverabilityText = "⚠ Back up to recover";
+            recoverabilityText = loc.cypherbox.strike.ark_capsules.needs_backup;
             recoverabilityColor = "#FB923C"; // orange — actionable, not just informative
             break;
         case 'in-flight':
         default:
-            recoverabilityText = "In-flight";
+            recoverabilityText = loc.cypherbox.strike.ark_capsules.in_flight;
             recoverabilityColor = colors.ark.light;
             break;
     }
@@ -572,25 +644,26 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                 />
             )}
             {/* Outer row tap toggles selection. For ANY expired capsule
-                (dust or not) the action area renders EXPIRED instead of
-                a refresh icon / checkbox, so there's nothing useful to
-                toggle — the tap opens the expiry explainer instead. */}
+                (dust or not) the action area renders RECOVER or EXPIRED
+                instead of a refresh icon / checkbox, so there's nothing
+                useful to toggle: the tap opens the expiry explainer
+                instead. */}
             <TouchableOpacity
                 activeOpacity={0.7}
                 style={rowStyles.container}
                 onPress={isExpired ? showExpiredExplainer : isDust ? showDustExplainer : onPress}
             >
                 {/* Trim the coin (ring) column's flex from 2.2 → 1.5 and
-                    bump the size column from 1.8 → 2.8 so the time-left +
-                    status row has room to fit on a single line. flexWrap
-                    flipped to 'nowrap' + numberOfLines=1 on each Text so
-                    they elide rather than wrap if anything overflows. */}
+                    bump the size column from 1.8 → 2.8 so the amount, the
+                    time-left line and the status line under it have room.
+                    numberOfLines on each Text makes them elide rather than
+                    wrap if anything overflows. */}
                 <View style={[rowStyles.coin, { flex: 1.5 }]}>
                     <VtxoRing daysLeft={ringDaysLeft} />
                 </View>
                 <View style={[rowStyles.size, { flex: 2.8 }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
-                        <Text bold style={isExpired ? [rowStyles.value, { color: '#888' }] : rowStyles.value}>{BTCAmount}</Text>
+                        <Text bold amount style={isExpired ? [rowStyles.value, { color: '#888' }] : rowStyles.value}>{BTCAmount}</Text>
                         {/* Dust badge: capsules at or below the on-chain
                             dust limit can't be refreshed (ASP rejects)
                             and create stranded change if used in a send
@@ -626,24 +699,26 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                                     a red border. Going direct keeps
                                     the red. */}
                                 <RNText style={{ fontSize: 9, color: '#FF7A68', fontWeight: '700' }}>
-                                    DUST
+                                    {loc.cypherbox.strike.ark_capsules.dust_pill}
                                 </RNText>
                             </View>
                         )}
                     </View>
-                    {/* When the VTXO is in-flight, stack the recoverability
-                        label on its own row below — the "⚠ In-flight"
-                        message is too important to compete with the days-
-                        left text on the same line. Other recoverability
-                        states keep the inline " - <text>" layout. */}
+                    {/* The recoverability label ("✓ Backed up", "⚠ On this
+                        phone only", ...) sits on its own line under the
+                        days-left text. Side by side on one line they ran
+                        past this column into the refresh icon and the dust
+                        button. In-flight and expired rows show their own
+                        label instead. */}
                     {vtxo.recoverability === 'in-flight' || isExpired ? (
                         // The two-line italic label above already says
                         // "Refreshing or In-flight\n(takes less than an hour)"
                         // so we drop the separate recoverabilityText
                         // suffix on this branch — it'd just say
                         // "In-flight" again. Expired rows drop the suffix
-                        // too: "Backed up" next to a dead capsule reads
-                        // as "recoverable", which it is not.
+                        // too: "Backed up" next to an expired capsule
+                        // reads as "your backup protects this", and it
+                        // does not. Only Second.tech can return it now.
                         //
                         // While a refresh round is in flight the capsule is
                         // still racing its (pre-refresh) expiry, so keep the
@@ -661,30 +736,47 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                             )}
                         </View>
                     ) : (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'nowrap' }}>
+                        <View>
                             <Text bold numberOfLines={2} style={{ color: labelColor, fontSize: 12, fontStyle: "italic" }}>
                                 {labelText}
                             </Text>
                             {!isTransientForLabel && (
-                                <>
-                                    <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 12 }}>
-                                        {" - "}
-                                    </Text>
-                                    <Text bold numberOfLines={1} style={{ color: recoverabilityColor, fontSize: 12 }}>
-                                        {recoverabilityText}
-                                    </Text>
-                                </>
+                                <Text bold numberOfLines={2} style={{ color: recoverabilityColor, fontSize: 12 }}>
+                                    {recoverabilityText}
+                                </Text>
                             )}
                         </View>
                     )}
                 </View>
-                {isExpired ? (
-                    // Expired action area: no refresh icon, no checkbox —
-                    // neither is reachable on a VTXO past its expiry height
-                    // (the ASP can sweep it at any time, and bark's refresh on
-                    // an expired input hangs the round). The badge expands to
-                    // the combined width of the icon + select columns (flex 2).
-                    // Outer row tap opens the expiry explainer.
+                {expiredRecoverable ? (
+                    // Expired, big enough to recover: no refresh icon or
+                    // checkbox (an expired capsule never joins a normal
+                    // refresh batch), but a RECOVER button over the same
+                    // flex 2 the icon + select columns use. It opens the same
+                    // explainer as the row, so the "depends on Second.tech"
+                    // warning always comes before the action.
+                    <TouchableOpacity
+                        style={[expiredRowStyles.recoverButton, recoveringExpired && expiredRowStyles.recoverButtonBusy]}
+                        onPress={onRecoverExpired}
+                        disabled={recoveringExpired}
+                        delayPressIn={0}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.6}
+                        accessibilityRole="button"
+                    >
+                        {recoveringExpired ? (
+                            <ActivityIndicator size="small" color={RECOVER_ORANGE} />
+                        ) : (
+                            <RNText style={expiredRowStyles.recoverText}>
+                                {loc.cypherbox.strike.ark_capsules.recover_button}
+                            </RNText>
+                        )}
+                    </TouchableOpacity>
+                ) : isExpired ? (
+                    // Expired and too small to recover (below the refresh
+                    // floor): no action at all. The badge expands to the
+                    // combined width of the icon + select columns (flex 2).
+                    // Outer row tap opens the explainer.
                     <View
                         style={{
                             flex: 2,
@@ -700,7 +792,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                         }}
                     >
                         <RNText style={{ fontSize: 10, color: '#888', fontWeight: '700', textAlign: 'center' }}>
-                            {vtxo.sats <= ARK_VTXO_DUST_SATS ? 'EXPIRED DUST' : 'EXPIRED'}
+                            {vtxo.sats <= ARK_VTXO_DUST_SATS ? loc.cypherbox.strike.ark_capsules.expired_dust_badge : loc.cypherbox.strike.ark_capsules.expired_badge}
                         </RNText>
                     </View>
                 ) : isDust ? (
@@ -729,7 +821,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                         activeOpacity={0.6}
                     >
                         <RNText style={{ fontSize: 10, color: '#FFFFFF', fontWeight: '700', textAlign: 'center' }}>
-                            DUST REFRESH
+                            {loc.cypherbox.strike.ark_capsules.dust_refresh_button}
                         </RNText>
                     </TouchableOpacity>
                 ) : (
@@ -774,7 +866,7 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                             ) : isTransient ? (
                                 isCancelling ? (
                                     <Text bold style={{ color: colors.redLight, fontSize: 12 }}>
-                                        Cancelling
+                                        {loc.cypherbox.strike.ark_capsules.cancelling}
                                     </Text>
                                 ) : (
                                     <Icon name="x" type="feather" color={colors.redLight} size={24} />
@@ -953,12 +1045,12 @@ function PendingLnReceiveRow({ sats, onPress }: PendingLnReceiveRowProps) {
                     </Animated.View>
                 </View>
                 <View style={[rowStyles.size, { flex: 2.8 }]}>
-                    <Text bold style={rowStyles.value}>{BTCAmount}</Text>
+                    <Text bold amount style={rowStyles.value}>{BTCAmount}</Text>
                     <Text bold numberOfLines={1} style={{ color: colors.ark.light, fontSize: 12, fontStyle: "italic" }}>
-                        Claiming via round…
+                        {loc.cypherbox.strike.ark_capsules.claiming_via_round}
                     </Text>
                     <Text numberOfLines={1} style={{ color: colors.gray.light, fontSize: 11 }}>
-                        {onPress ? "Lightning ~1–3 min · tap to cancel" : "Lightning ~1–3 min"}
+                        {onPress ? loc.cypherbox.strike.ark_capsules.ln_eta_tap_to_cancel : loc.cypherbox.strike.ark_capsules.ln_eta}
                     </Text>
                 </View>
                 {/* Bolt icon in the refresh column — visually distinguishes
@@ -1038,10 +1130,10 @@ function VaultConnectivityPill({ conn }: { conn: VaultConnectivity }) {
 
     const label =
         level === 'green'
-            ? 'Vault connected'
+            ? loc.cypherbox.strike.ark_capsules.vault_connected
             : level === 'yellow'
-                ? `Vault connection slow (updated ${ageLabel})`
-                : `Vault offline (last updated ${ageLabel})`;
+                ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.vault_slow, { age: ageLabel }))
+                : String(loc.formatString(loc.cypherbox.strike.ark_capsules.vault_offline, { age: ageLabel }));
 
     return (
         <View style={{ marginBottom: 6 }}>
@@ -1063,7 +1155,7 @@ function VaultConnectivityPill({ conn }: { conn: VaultConnectivity }) {
                 are projections rather than reads. */}
             {!conn.tip.trusted && (
                 <RNText style={{ fontSize: 11, color: '#ddd', marginTop: 3 }}>
-                    Times below are estimates until the vault reconnects.
+                    {loc.cypherbox.strike.ark_capsules.times_are_estimates}
                 </RNText>
             )}
         </View>
@@ -1078,10 +1170,10 @@ function VaultConnectivityPill({ conn }: { conn: VaultConnectivity }) {
  */
 function formatAgo(ms: number): string {
     const mins = Math.floor(ms / 60000);
-    if (mins < 60) return `${Math.max(1, mins)}m ago`;
+    if (mins < 60) return String(loc.formatString(loc.cypherbox.strike.ark_capsules.ago_m, { m: Math.max(1, mins) }));
     const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
-    return `${Math.floor(hours / 24)}d ago`;
+    if (hours < 24) return String(loc.formatString(loc.cypherbox.strike.ark_capsules.ago_h, { h: hours }));
+    return String(loc.formatString(loc.cypherbox.strike.ark_capsules.ago_d, { d: Math.floor(hours / 24) }));
 }
 
 /**
@@ -1094,6 +1186,9 @@ function formatAgo(ms: number): string {
  * agree.
  */
 const DUST_TOPUP_TARGET_SATS = 700;
+
+/** Expired capsules one recovery acts on, and their total in sats. */
+type ExpiredSet = { ids: string[]; total: number };
 
 export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps) {
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -1108,6 +1203,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // before either render lands. Same reason the round paths keep their
     // own latches (see arkRefreshingVtxoIds, which is not a mutex).
     const pullRefreshInFlight = useRef(false);
+    // Drives the RECOVER button's busy state only. The guard against a second
+    // submission is the module latch in services/ark/expiredRecovery.ts, which
+    // is set synchronously and survives this tab unmounting.
+    const [recoveringExpired, setRecoveringExpired] = useState(false);
+    // Wallet objects, for the Hot Vault address the expired-capsule move uses
+    // (same lookup as ArkStuckCapsuleScreen).
+    const { wallets } = useContext(BlueStorageContext);
+    const hotVaultWalletID = useAuthStore((s) => s.walletID);
     // True between cancel-tap and the round actually clearing (NOT just
     // until our cancel call returns). bark's cancel can return failure
     // due to a transient internal-lock timeout while the round itself
@@ -1127,6 +1230,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // countdowns trusted a tip of any age.
     const arkChainTipHeightAt = useAuthStore((s) => s.arkChainTipHeightAt);
     const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
+    const arkLastOffDeviceBackupAt = useAuthStore((s) => s.arkLastOffDeviceBackupAt);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
     // Read-only on this screen — the toggle lives on the Ark Settings
     // tab. Surfaced as a small on/off status above the explainer tagline
@@ -1152,7 +1256,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const setArkPendingDustSweep = useAuthStore((s) => s.setArkPendingDustSweep);
     // Both dust escape hatches are swaps with CoinOS, so neither is offered
     // when it is not connected.
-    const isCoinosConnected = useAuthStore((s) => s.isAuth) === true;
+    const isCoinosConnected = useAuthStore((s) => s.isAuth) === true && isCoinosAllowed();
     const setArkPendingTapRefresh = useAuthStore((s) => s.setArkPendingTapRefresh);
     const arkRefreshStuck = useAuthStore((s) => s.arkRefreshStuck);
     const setArkRefreshStuck = useAuthStore((s) => s.setArkRefreshStuck);
@@ -1265,7 +1369,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 // this gesture submits nothing. The remedy text after the
                 // prefix is the existing shared network-fault copy.
                 SimpleToast.show(
-                    describeArkFailure(err, "Couldn't update", {
+                    describeArkFailure(err, loc.cypherbox.strike.ark_capsules.couldnt_update, {
                         chainUrls: ESPLORA_URLS,
                         arkUrl: ARK_SERVER_URL,
                     }),
@@ -1296,7 +1400,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             }
         }
         setArkRefreshStuck(null);
-        SimpleToast.show('Recovering stuck refresh…', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.strike.ark_capsules.recovering_stuck, SimpleToast.SHORT);
     }, [setArkRefreshStuck]);
 
     // Block-height the wallet's policy says we need to refresh by, or null
@@ -1371,6 +1475,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     // no misleading time estimate.
     const rows: VtxoRowData[] = useMemo(() => {
         const refreshingSet = new Set(arkRefreshingVtxoIds);
+        const coverage = arkBackupCoverage(arkLastBackupAt, arkLastOffDeviceBackupAt);
         const mapped = arkVtxos.map((v) => {
             const stateLower = v.state.toLowerCase();
             const kindLower = v.kind.toLowerCase();
@@ -1379,23 +1484,25 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // tracked ids too (see isVtxoMidRound).
             const pendingRound = isVtxoMidRound(v, refreshingSet);
 
-            // Tri-state recoverability — see VtxoRowData.recoverability
-            // for the full reasoning. Quick summary: a Pubkey/Spendable
-            // VTXO can be safely backed up (and therefore recovered);
-            // anything in flight cannot. The user-facing distinction
-            // between "Backed up" and "Back up first" is whether
-            // arkLastBackupAt is set — not whether it postdates this
-            // specific VTXO (we don't track per-VTXO mtime). That's
-            // slightly optimistic when a fresh VTXO appears AFTER the
-            // last backup, but the existence of any backup is the
-            // dominant signal users care about.
+            // Recoverability — see VtxoRowData.recoverability for the full
+            // reasoning. Quick summary: a Pubkey/Spendable VTXO can be
+            // safely backed up (and therefore recovered); anything in
+            // flight cannot. Which label it gets depends on where the last
+            // backups went, not on whether one postdates this specific VTXO
+            // (we don't track per-VTXO mtime). That's slightly optimistic
+            // when a fresh VTXO appears AFTER the last backup, but where the
+            // file lives is the signal users care about: "Backed up" only
+            // when a copy is outside the app, since the app's own folder
+            // goes with the phone.
             const isStablyOwned = kindLower === 'pubkey' && stateLower === 'spendable';
-            const recoverability: 'backed-up' | 'needs-backup' | 'in-flight' =
+            const recoverability: CapsuleRecoverability =
                 !isStablyOwned
                     ? 'in-flight'
-                    : arkLastBackupAt
+                    : coverage === 'off-device'
                         ? 'backed-up'
-                        : 'needs-backup';
+                        : coverage === 'this-phone'
+                            ? 'this-phone-only'
+                            : 'needs-backup';
 
             // expiryHeight === 0 happens for arkoor VTXOs that inherit their
             // parent's expiry rather than declaring their own.
@@ -1423,19 +1530,20 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 recoverability,
             };
         });
-        // Sort: expired capsules (dust or not) to the bottom of the list.
-        // They're functionally logs — past expiry, no refresh path, no
-        // send path, no exit path. Above-the-fold prominence is wasted
-        // on them; users should see live capsules first and scroll past
-        // the carcasses. Everything else preserves the SDK's natural
-        // order.
-        return mapped.sort((a, b) => {
-            const aDead = isExpiredCapsule(a);
-            const bDead = isExpiredCapsule(b);
-            if (aDead !== bDead) return aDead ? 1 : -1;
-            return 0;
-        });
-    }, [arkVtxos, chainTipHeight, arkLastBackupAt, arkRefreshingVtxoIds]);
+        // Sort: expired capsules big enough to recover go to the TOP. They
+        // are the one thing on this tab that can't wait: recovery works only
+        // while Second.tech keeps allowing it, so the RECOVER button belongs
+        // above the fold. Expired capsules too small to recover go to the
+        // bottom: no action exists for them, and live capsules matter more.
+        // Everything else keeps the SDK's natural order (sort is stable).
+        const sortRank = (r: VtxoRowData) =>
+            !isExpiredCapsule(r)
+                ? 1
+                : expiredCapsuleRecoverability(r.sats, ARK_REFRESH_MIN_SATS) === 'recoverable'
+                    ? 0
+                    : 2;
+        return mapped.sort((a, b) => sortRank(a) - sortRank(b));
+    }, [arkVtxos, chainTipHeight, arkLastBackupAt, arkLastOffDeviceBackupAt, arkRefreshingVtxoIds]);
 
     // Auto-refresh when the user landed here from a tapped expiry-warning
     // notification. The scheduler's tap handler set arkPendingTapRefresh
@@ -1552,19 +1660,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
         if (batch.ids.length === 0 && batch.strandedDustCount > 0) {
             SimpleToast.show(
-                `Your imminent capsule${batch.strandedDustCount === 1 ? '' : 's'} ` +
-                `(${batch.strandedDustSats.toLocaleString()} sats) ` +
-                `${batch.strandedDustCount === 1 ? 'is' : 'are'} below the ` +
-                `${ARK_REFRESH_MIN_SATS}-sat refresh minimum. Spend ` +
-                `${batch.strandedDustCount === 1 ? 'it' : 'them'} in a payment before ` +
-                `${batch.strandedDustCount === 1 ? 'it expires' : 'they expire'}.`,
+                String(loc.formatString((batch.strandedDustCount === 1 ? loc.cypherbox.strike.ark_capsules.imminent_dust_one : loc.cypherbox.strike.ark_capsules.imminent_dust_other), { sats: batch.strandedDustSats.toLocaleString(), min: ARK_REFRESH_MIN_SATS })),
                 SimpleToast.LONG,
             );
             return;
         }
 
         if (batch.ids.length === 0) {
-            SimpleToast.show('No capsules need refreshing right now.', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.no_capsules_need_refresh, SimpleToast.SHORT);
             return;
         }
 
@@ -1594,7 +1697,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         const row = rows.find((r) => r.id === id);
         if (row?.exiting) {
             SimpleToast.show(
-                'This capsule is exiting on-chain and can no longer be spent or refreshed.',
+                loc.cypherbox.strike.ark_capsules.capsule_exiting,
                 SimpleToast.SHORT,
             );
             return;
@@ -1622,6 +1725,31 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     };
 
     /**
+     * Make sure the bark handle is open before a round or a move.
+     *
+     * The SDK throws "Ark wallet not open" if `getArkWalletHandle()` is null.
+     * That happens on a cold launch when the user dismissed (or never saw) the
+     * boot-time biometric prompt that `useArkRestoreOnBoot` fires. The capsule
+     * rows render fine off zustand-persisted state, so the user can reach
+     * Refresh or Recover before the handle is ready. Re-attempt the restore
+     * here so we re-prompt biometric and recover transparently. Returns false
+     * after telling the user why when it can't.
+     */
+    const ensureWalletHandleOrExplain = async (): Promise<boolean> => {
+        if (getArkWalletHandle()) return true;
+        const result = await restoreArkWalletFromDisk();
+        if (result.restored || result.reason === "already-open") return true;
+        const detail =
+            result.reason === "no-keychain"
+                ? loc.cypherbox.strike.ark_capsules.unlock_declined
+                : result.reason === "no-datadir"
+                    ? loc.cypherbox.strike.ark_capsules.wallet_data_missing
+                    : loc.cypherbox.strike.ark_capsules.wallet_open_failed;
+        SimpleToast.show(detail, SimpleToast.LONG);
+        return false;
+    };
+
+    /**
      * Refresh a specific set of VTXO ids. Reused by the bottom Refresh
      * button (passes selectedIds), the per-row icon (passes a single
      * vtxo.id), and the auto-refresh-on-tap effect above
@@ -1636,39 +1764,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         if (refreshing) return;
         if (ids.length === 0) return;
 
-        // Hard gate: the SDK throws "Ark wallet not open" if `getArkWalletHandle()`
-        // is null. That happens on a cold launch when the user dismissed (or never
-        // saw) the boot-time biometric prompt that `useArkRestoreOnBoot` fires.
-        // The capsule rows render fine off zustand-persisted state, so the user
-        // can reach Refresh before the handle is ready. Re-attempt the restore
-        // here so we re-prompt biometric and recover transparently.
-        if (!getArkWalletHandle()) {
-            const result = await restoreArkWalletFromDisk();
-            if (!result.restored && result.reason !== "already-open") {
-                const detail =
-                    result.reason === "no-keychain"
-                        ? "Unlock prompt was declined. Restart the app and confirm the biometric prompt to unlock the Ark wallet."
-                        : result.reason === "no-datadir"
-                            ? "Ark wallet data is missing on this device. Use Recover from the home screen to restore it."
-                            : "Could not open the Ark wallet right now. Try again in a few seconds.";
-                SimpleToast.show(detail, SimpleToast.LONG);
-                return;
-            }
-        }
+        if (!(await ensureWalletHandleOrExplain())) return;
 
-        // Expired capsules can't ride in a round (the ASP rejects expired
-        // inputs and the attempt would wedge). The row UI blocks selecting
-        // them, but a capsule can flip to expired between selection and
-        // tap, so gate here too.
+        // Expired capsules never ride in a normal refresh batch: one input the
+        // ASP refuses sinks the whole round, and they have their own recovery
+        // action with its own warning. The row UI blocks selecting them, but a
+        // capsule can flip to expired between selection and tap, so drop them
+        // here and refresh the rest.
         const expiredSelected = rows.filter(
             (r) => ids.includes(r.id) && isExpiredCapsule(r),
         );
         if (expiredSelected.length > 0) {
             SimpleToast.show(
-                `${expiredSelected.length} capsule(s) already expired and can no longer be refreshed`,
+                String(loc.formatString(loc.cypherbox.strike.ark_capsules.selected_expired, { count: expiredSelected.length })),
                 SimpleToast.LONG,
             );
-            return;
+            ids = ids.filter((id) => !expiredSelected.some((r) => r.id === id));
+            if (ids.length === 0) return;
         }
 
         // Actively-exiting capsules can't ride a round either — the exit
@@ -1678,7 +1790,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         );
         if (exitingSelected.length > 0) {
             SimpleToast.show(
-                `${exitingSelected.length} capsule(s) are exiting on-chain and can no longer be refreshed`,
+                String(loc.formatString(loc.cypherbox.strike.ark_capsules.selected_exiting, { count: exitingSelected.length })),
                 SimpleToast.LONG,
             );
             return;
@@ -1693,7 +1805,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         );
         if (lockedSelected.length > 0) {
             SimpleToast.show(
-                `${lockedSelected.length} capsule(s) already in a pending round. Wait for it to finalise before refreshing again`,
+                String(loc.formatString(loc.cypherbox.strike.ark_capsules.selected_locked, { count: lockedSelected.length })),
                 SimpleToast.LONG,
             );
             return;
@@ -1718,18 +1830,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             );
             if (refreshable.length === 0) {
                 SimpleToast.show(
-                    `${dustSats}-sat capsule${dustRows.length === 1 ? ' is' : 's are'} too small ` +
-                    `to refresh (server minimum ~${ARK_REFRESH_MIN_SATS}). ` +
-                    `Spend ${dustRows.length === 1 ? 'it' : 'them'} in a payment ` +
-                    `before ${dustRows.length === 1 ? 'it expires' : 'they expire'}.`,
+                    String(loc.formatString((dustRows.length === 1 ? loc.cypherbox.strike.ark_capsules.dust_all_one : loc.cypherbox.strike.ark_capsules.dust_all_other), { sats: dustSats, min: ARK_REFRESH_MIN_SATS })),
                     SimpleToast.LONG,
                 );
                 return;
             }
             SimpleToast.show(
-                `Skipping ${dustRows.length} tiny capsule${dustRows.length === 1 ? '' : 's'} ` +
-                `(${dustSats} sats, below the ~${ARK_REFRESH_MIN_SATS}-sat minimum). ` +
-                `Spend ${dustRows.length === 1 ? 'it' : 'them'} in a payment. Refreshing the rest.`,
+                String(loc.formatString((dustRows.length === 1 ? loc.cypherbox.strike.ark_capsules.dust_skipping_one : loc.cypherbox.strike.ark_capsules.dust_skipping_other), { count: dustRows.length, sats: dustSats, min: ARK_REFRESH_MIN_SATS })),
                 SimpleToast.LONG,
             );
             ids = refreshable;
@@ -1774,7 +1881,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             }
             if (ids.length === 0) {
                 SimpleToast.show(
-                    'Those capsules just changed state (spent or now in a round), so there is nothing left to refresh.',
+                    loc.cypherbox.strike.ark_capsules.capsules_changed_state,
                     SimpleToast.LONG,
                 );
                 setRefreshing(false);
@@ -1812,16 +1919,16 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 ? true
                 : await new Promise<boolean>((resolve) => {
                     Alert.alert(
-                        "Refresh capsules?",
-                        `Re-boarding ${ids.length} capsule${ids.length === 1 ? '' : 's'} ` +
-                        `(${displayTotal.toLocaleString()} sats) into a new Ark round costs about ` +
-                        `${fee.feeSats.toLocaleString()} sats` +
-                        (feePct !== null ? `, which is ${feePct.toFixed(2)}% of the amount` : '') +
-                        `. That extends their expiry by another full lifetime. It finishes in the ` +
-                        `background within the hour, so you can close the app once it is submitted.`,
+                        loc.cypherbox.strike.ark_capsules.refresh_confirm_title,
+                        String(loc.formatString((ids.length === 1 ? loc.cypherbox.strike.ark_capsules.refresh_confirm_message_one : loc.cypherbox.strike.ark_capsules.refresh_confirm_message_other), {
+                            count: ids.length,
+                            total: displayTotal.toLocaleString(),
+                            fee: fee.feeSats.toLocaleString(),
+                            pct_clause: feePct !== null ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.refresh_confirm_pct_clause, { pct: feePct.toFixed(2) })) : '',
+                        })),
                         [
-                            { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
-                            { text: "Refresh", onPress: () => resolve(true) },
+                            { text: loc._.cancel, style: "cancel", onPress: () => resolve(false) },
+                            { text: loc.cypherbox.strike.ark_capsules.refresh_button, onPress: () => resolve(true) },
                         ],
                         { cancelable: true, onDismiss: () => resolve(false) },
                     );
@@ -1846,8 +1953,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             await refreshArkVtxosDelegatedAndSync(ids, totalIn);
             setSelectedIds([]);
             SimpleToast.show(
-                `Refresh submitted for ${ids.length} capsule${ids.length === 1 ? '' : 's'}. ` +
-                `They finish in the background within the hour, so you can close the app.`,
+                String(loc.formatString((ids.length === 1 ? loc.cypherbox.strike.ark_capsules.refresh_submitted_one : loc.cypherbox.strike.ark_capsules.refresh_submitted_other), { count: ids.length })),
                 SimpleToast.LONG,
             );
         } catch (err: any) {
@@ -1855,7 +1961,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // failure. Tell the user to let the running round finish.
             if (err instanceof ArkRefreshInFlightError) {
                 SimpleToast.show(
-                    'A refresh is already running. Wait for it to finish, then try again.',
+                    loc.cypherbox.strike.ark_capsules.refresh_already_running,
                     SimpleToast.LONG,
                 );
                 return;
@@ -1872,7 +1978,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const serverSpent = await recordServerSpentFromError(err);
             if (serverSpent) {
                 const { title, body } = notSpendableMessage(serverSpent);
-                Alert.alert(title, body, [{ text: 'OK', style: 'default' }], { cancelable: true });
+                Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
                 return;
             }
             // BarkError.Internal is the SDK's opaque catch-all when the ASP
@@ -1904,12 +2010,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 // remedy (change network, or wait out a quota), and a chip that
                 // disappears before it is read leaves them tapping Refresh
                 // again into the same wall. Alert stays until dismissed.
-                Alert.alert('Refresh failed', faultAdvice);
+                Alert.alert(loc.cypherbox.strike.ark_capsules.refresh_failed, faultAdvice);
             } else {
                 SimpleToast.show(
                     isInternalLikelyDust
-                        ? `Refresh rejected by Ark server. The ${totalSats}-sat capsule is likely below the round's minimum size. Consolidate it via a self-send before refreshing.`
-                        : describeArkFailure(err, 'Refresh failed', {
+                        ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.refresh_rejected_dust, { sats: totalSats }))
+                        : describeArkFailure(err, loc.cypherbox.strike.ark_capsules.refresh_failed, {
                               chainUrls: ESPLORA_URLS,
                               arkUrl: ARK_SERVER_URL,
                           }),
@@ -1923,7 +2029,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
     const handleRefresh = () => {
         if (selectedIds.length === 0) {
-            SimpleToast.show("Select capsules to refresh", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.select_capsules_to_refresh, SimpleToast.SHORT);
             return;
         }
         void refreshIds([...selectedIds]);
@@ -1971,7 +2077,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 void refreshIds(batch.ids);
             } else {
                 SimpleToast.show(
-                    'Your imminent capsules are still settling from a recent refresh. They should be spendable again within a minute.',
+                    loc.cypherbox.strike.ark_capsules.imminent_settling,
                     SimpleToast.LONG,
                 );
             }
@@ -1995,9 +2101,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
         if (!stuck) {
             SimpleToast.show(
-                `${lockedImminentCount} capsule${lockedImminentCount === 1 ? '' : 's'} ` +
-                `(${lockedImminentSats.toLocaleString()} sats) ${lockedImminentCount === 1 ? 'is' : 'are'} ` +
-                `already in an active refresh round. It should finalise within 3 hours.`,
+                String(loc.formatString((lockedImminentCount === 1 ? loc.cypherbox.strike.ark_capsules.active_round_one : loc.cypherbox.strike.ark_capsules.active_round_other), { count: lockedImminentCount, sats: lockedImminentSats.toLocaleString() })),
                 SimpleToast.LONG,
             );
             if (batch.ids.length > 0) {
@@ -2011,13 +2115,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         // barely over the threshold.
         const ageHours = Math.max(1, Math.round(oldestAgeMs / (60 * 60 * 1000)));
         Alert.alert(
-            'Refresh stuck',
-            `A refresh has been in progress for about ${ageHours} hour${ageHours === 1 ? '' : 's'}. ` +
-            `Cancel it and retry now to save your capsules from expiring?`,
+            loc.cypherbox.strike.ark_capsules.refresh_stuck_title,
+            String(loc.formatString((ageHours === 1 ? loc.cypherbox.strike.ark_capsules.refresh_stuck_message_one : loc.cypherbox.strike.ark_capsules.refresh_stuck_message_other), { hours: ageHours })),
             [
-                { text: 'Wait', style: 'cancel' },
+                { text: loc.cypherbox.strike.ark_capsules.wait, style: 'cancel' },
                 {
-                    text: 'Cancel & retry',
+                    text: loc.cypherbox.strike.ark_capsules.cancel_and_retry,
                     style: 'destructive',
                     onPress: () => {
                         void cancelOngoingRoundsAndRetry(
@@ -2075,7 +2178,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         }
         if (succeeded === 0) {
             SimpleToast.show(
-                'Cancel held up server-side. The round will settle in about a minute, try the notification tap again after that.',
+                loc.cypherbox.strike.ark_capsules.cancel_held_up_retry_tap,
                 SimpleToast.LONG,
             );
             return;
@@ -2129,15 +2232,14 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             // up). Toast then bail; the next foreground sync will
             // refresh them on its own once they're spendable.
             SimpleToast.show(
-                `Cancelled ${succeeded} stuck round${succeeded === 1 ? '' : 's'}. ` +
-                `Your capsules should be spendable in a moment, then refresh will run on the next sync.`,
+                String(loc.formatString((succeeded === 1 ? loc.cypherbox.strike.ark_capsules.cancelled_stuck_spendable_one : loc.cypherbox.strike.ark_capsules.cancelled_stuck_spendable_other), { count: succeeded })),
                 SimpleToast.LONG,
             );
             return;
         }
 
         SimpleToast.show(
-            `Cancelled ${succeeded} stuck round${succeeded === 1 ? '' : 's'}, retrying refresh now…`,
+            String(loc.formatString((succeeded === 1 ? loc.cypherbox.strike.ark_capsules.cancelled_stuck_retrying_one : loc.cypherbox.strike.ark_capsules.cancelled_stuck_retrying_other), { count: succeeded })),
             SimpleToast.SHORT,
         );
         void refreshIds(freshBatch.ids, { skipConfirm: true });
@@ -2182,7 +2284,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const ids = dust.map((v) => v.id);
             const total = dust.reduce((acc, v) => acc + v.sats, 0);
             if (ids.length === 0) {
-                SimpleToast.show('No dust capsules to refresh.', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.strike.ark_capsules.no_dust_capsules, SimpleToast.SHORT);
                 return;
             }
             // Gate on whether the sweep is WORTH anything, not on whether the
@@ -2220,7 +2322,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 // honest answer.
                 if (!isCoinosConnected) {
                     SimpleToast.show(
-                        `Only ${total} sats of dust so far. It needs to total at least ${ARK_REFRESH_MIN_SATS} sats before combining it is worth the fee.`,
+                        String(loc.formatString(loc.cypherbox.strike.ark_capsules.dust_total_too_low, { total, min: ARK_REFRESH_MIN_SATS })),
                         SimpleToast.LONG,
                     );
                     return;
@@ -2246,13 +2348,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 );
                 // COPY: Bam finalizes.
                 Alert.alert(
-                    "Combining these won't help yet",
-                    `${total} sats of dust across ${ids.length} capsule${ids.length === 1 ? '' : 's'}. ` +
-                    `Combining them costs a fee and still leaves you under ${ARK_REFRESH_MIN_SATS} sats, ` +
-                    `so the result would be dust again.`,
+                    loc.cypherbox.strike.ark_capsules.combine_wont_help_title,
+                    String(loc.formatString((ids.length === 1 ? loc.cypherbox.strike.ark_capsules.combine_wont_help_message_one : loc.cypherbox.strike.ark_capsules.combine_wont_help_message_other), { total, count: ids.length, min: ARK_REFRESH_MIN_SATS })),
                     [
                         {
-                            text: 'Move them to CoinOS',
+                            text: loc.cypherbox.strike.ark_capsules.move_to_coinos,
                             onPress: () => {
                                 dispatchNavigate('SwapAmount', {
                                     swapFrom: 'ark',
@@ -2270,7 +2370,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                             },
                         },
                         {
-                            text: `Top up ${shortfall} sats`,
+                            text: String(loc.formatString(loc.cypherbox.strike.ark_capsules.top_up_sats, { sats: shortfall })),
                             onPress: () => {
                                 // Arm the follow-up sweep. The swap happens on
                                 // another screen, so the intent has to outlive
@@ -2293,7 +2393,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                                 });
                             },
                         },
-                        { text: 'Not now', style: 'cancel' },
+                        { text: loc.cypherbox.strike.ark_capsules.not_now, style: 'cancel' },
                     ],
                     { cancelable: true },
                 );
@@ -2304,12 +2404,11 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 const fee = await estimateArkRefreshFee(ids);
                 const confirmed = await new Promise<boolean>((resolve) => {
                     Alert.alert(
-                        'Sweep dust?',
-                        `Combine ${ids.length} tiny capsule${ids.length === 1 ? '' : 's'} (${total} sats) into one for ~${fee.feeSats} sats. ` +
-                        `It finishes in the background within the hour, so you can close the app once it's submitted.`,
+                        loc.cypherbox.strike.ark_capsules.sweep_dust_title,
+                        String(loc.formatString((ids.length === 1 ? loc.cypherbox.strike.ark_capsules.sweep_dust_message_one : loc.cypherbox.strike.ark_capsules.sweep_dust_message_other), { count: ids.length, total, fee: fee.feeSats })),
                         [
-                            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-                            { text: 'Sweep', onPress: () => resolve(true) },
+                            { text: loc._.cancel, style: 'cancel', onPress: () => resolve(false) },
+                            { text: loc.cypherbox.strike.ark_capsules.sweep_button, onPress: () => resolve(true) },
                         ],
                         { cancelable: true, onDismiss: () => resolve(false) },
                     );
@@ -2322,13 +2421,13 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 setQueuedRoundsCount(queuedRoundsCountRef.current);
                 await refreshArkVtxosDelegatedAndSync(ids, total);
                 SimpleToast.show(
-                    'Dust sweep submitted. It finishes in the background within the hour.',
+                    loc.cypherbox.strike.ark_capsules.dust_sweep_submitted,
                     SimpleToast.LONG,
                 );
             } catch (err: any) {
                 if (err instanceof ArkRefreshInFlightError) {
                     SimpleToast.show(
-                        'A refresh is already running. Wait for it to finish, then try again.',
+                        loc.cypherbox.strike.ark_capsules.refresh_already_running,
                         SimpleToast.LONG,
                     );
                 } else {
@@ -2342,16 +2441,323 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     const dustSpent = await recordServerSpentFromError(err);
                     if (dustSpent) {
                         const { title, body } = notSpendableMessage(dustSpent);
-                        Alert.alert(title, body, [{ text: 'OK', style: 'default' }], { cancelable: true });
+                        Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
                     } else {
                         SimpleToast.show(
-                            'Dust sweep failed. Your funds are safe, nothing was spent.',
+                            loc.cypherbox.strike.ark_capsules.dust_sweep_failed,
                             SimpleToast.LONG,
                         );
                     }
                 }
             } finally {
                 setRefreshing(false);
+            }
+        })();
+    };
+
+    // --- Expired-capsule recovery -----------------------------------------
+    //
+    // Second.tech returns expired capsules today, at its discretion and with
+    // no guarantee (services/ark/expiredRecovery.ts has the evidence and the
+    // custody caveat). Recovery acts on EVERY expired capsule above the
+    // refresh floor at once, like the dust sweep: one wallet runs one round at
+    // a time, so per-capsule recovery would cost a user with many expired
+    // capsules an hour each.
+    //
+    // Two routes, tried in this order:
+    //   1. Delegated refresh into a fresh capsule. Cheapest (the fee table
+    //      bottoms out near expiry), keeps the sats in the Bark Vault, and
+    //      restores a full expiry and a working exit once the round lands.
+    //   2. If Second.tech refuses that, an offboard of exactly those capsules
+    //      to the Hot Vault, on-chain.
+    //
+    // Every step runs under the single-flight latch, so one tap can never
+    // turn into several rounds or several offboards (2026-09-20: one tap,
+    // nine offboards).
+
+    /**
+     * Resync, then the expired capsules a recovery may act on right now:
+     * still in the wallet, Spendable, not mid-round or exiting, past expiry by
+     * the same tip estimate the rows use, and above the refresh floor.
+     * `restrictTo` keeps a follow-up step (the move) to the capsules the user
+     * was already shown.
+     */
+    const collectRecoverableExpired = async (restrictTo?: string[]): Promise<ExpiredSet> => {
+        try {
+            await syncArkWallet();
+            await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+        } catch (syncErr: any) {
+            console.warn(
+                '[Ark recover-expired] pre-submit resync failed, proceeding with last-known set:',
+                syncErr?.message ?? syncErr,
+            );
+        }
+        const s = useAuthStore.getState();
+        const tip = effectiveChainTip({
+            tip: s.arkChainTipHeight,
+            fetchedAtMs: s.arkChainTipHeightAt,
+            nowMs: Date.now(),
+        });
+        const refreshingIds = s.arkRefreshingVtxoIds ?? [];
+        const picked = (s.arkVtxos ?? []).filter(
+            (v) =>
+                (!restrictTo || restrictTo.includes(v.id))
+                && v.state.toLowerCase() === 'spendable'
+                && !v.exiting
+                && !isVtxoMidRound(v, refreshingIds)
+                && isPastExpiryHeight(v.expiryHeight, tip)
+                && expiredCapsuleRecoverability(v.sats, ARK_REFRESH_MIN_SATS) === 'recoverable',
+        );
+        return {
+            ids: picked.map((v) => v.id),
+            total: picked.reduce((acc, v) => acc + v.sats, 0),
+        };
+    };
+
+    /** Next unused receive address of the Hot Vault, or null if there is none. */
+    const resolveHotVaultAddress = (): string | null => {
+        if (!hotVaultWalletID) return null;
+        const w: any = (wallets || []).find((x: any) => x?.getID?.() === hotVaultWalletID);
+        if (!w) return null;
+        try {
+            const next = w.getNextFreeAddressIndex?.() ?? 0;
+            return w._getExternalAddressByIndex?.(next) || null;
+        } catch {
+            return null;
+        }
+    };
+
+    /**
+     * Network faults get the shared "switch networks" advice in an Alert: the
+     * user has to act on it, and a toast would vanish first. Returns false when
+     * the error is not a network fault, so the caller decides what it means.
+     */
+    const explainRecoveryNetworkFault = (err: unknown): boolean => {
+        const advice = arkNetworkFaultMessage(
+            classifyArkNetworkFault(err, { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }),
+        );
+        if (!advice) return false;
+        Alert.alert(loc.cypherbox.strike.ark_capsules.recover_failed, advice);
+        return true;
+    };
+
+    /**
+     * Entry point from an expired row (its RECOVER button or a tap on the row).
+     * Shows what expiry cost and what recovery depends on before offering it.
+     */
+    const openExpiredRecovery = (vtxoId: string) => {
+        const row = rows.find((r) => r.id === vtxoId);
+        if (!row) return;
+        Alert.alert(
+            loc.cypherbox.strike.ark_capsules.expired_alert_title,
+            String(loc.formatString(loc.cypherbox.strike.ark_capsules.expired_alert_message, { sats: row.sats.toLocaleString() })),
+            [
+                { text: loc.cypherbox.strike.ark_capsules.not_now, style: 'cancel' },
+                { text: loc.cypherbox.strike.ark_capsules.recover_now, onPress: recoverExpiredByRefresh },
+            ],
+            { cancelable: true },
+        );
+    };
+
+    /** Route 1: a delegated refresh of every recoverable expired capsule. */
+    const recoverExpiredByRefresh = () => {
+        if (!beginExpiredRecovery()) {
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.recover_busy, SimpleToast.SHORT);
+            return;
+        }
+        setRecoveringExpired(true);
+        void (async () => {
+            let refused: ExpiredSet | null = null;
+            try {
+                refused = await attemptExpiredRefresh();
+            } finally {
+                endExpiredRecovery();
+                setRecoveringExpired(false);
+            }
+            // After the latch is released, because the move takes it itself.
+            if (refused && refused.ids.length > 0) offerExpiredMove(refused);
+        })();
+    };
+
+    /**
+     * The refresh itself, run under the latch. Handles every outcome it can
+     * explain on its own and returns null; returns the capsules instead when
+     * Second.tech turned the refresh down, so the caller can offer the move.
+     */
+    const attemptExpiredRefresh = async (): Promise<ExpiredSet | null> => {
+        let set: ExpiredSet = { ids: [], total: 0 };
+        try {
+            if (!(await ensureWalletHandleOrExplain())) return null;
+            set = await collectRecoverableExpired();
+            if (set.ids.length === 0) {
+                SimpleToast.show(loc.cypherbox.strike.ark_capsules.capsules_changed_state, SimpleToast.LONG);
+                return null;
+            }
+            let feeSats: number;
+            try {
+                feeSats = (await estimateArkRefreshFee(set.ids)).feeSats;
+            } catch (estErr: any) {
+                console.warn(
+                    '[Ark recover-expired] refresh estimate failed tag=', estErr?.tag,
+                    'inner=', estErr?.inner?.errorMessage ?? estErr?.message ?? String(estErr),
+                );
+                return explainRecoveryNetworkFault(estErr) ? null : set;
+            }
+            // Second.tech's refresh fee falls to 0 under 288 blocks to expiry,
+            // so an expired capsule normally refreshes for free: say so instead
+            // of "a fee of about 0 sats".
+            const feeClause = feeSats > 0
+                ? String(loc.formatString(loc.cypherbox.strike.ark_capsules.recover_refresh_fee_clause, { fee: feeSats.toLocaleString() }))
+                : loc.cypherbox.strike.ark_capsules.recover_refresh_no_fee_clause;
+            const confirmed = await new Promise<boolean>((resolve) => {
+                Alert.alert(
+                    loc.cypherbox.strike.ark_capsules.recover_confirm_title,
+                    String(loc.formatString(
+                        set.ids.length === 1
+                            ? loc.cypherbox.strike.ark_capsules.recover_refresh_confirm_one
+                            : loc.cypherbox.strike.ark_capsules.recover_refresh_confirm_other,
+                        { count: set.ids.length, total: set.total.toLocaleString(), fee_clause: feeClause },
+                    )),
+                    [
+                        { text: loc._.cancel, style: 'cancel', onPress: () => resolve(false) },
+                        { text: loc.cypherbox.strike.ark_capsules.recover_refresh_button, onPress: () => resolve(true) },
+                    ],
+                    { cancelable: true, onDismiss: () => resolve(false) },
+                );
+            });
+            if (!confirmed) return null;
+            queuedRoundsCountRef.current += 1;
+            setQueuedRoundsCount(queuedRoundsCountRef.current);
+            await refreshArkVtxosDelegatedAndSync(set.ids, set.total);
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.recover_submitted, SimpleToast.LONG);
+            return null;
+        } catch (err: any) {
+            console.warn(
+                '[Ark recover-expired] refresh failed tag=', err?.tag,
+                'inner=', err?.inner?.errorMessage ?? err?.message ?? String(err),
+            );
+            if (err instanceof ArkRefreshInFlightError) {
+                SimpleToast.show(loc.cypherbox.strike.ark_capsules.refresh_already_running, SimpleToast.LONG);
+                return null;
+            }
+            // Spent elsewhere (another device on the same seed, or a recovery
+            // that already landed): a fact, not a refusal.
+            const spent = await recordServerSpentFromError(err);
+            if (spent) {
+                const { title, body } = notSpendableMessage(spent);
+                Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
+                return null;
+            }
+            if (explainRecoveryNetworkFault(err)) return null;
+            return set.ids.length > 0 ? set : null;
+        }
+    };
+
+    /** After a refused refresh: say so, and offer the on-chain move. */
+    const offerExpiredMove = (set: ExpiredSet) => {
+        if (!resolveHotVaultAddress()) {
+            Alert.alert(
+                loc.cypherbox.strike.ark_capsules.recover_refused_title,
+                loc.cypherbox.strike.ark_capsules.recover_no_hot_vault,
+            );
+            return;
+        }
+        Alert.alert(
+            loc.cypherbox.strike.ark_capsules.recover_refused_title,
+            String(loc.formatString(loc.cypherbox.strike.ark_capsules.recover_refused_message, { total: set.total.toLocaleString() })),
+            [
+                { text: loc.cypherbox.strike.ark_capsules.not_now, style: 'cancel' },
+                { text: loc.cypherbox.strike.ark_capsules.recover_move_button, onPress: () => moveExpiredToHotVault(set.ids) },
+            ],
+            { cancelable: true },
+        );
+    };
+
+    /**
+     * Route 2: offboard exactly these expired capsules to the Hot Vault.
+     * `offboardArkVtxos` names its inputs, so nothing else in the vault moves.
+     */
+    const moveExpiredToHotVault = (ids: string[]) => {
+        if (!beginExpiredRecovery()) {
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.recover_busy, SimpleToast.SHORT);
+            return;
+        }
+        setRecoveringExpired(true);
+        void (async () => {
+            try {
+                if (!(await ensureWalletHandleOrExplain())) return;
+                const address = resolveHotVaultAddress();
+                if (!address) {
+                    Alert.alert(
+                        loc.cypherbox.strike.ark_capsules.recover_refused_title,
+                        loc.cypherbox.strike.ark_capsules.recover_no_hot_vault,
+                    );
+                    return;
+                }
+                const set = await collectRecoverableExpired(ids);
+                if (set.ids.length === 0) {
+                    SimpleToast.show(loc.cypherbox.strike.ark_capsules.capsules_changed_state, SimpleToast.LONG);
+                    return;
+                }
+                const est = await estimateArkOffboardFee(address, set.ids);
+                const confirmed = await new Promise<boolean>((resolve) => {
+                    Alert.alert(
+                        loc.cypherbox.strike.ark_capsules.recover_move_confirm_title,
+                        String(loc.formatString(
+                            set.ids.length === 1
+                                ? loc.cypherbox.strike.ark_capsules.recover_move_confirm_one
+                                : loc.cypherbox.strike.ark_capsules.recover_move_confirm_other,
+                            {
+                                count: set.ids.length,
+                                total: set.total.toLocaleString(),
+                                fee: est.feeSats.toLocaleString(),
+                                net: est.netSats.toLocaleString(),
+                            },
+                        )),
+                        [
+                            { text: loc._.cancel, style: 'cancel', onPress: () => resolve(false) },
+                            { text: loc.cypherbox.strike.ark_capsules.recover_move_button, onPress: () => resolve(true) },
+                        ],
+                        { cancelable: true, onDismiss: () => resolve(false) },
+                    );
+                });
+                if (!confirmed) return;
+                await offboardArkVtxos(set.ids, address);
+                try {
+                    await syncArkWallet();
+                    await Promise.all([fetchArkBalance(), fetchArkVtxos()]);
+                } catch {
+                    // Non-fatal: the next sync tick reconciles.
+                }
+                Alert.alert(
+                    loc.cypherbox.strike.ark_capsules.recover_move_submitted_title,
+                    String(loc.formatString(loc.cypherbox.strike.ark_capsules.recover_move_submitted, { amount: est.netSats.toLocaleString() })),
+                );
+            } catch (err: any) {
+                console.warn(
+                    '[Ark recover-expired] move failed tag=', err?.tag,
+                    'inner=', err?.inner?.errorMessage ?? err?.message ?? String(err),
+                );
+                // The connection dropped mid-call: it may have gone through.
+                // Say exactly that and offer nothing to press again.
+                if (isArkSendIndeterminate(err)) {
+                    Alert.alert(loc.cypherbox.strike.ark_capsules.recover_failed, String(err?.message ?? ''));
+                    return;
+                }
+                const spent = await recordServerSpentFromError(err);
+                if (spent) {
+                    const { title, body } = notSpendableMessage(spent);
+                    Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
+                    return;
+                }
+                if (explainRecoveryNetworkFault(err)) return;
+                Alert.alert(
+                    loc.cypherbox.strike.ark_capsules.recover_failed,
+                    loc.cypherbox.strike.ark_capsules.recover_move_failed,
+                );
+            } finally {
+                endExpiredRecovery();
+                setRecoveringExpired(false);
             }
         })();
     };
@@ -2374,13 +2780,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
     const handleCancelPendingLnReceive = useCallback(
         (paymentHash: string, sats: number) => {
             Alert.alert(
-                "Cancel Lightning receive?",
-                `Cancel pending Lightning receive of ${formatCapsuleAmount(sats)}? ` +
-                `The sender (if any) will see the invoice as unpaid.`,
+                loc.cypherbox.strike.ark_capsules.cancel_ln_title,
+                String(loc.formatString(loc.cypherbox.strike.ark_capsules.cancel_ln_message, { amount: formatCapsuleAmount(sats) })),
                 [
-                    { text: "Keep waiting", style: "cancel" },
+                    { text: loc.cypherbox.strike.ark_capsules.keep_waiting, style: "cancel" },
                     {
-                        text: "Cancel receive",
+                        text: loc.cypherbox.strike.ark_capsules.cancel_receive,
                         style: "destructive",
                         onPress: async () => {
                             const result = await cancelArkLightningReceive(paymentHash);
@@ -2394,7 +2799,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                                     current.filter((r) => r.paymentHash !== paymentHash),
                                 );
                                 SimpleToast.show(
-                                    "Lightning receive cancelled.",
+                                    loc.cypherbox.strike.ark_capsules.ln_receive_cancelled,
                                     SimpleToast.SHORT,
                                 );
                             } else {
@@ -2434,7 +2839,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             const states = await fetchArkPendingRoundStates();
             const ongoing = states.filter((s) => s.ongoing);
             if (ongoing.length === 0) {
-                SimpleToast.show('No active refresh to cancel', SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.strike.ark_capsules.no_active_refresh, SimpleToast.SHORT);
                 return;
             }
             // Per-round cancel with retry. Bark's cancel can fail with
@@ -2487,23 +2892,23 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             }
             if (succeeded === ongoing.length) {
                 SimpleToast.show(
-                    `Cancelled ${succeeded} refresh${succeeded === 1 ? '' : 'es'}, funds unlocked`,
+                    String(loc.formatString((succeeded === 1 ? loc.cypherbox.strike.ark_capsules.cancelled_refreshes_one : loc.cypherbox.strike.ark_capsules.cancelled_refreshes_other), { count: succeeded })),
                     SimpleToast.SHORT,
                 );
             } else if (succeeded > 0) {
                 SimpleToast.show(
-                    `Cancelled ${succeeded} of ${ongoing.length}, the rest will settle in ~1 min`,
+                    String(loc.formatString(loc.cypherbox.strike.ark_capsules.cancelled_partial, { succeeded, total: ongoing.length })),
                     SimpleToast.LONG,
                 );
             } else {
                 SimpleToast.show(
-                    'Cancel held up server-side. The round will settle in ~1 min',
+                    loc.cypherbox.strike.ark_capsules.cancel_held_up,
                     SimpleToast.LONG,
                 );
             }
         } catch (err: any) {
             console.warn('[Ark] fetch pending rounds for cancel failed:', err?.message ?? err);
-            SimpleToast.show('Cancel failed. Try again in a moment.', SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.strike.ark_capsules.cancel_failed, SimpleToast.LONG);
             // Outer-catch (the fetch itself failed, not the per-round
             // cancels). No round was ever attempted; clear the UI gate
             // immediately so the X icon comes back and the user can
@@ -2618,24 +3023,26 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     them. */}
                 <VaultConnectivityPill conn={connectivity} />
                 <Text bold style={{ fontSize: 16, color: '#FFF', marginBottom: 6 }}>
-                    Reminders:{' '}
+                    {loc.formatString(loc.cypherbox.strike.ark_capsules.reminders_label, { state: (
                     <Text
                         bold
                         style={{ color: arkBgRefreshEnabled ? colors.green : colors.redLight, fontSize: 16 }}
                     >
-                        {arkBgRefreshEnabled ? 'on' : 'off'}
+                        {arkBgRefreshEnabled ? loc.cypherbox.strike.ark_capsules.reminders_on : loc.cypherbox.strike.ark_capsules.reminders_off}
                     </Text>
+                    ) })}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' }}>
                     <Text style={{ fontSize: 13, color: '#888', flex: 1 }}>
-                        Your lightning capsules (VTXOs) must be refreshed before they expire. Once expired, recovery is not guaranteed.{' '}
+                        {loc.formatString(loc.cypherbox.strike.ark_capsules.capsules_tagline, { learn_more: (
                         <Text
                             bold
                             style={{ color: colors.ark?.light ?? colors.pink.default, textDecorationLine: 'underline' }}
                             onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
                         >
-                            Learn more
+                            {loc.cypherbox.strike.ark_capsules.learn_more}
                         </Text>
+                        ) })}
                     </Text>
                     <TouchableOpacity
                         onPress={() => dispatchNavigate('ArkCapsulesInfoScreen', {})}
@@ -2716,8 +3123,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     activeOpacity={0.7}
                     accessibilityRole="button"
                     accessibilityLabel={stuckExpirySoon
-                        ? 'Move your stuck funds out'
-                        : 'Recover stuck refresh'}
+                        ? loc.cypherbox.strike.ark_capsules.a11y_move_stuck_funds
+                        : loc.cypherbox.strike.ark_capsules.a11y_recover_stuck}
                     style={{
                         marginHorizontal: 20,
                         marginBottom: 10,
@@ -2732,33 +3139,36 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     <Text bold style={{ color: colors.redLight, fontSize: 13, lineHeight: 18 }}>
                         {arkRefreshStuck.nearExpiry ? (
                             <>
-                                Warning: Refresh stuck near expiry · {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
+                                {loc.formatString(loc.cypherbox.strike.ark_capsules.stuck_near_expiry_banner, { sats: arkRefreshStuck.stuckSats.toLocaleString(), link: (
                                 <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
-                                    Tap to move funds out
+                                    {loc.cypherbox.strike.ark_capsules.stuck_tap_move_out}
                                 </Text>
+                                ) })}
                             </>
                         ) : stuckExpirySoon ? (
                             <>
-                                Refresh looks stuck and this capsule expires soon.{' '}
+                                {loc.formatString(loc.cypherbox.strike.ark_capsules.stuck_expiring_banner, { link: (
                                 <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
-                                    Tap to swap it to another wallet
+                                    {loc.cypherbox.strike.ark_capsules.stuck_tap_swap}
                                 </Text>
+                                ) })}
                             </>
                         ) : (
                             <>
-                                Refresh stuck for {arkRefreshStuck.stuckSats.toLocaleString()} sats.{' '}
+                                {loc.formatString(loc.cypherbox.strike.ark_capsules.stuck_banner, { sats: arkRefreshStuck.stuckSats.toLocaleString(), link: (
                                 <Text bold style={{ color: colors.redLight, textDecorationLine: 'underline' }}>
-                                    Tap to recover.
+                                    {loc.cypherbox.strike.ark_capsules.stuck_tap_recover}
                                 </Text>
+                                ) })}
                             </>
                         )}
                     </Text>
                     <Text style={{ color: '#B0B0B0', fontSize: 11, marginTop: 3, lineHeight: 15 }}>
                         {arkRefreshStuck.nearExpiry
-                            ? 'Refresh process is stuck and some capsules are about to expire. Tap to move funds to another wallet before they expire.'
+                            ? loc.cypherbox.strike.ark_capsules.stuck_near_expiry_detail
                             : stuckExpirySoon
-                                ? `This refresh keeps failing and the capsule has ${formatTimeLeftDetailed(soonestStuckDaysLeft)}. Move it to another wallet and try the refresh again later.`
-                                : 'This round is taking longer than expected. Recovering unlocks your capsules so you can try again. Your funds are safe.'}
+                                ? loc.formatString(loc.cypherbox.strike.ark_capsules.stuck_expiring_detail, { time: formatTimeLeftDetailed(soonestStuckDaysLeft) })
+                                : loc.cypherbox.strike.ark_capsules.stuck_detail}
                     </Text>
                 </TouchableOpacity>
             )}
@@ -2792,10 +3202,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         }}
                     >
                         <RNText style={{ fontSize: 13, color: '#FFFFFF', fontWeight: '700', marginBottom: 4 }}>
-                            {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} ({strandedDust.total.toLocaleString()} sats) can be combined
+                            {loc.formatString((strandedDust.dust.length === 1 ? loc.cypherbox.strike.ark_capsules.sweepable_dust_title_one : loc.cypherbox.strike.ark_capsules.sweepable_dust_title_other), { count: strandedDust.dust.length, sats: strandedDust.total.toLocaleString() })}
                         </RNText>
                         <RNText style={{ fontSize: 12, color: '#ddd' }}>
-                            Tap here (or "Dust refresh" on a capsule) to combine {strandedDust.dust.length === 1 ? 'it' : 'them'} into one capsule before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}.
+                            {(strandedDust.dust.length === 1 ? loc.cypherbox.strike.ark_capsules.sweepable_dust_body_one : loc.cypherbox.strike.ark_capsules.sweepable_dust_body_other)}
                         </RNText>
                     </TouchableOpacity>
                 ) : (
@@ -2817,10 +3227,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         }}
                     >
                         <RNText style={{ fontSize: 13, color: '#FF7A68', fontWeight: '700', marginBottom: 4 }}>
-                            {strandedDust.dust.length} tiny capsule{strandedDust.dust.length === 1 ? '' : 's'} cannot be refreshed yet
+                            {loc.formatString((strandedDust.dust.length === 1 ? loc.cypherbox.strike.ark_capsules.stranded_dust_title_one : loc.cypherbox.strike.ark_capsules.stranded_dust_title_other), { count: strandedDust.dust.length })}
                         </RNText>
                         <RNText style={{ fontSize: 12, color: '#ddd' }}>
-                            Only {strandedDust.total.toLocaleString()} sats total, below the {ARK_VTXO_DUST_SATS}-sat dust limit. Spend {strandedDust.dust.length === 1 ? 'it' : 'them'} in a payment before {strandedDust.dust.length === 1 ? 'it expires' : 'they expire'}. A normal send folds {strandedDust.dust.length === 1 ? 'it' : 'them'} in.
+                            {loc.formatString((strandedDust.dust.length === 1 ? loc.cypherbox.strike.ark_capsules.stranded_dust_body_one : loc.cypherbox.strike.ark_capsules.stranded_dust_body_other), { sats: strandedDust.total.toLocaleString(), limit: ARK_VTXO_DUST_SATS })}
                         </RNText>
                     </View>
                 )
@@ -2828,8 +3238,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
 
             {/* Column header row — matches Hot Vault's layout */}
             <View style={vaultStyles.titleStyle}>
-                <Text bold style={vaultStyles.coin}>Capsules</Text>
-                <Text bold style={vaultStyles.size}>Size</Text>
+                <Text bold style={vaultStyles.coin}>{loc.cypherbox.strike.ark_capsules.col_capsules}</Text>
+                <Text bold style={vaultStyles.size}>{loc.cypherbox.strike.ark_capsules.col_size}</Text>
                 {/* Column header for the per-row refresh/cancel icons. Flips to
                     "Cancel" while a round is in flight, matching the per-row
                     icons that switch from the refresh arrows to a cancel-X. */}
@@ -2838,9 +3248,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     numberOfLines={1}
                     style={[vaultStyles.label, { fontSize: 18, textAlign: 'left', marginLeft: -8, flex: 1.35 }]}
                 >
-                    {roundInFlight ? 'Cancel' : 'Refresh'}
+                    {roundInFlight ? loc.cypherbox.strike.ark_capsules.col_cancel : loc.cypherbox.strike.ark_capsules.col_refresh}
                 </Text>
-                <Text bold style={vaultStyles.select}>Select</Text>
+                <Text bold style={vaultStyles.select}>{loc.cypherbox.strike.ark_capsules.col_select}</Text>
             </View>
             <View style={vaultStyles.border} />
 
@@ -2863,6 +3273,8 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         onRefreshIcon={() => handleRowRefresh(item.id)}
                         onCancelIcon={handleRowCancel}
                         onDustRefresh={handleDustRefresh}
+                        onRecoverExpired={() => openExpiredRecovery(item.id)}
+                        recoveringExpired={recoveringExpired}
                         isCancelling={cancelling}
                         roundIntervalSecs={arkRoundIntervalSecs}
                         failedAttempts={arkRefreshFailStreak}
@@ -2903,7 +3315,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     arkPendingLnReceives.length > 0 ? null : (
                         <View style={{ alignItems: "center", marginTop: 40 }}>
                             <Text style={{ color: colors.gray.light, fontSize: 13 }}>
-                                No lightning capsules yet. Receive Bitcoin via Ark to populate.
+                                {loc.cypherbox.strike.ark_capsules.empty}
                             </Text>
                         </View>
                     )
@@ -2923,10 +3335,12 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 de-clutters the screen. No Emergency Exit here — that's
                 the global Withdraw button's job, see the file docblock. */}
             <View style={vaultStyles.bottomViewNew}>
-                {/* Green pulsing "come back in 3 hours" reminder while a
-                    refresh round is in flight (or being submitted), with a
-                    live 3h countdown per in-flight round. Flips to a stuck
-                    state with a Cancel action once a round's 3h elapses. */}
+                {/* Pulsing "come back in 1 hour" reminder while a refresh
+                    round is in flight (or being submitted), with a live 1h
+                    countdown per in-flight round. Flips to a stuck state with
+                    a Cancel action once a round has been pending for twice
+                    the round interval, the same point useArkSync calls it
+                    stuck (arkStuckRoundThresholdMs). */}
                 {refreshInFlight && (
                     <RefreshWaitBanner
                         roundStarts={roundStarts}
@@ -2935,9 +3349,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     />
                 )}
                 <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", marginBottom: 12 }}>
-                    {renderActionButton("Send", handleSend)}
+                    {renderActionButton(loc.cypherbox.strike.ark_capsules.send_button, handleSend)}
                     {renderActionButton(
-                        refreshing ? "Refreshing…" : "Refresh",
+                        refreshing ? loc.cypherbox.strike.ark_capsules.refreshing_button : loc.cypherbox.strike.ark_capsules.refresh_button,
                         refreshing ? () => {} : handleRefresh,
                     )}
                 </View>
@@ -2977,14 +3391,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         }}
                     >
                         <Text bold style={{ fontSize: 12, color: colors.ark.light }}>
-                            {queuedRoundsCount} refresh rounds queued at Ark server
+                            {loc.formatString(loc.cypherbox.strike.ark_capsules.queued_rounds, { count: queuedRoundsCount })}
                         </Text>
                         <Text style={{ fontSize: 11, color: '#999', marginTop: 4, lineHeight: 15 }}>
-                            Tapping Refresh again won't speed it up, because each tap
-                            submits a new round and burns another fee on
-                            completion. Wait for the round to finalise (typically
-                            under a minute) or time out (~few hours) before
-                            retrying.
+                            {loc.cypherbox.strike.ark_capsules.queued_rounds_hint}
                         </Text>
                     </View>
                 )}
@@ -3007,8 +3417,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         paddingHorizontal: 24,
                     }}
                 >
-                    Don't trust the Ark server? Settings → Emergency Exit will
-                    sweep funds back on-chain without ASP cooperation.
+                    {loc.cypherbox.strike.ark_capsules.emergency_exit_pointer}
                 </RNText>
                 {/* Background-refresh opt-in card + DEV buttons moved to
                     FlatList ListFooterComponent so they scroll with the

@@ -1,19 +1,48 @@
 // createInvoice moved to TopupList
 
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { GradientView, SavingVault } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import useAuthStore from "@Cypher/stores/authStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { colors, shadow } from "@Cypher/style-guide";
 import screenWidth from "@Cypher/style-guide/screenWidth";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, FlatList, Image, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, TouchableOpacity, View } from "react-native";
+import { Animated, FlatList, I18nManager, Image, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, TouchableOpacity, View } from "react-native";
 import LinearGradient from "react-native-linear-gradient";
 import SimpleToast from "react-native-simple-toast";
 import { useFocusEffect } from "@react-navigation/native";
 import styles from "../styles";
 import TabBar from "../TabBar";
+import UnlockHotVaultCard from "./UnlockHotVaultCard";
+import ArrowBadge, { ARROW_BADGE_INSET, ARROW_BADGE_SIZE } from "./ArrowBadge";
+
+// The part of a Top-up or Withdraw button its arrow badge takes, from the button's end to the badge's inner edge.
+const BADGE_ROOM = ARROW_BADGE_INSET + ARROW_BADGE_SIZE;
+
+const labelStyles = StyleSheet.create({
+    row: { flexDirection: 'row', alignItems: 'center' },
+    badgeRoom: { width: BADGE_ROOM },
+    label: { flex: 1 },
+});
+
+/**
+ * A Top-up or Withdraw label, centred in the space between the arrow badge at its `badgeSide` and the button's other
+ * end, in either language.
+ */
+function ButtonLabel({ text, badgeSide }: { text: string; badgeSide: 'start' | 'end' }) {
+    const badgeRoom = <View style={labelStyles.badgeRoom} />;
+    return (
+        <View style={labelStyles.row}>
+            {badgeSide === 'start' && badgeRoom}
+            <Text bold h3 center numberOfLines={1} style={labelStyles.label}>{text}</Text>
+            {badgeSide === 'end' && badgeRoom}
+        </View>
+    );
+}
 // createInvoiceStrike moved to TopupList
 
 interface Props {
@@ -68,8 +97,13 @@ export default function BottomBar({
     // LinearGradient children under RN 0.77 Fabric interop — the flicker/twitch
     // on "Hot Vault" / "Bitcoin Network" and the button arrows. Selecting only
     // the fields we use confines re-renders to real changes to them.
-    const isAuth = useAuthStore(s => s.isAuth);
-    const isStrikeAuth = useAuthStore(s => s.isStrikeAuth);
+    // Region gates (services/featureFlags): a connected rail that is not
+    // offered in this region is treated as unavailable on this surface.
+    // Re-render when the App Store storefront resolves after launch, so the
+    // region gates below reflect the real region.
+    useRegionGate();
+    const isAuth = useAuthStore(s => s.isAuth) && isCoinosAllowed();
+    const isStrikeAuth = useAuthStore(s => s.isStrikeAuth) && isStrikeAllowed();
     const isArkAuth = useAuthStore(s => s.isArkAuth);
     const strikeUser = useAuthStore(s => s.strikeUser);
     const withdrawStrikeThreshold = useAuthStore(s => s.withdrawStrikeThreshold);
@@ -134,6 +168,11 @@ export default function BottomBar({
         return 0;
     };
     const [index, setIndex] = useState(getInitialIndex());
+    // In RTL the horizontal pager lays its pages out right-to-left, with the last tab on the left. initialScrollIndex and
+    // scrollToIndex take the tab index on both platforms; FlatList finds the page. The offset in scroll events is measured
+    // from the left, though, so map that back to the tab. Without this, iOS showed the Cold Vault card on the Hot tab, and
+    // the card opened the Hot Vault. Mapping initialScrollIndex as well opened the Hot Vault card under the Cold tab.
+    const pageToTab = (page: number) => (I18nManager.isRTL ? tabs.length - 1 - page : page);
 
     useEffect(() => {
         if (!hasSavingVault && hasColdStorage && !vaultTab) {
@@ -164,11 +203,11 @@ export default function BottomBar({
 
     const topupClickHandler = () => {
         if (!isAuth && !isStrikeAuth && !isArkAuth) {
-            SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.login_to_top_up, SimpleToast.SHORT);
             return;
         }
         if (!wallet && !coldStorageWallet) {
-            SimpleToast.show('You need to create a vault first', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.create_vault_first, SimpleToast.SHORT);
             return;
         }
         refTopupRBSheet?.current?.open();
@@ -176,7 +215,7 @@ export default function BottomBar({
 
     const withdrawClickHandler = () => {
         if (!isAuth && !isStrikeAuth && !isArkAuth) {
-            SimpleToast.show('You need to be logged in to wallet to withdraw', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.home.login_to_withdraw, SimpleToast.SHORT);
             return
         }
         if(!wallet && !coldStorageWallet) {
@@ -258,8 +297,8 @@ export default function BottomBar({
     };
 
     const tabs = [
-        { key: "hot", title: "Hot Storage", component: () => <HotStorageTab /> },
-        { key: "cold", title: "Cold Storage", component: () => <ColdStorageTab /> },
+        { key: "hot", title: loc.cypherbox.home.hot_storage, component: () => <HotStorageTab /> },
+        { key: "cold", title: loc.cypherbox.home.cold_storage, component: () => <ColdStorageTab /> },
     ];
 
     const HotStorageTab = () => (
@@ -272,11 +311,12 @@ export default function BottomBar({
                     shadowBottomBottom={styles.savingVault}
                     bitcoinText={styles.bitcoinText}
                     isVault={false}
-                    title={"Hot Vault"}
+                    title={loc.cypherbox.home.hot_vault}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={balanceVault}
                     inDollars={`$${(Number(balanceWithoutSuffix || 0) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
+                    hideWithBalances
                 />
             )
                 :
@@ -284,68 +324,15 @@ export default function BottomBar({
                     <View style={styles.createVaultContainer}>
                         <View style={styles.alreadyView}>
                             <Text bold style={styles.text}>
-                                Already have a vault?
+                                {loc.cypherbox.home.already_have_vault}
                             </Text>
                             <TouchableOpacity onPress={handleRecoverSavingVault}>
                                 <Text bold style={[styles.login, { color: colors.green }]}>
-                                    Recover
+                                    {loc.cypherbox.home.recover}
                                 </Text>
                             </TouchableOpacity>
                         </View>
-                        {/* Outlined-only "Unlock Hot Vault" card —
-                            green gradient ring on a dark interior,
-                            matching the slick treatment of the Unlock
-                            Lightning Wallet CTA. Replaces the previous
-                            solid green fill so the shield watermark
-                            and label read against a dark surface. */}
-                        <TouchableOpacity activeOpacity={0.85} onPress={handleCreateVault} style={[styles.createView, { borderRadius: 25, width: screenWidth - 40, height: 135 }]}>
-                            <LinearGradient
-                                colors={[colors.green_.greenGradient1, colors.green_.greenGradient2]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={{ borderRadius: 25, padding: 1.5, height: '100%' }}
-                            >
-                                <View style={{ flex: 1, borderRadius: 23.5, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
-                                    {/* Light grey → black inner fill, same
-                                        gradient the created Hot/Cold vault
-                                        cards (SavingVault) use. Sits inside
-                                        the green ring so the unlock CTA and
-                                        the created vault share one surface
-                                        treatment. */}
-                                    <LinearGradient
-                                        colors={['#2A2A2A', '#000000']}
-                                        start={{ x: 0, y: 0 }}
-                                        end={{ x: 0, y: 1 }}
-                                        pointerEvents="none"
-                                        style={{
-                                            position: 'absolute',
-                                            top: 0,
-                                            left: 0,
-                                            right: 0,
-                                            bottom: 0,
-                                            borderRadius: 23.5,
-                                        }}
-                                    />
-                                    <Image
-                                        source={require("@Cypher/assets/images/fireShield.png")}
-                                        style={{
-                                            position: 'absolute',
-                                            alignSelf: 'center',
-                                            top: '50%',
-                                            marginTop: -45,
-                                            width: 90,
-                                            height: 90,
-                                            opacity: 0.12,
-                                        }}
-                                        resizeMode="contain"
-                                        pointerEvents="none"
-                                    />
-                                    <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                                        Unlock Hot Vault
-                                    </Text>
-                                </View>
-                            </LinearGradient>
-                        </TouchableOpacity>
+                        <UnlockHotVaultCard onPress={handleCreateVault} />
                     </View>
                 )}
         </View>
@@ -365,12 +352,13 @@ export default function BottomBar({
                     shadowTopBottom={styles.savingVault}
                     shadowBottomBottom={styles.savingVault}
                     bitcoinText={styles.bitcoinText}
-                    title={"Cold Vault"}
+                    title={loc.cypherbox.home.cold_vault}
                     isVault={true}
                     onPress={savingVaultClickHandler}
                     bitcoinValue={coldStorageBalanceVault}
                     inDollars={`$${(Number(coldStorageBalanceWithoutSuffix) * Number(matchedRateBTC || 0)).toFixed(2)}`}
                     isColorable
+                    hideWithBalances
                 />
             ) : (
                 // Outlined-only "Unlock Cold Vault" card — blue gradient
@@ -415,7 +403,7 @@ export default function BottomBar({
                                 pointerEvents="none"
                             />
                             <Text h2 style={[styles.createVaultText, shadow.text25]}>
-                                Unlock Cold Vault
+                                {loc.cypherbox.home.unlock_cold_vault}
                             </Text>
                         </View>
                     </LinearGradient>
@@ -424,8 +412,14 @@ export default function BottomBar({
         </View>
     );
 
+    // Arabic keeps this row in the English order, Top-up on the left and
+    // Withdraw on the right, and puts each arrow where Arabic reads it: before
+    // الشحن, after السحب (the inner side of each word). 'row-reverse' gives
+    // the order; the badges' left/right already act as start/end in Arabic.
+    const rtlRow = I18nManager.isRTL ? { flexDirection: 'row-reverse' as const } : null;
+
     const TopUpWithdrawView = ({ isVault, style }: { isVault: boolean; style?: any }) => (
-        <View style={styles.bottominner}>
+        <View style={[styles.bottominner, rtlRow]}>
             <GradientView
                 onPress={topupClickHandler}
                 topShadowStyle={styles.outerShadowStyle}
@@ -433,12 +427,8 @@ export default function BottomBar({
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
             >
-                <Image
-                    style={styles.arrowLeft}
-                    resizeMode="contain"
-                    source={require("../../../../img/arrow-right.png")}
-                />
-                <Text bold h3 center style={{ textAlign: 'center' }}>Top-up</Text>
+                <ArrowBadge direction="up" side="left" />
+                <ButtonLabel text={loc.cypherbox.home.top_up} badgeSide="start" />
             </GradientView>
             <GradientView
                 onPress={withdrawClickHandler}
@@ -447,12 +437,8 @@ export default function BottomBar({
                 style={styles.linearGradientStyle}
                 linearGradientStyle={styles.mainShadowStyle}
             >
-                <Text bold h3 center style={{ textAlign: 'center' }}>Withdraw</Text>
-                <Image
-                    style={styles.arrowRight}
-                    resizeMode="contain"
-                    source={require("../../../../img/arrow-right.png")}
-                />
+                <ButtonLabel text={loc.cypherbox.home.withdraw} badgeSide="end" />
+                <ArrowBadge direction="down" side="right" />
             </GradientView>
         </View>
     );
@@ -471,7 +457,7 @@ export default function BottomBar({
     };
 
     const onMomentumScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const next = Math.round(e.nativeEvent.contentOffset.x / screenWidth);
+        const next = pageToTab(Math.round(e.nativeEvent.contentOffset.x / screenWidth));
         if (next === index) return;
         setIndex(next);
         setVaultTab(next === 1 && coldStorageWallet ? true : wallet && false);

@@ -66,6 +66,26 @@ function encodeURv1(arg1, arg2) {
 function encodeURv2(str, len) {
   // now, lets do some intelligent guessing what we've got here, psbt hex, or json with a multisig cosigner..?
 
+  // A PSBT first. It can't be a cosigner, and the cosigner check below is the first thing to touch the wallet classes:
+  // loading them runs an elliptic-curve self-test for each, which held a signed transaction's QR back 11 s on a slow
+  // phone in Offline Seed-Signer mode, where nothing had loaded them yet.
+  try {
+    Psbt.fromHex(str); // will throw if not PSBT hex
+    const data = Buffer.from(str, 'hex');
+    const cryptoPSBT = new CryptoPSBT(data);
+    const encoder = cryptoPSBT.toUREncoder(len);
+
+    const ret = [];
+    for (let c = 1; c <= encoder.fragmentsLength; c++) {
+      const ur = encoder.nextPart();
+      ret.push(ur);
+    }
+
+    return ret;
+  } catch (_) {}
+
+  // not a psbt. a multisig cosigner?
+
   try {
     const cosigner = new MultisigCosigner(str);
 
@@ -105,23 +125,6 @@ function encodeURv2(str, len) {
       const ur = cryptoAccount.toUREncoder(2000).nextPart();
       return [ur];
     }
-  } catch (_) {}
-
-  // not account. lets try psbt
-
-  try {
-    Psbt.fromHex(str); // will throw if not PSBT hex
-    const data = Buffer.from(str, 'hex');
-    const cryptoPSBT = new CryptoPSBT(data);
-    const encoder = cryptoPSBT.toUREncoder(len);
-
-    const ret = [];
-    for (let c = 1; c <= encoder.fragmentsLength; c++) {
-      const ur = encoder.nextPart();
-      ret.push(ur);
-    }
-
-    return ret;
   } catch (_) {}
 
   // fail. fallback to bytes

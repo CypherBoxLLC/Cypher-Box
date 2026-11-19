@@ -45,6 +45,7 @@ import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
 import { runBroadcastCall } from './indeterminate';
+import loc from '../../../loc';
 
 // --- Tunable sizing constants ----------------------------------------------
 //
@@ -286,23 +287,34 @@ export async function fetchFastFeeRateSatPerVb(): Promise<number> {
  * `exitTxWeightWu` and `exitDepth`, which are exactly the two fields the whole
  * cost model turns on, so the cached VTXO list cannot be reused. allVtxos is a
  * JS-thread-blocking UniFFI call, so keep this off the render path.
+ *
+ * Leaves out capsules the Ark server has said are already spent
+ * (`arkServerSpentVtxoIds`), which bark may still list as Spendable. Exiting
+ * one would pay on-chain fees for a coin that is no longer this wallet's, and
+ * size the reserve over it. The read is local, so it holds with the server
+ * gone.
  */
 async function readExitCandidates(): Promise<ExitTriageVtxo[] | null> {
     const handle = getArkWalletHandle();
     if (!handle) return null;
     try {
         const vtxos = await handle.allVtxos();
-        return (vtxos ?? []).map((v) => ({
-            id: v.id,
-            sats: Number(v.amountSats ?? 0n),
-            exitDepth: Number(v.exitDepth ?? 0),
-            exitTxWeightWu: Number(v.exitTxWeightWu ?? 0n),
-            expiryHeight: Number(v.expiryHeight ?? 0),
-            // bark 0.6.1: `state` is a tagged-enum object; flatten to its
-            // variant string so triage can compare it.
-            stateTag: barkStateTag(v.state),
-            registered: v.registered,
-        }));
+        const serverSpent = new Set(
+            (useAuthStore.getState().arkServerSpentVtxoIds ?? []).map((id) => id.toLowerCase()),
+        );
+        return (vtxos ?? [])
+            .filter((v) => !serverSpent.has(String(v.id).toLowerCase()))
+            .map((v) => ({
+                id: v.id,
+                sats: Number(v.amountSats ?? 0n),
+                exitDepth: Number(v.exitDepth ?? 0),
+                exitTxWeightWu: Number(v.exitTxWeightWu ?? 0n),
+                expiryHeight: Number(v.expiryHeight ?? 0),
+                // bark 0.6.1: `state` is a tagged-enum object; flatten to its
+                // variant string so triage can compare it.
+                stateTag: barkStateTag(v.state),
+                registered: v.registered,
+            }));
     } catch (err) {
         if (__DEV__) console.warn('[Ark exit-funding] allVtxos threw:', err);
         return null;
@@ -612,7 +624,7 @@ export async function convertToExitFees(
     // the UI.
     const txid = await runBroadcastCall(
         () => handle.sendOnchain(address, BigInt(Math.floor(amountSats))),
-        'conversion',
+        loc.cypherbox.services.indeterminate.what_conversion,
     );
     if (__DEV__) {
         console.log(

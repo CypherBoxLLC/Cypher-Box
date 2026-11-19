@@ -6,6 +6,7 @@ import { useNavigation } from "@react-navigation/native";
 import InputEmailPhone from "./InputEmailPhone";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
+import loc from "../../../../loc";
 
 export default function LoginBlink() {
     const [email, setEmail] = useState<string | null>(null);
@@ -20,18 +21,18 @@ export default function LoginBlink() {
         <ScreenLayout disableScroll showToolbar progress={1}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <GradientText>Login to Blink</GradientText>
-                    <Text h2 bold style={styles.title}>Were you able to register at Blink?</Text>
-                    <Text h4 style={styles.title}>If you did, you should login with you phone number or email. If not, Try again. Currently you cannot use Cypher Box without Blink, but in the future we will offer more options. Stay tuned!</Text>
-                    <InputEmailPhone label={`Phone \nNumber`} setText={setPhone} text={phone} type="phone-pad" />
+                    <GradientText>{loc.cypherbox.account.common.login_to_blink}</GradientText>
+                    <Text h2 bold style={styles.title}>{loc.cypherbox.account.login_blink.question}</Text>
+                    <Text h4 style={styles.title}>{loc.cypherbox.account.login_blink.desc}</Text>
+                    <InputEmailPhone label={loc.cypherbox.account.login_blink.phone_number} setText={setPhone} text={phone} type="phone-pad" />
                     <View style={styles.view}>
                         <View style={styles.line} />
-                        <Text bold style={styles.or}>OR</Text>
+                        <Text bold style={styles.or}>{loc.cypherbox.account.login_blink.or}</Text>
                         <View style={styles.line} />
                     </View>
-                    <InputEmailPhone label="E-mail" setText={setEmail} text={email} type="email-address" />
+                    <InputEmailPhone label={loc.cypherbox.account.login_blink.email_label} setText={setEmail} text={email} type="email-address" />
                 </View>
-                <GradientButton title="Home" onPress={nextClickHandler} />
+                <GradientButton title={loc.cypherbox.account.common.home} onPress={nextClickHandler} />
             </View>
         </ScreenLayout>
     )

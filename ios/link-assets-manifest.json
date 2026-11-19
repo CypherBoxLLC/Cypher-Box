@@ -40,6 +40,22 @@
     {
       "path": "src/assets/fonts/Lato-Thin.ttf",
       "sha1": "07290446bee3f81ce501a3c3dbfde6097c70ca15"
+    },
+    {
+      "path": "src/assets/fonts/Tajawal-Bold.ttf",
+      "sha1": "3028c3b3afa120de0737802415314fe328655300"
+    },
+    {
+      "path": "src/assets/fonts/Tajawal-Light.ttf",
+      "sha1": "1d5fa9486aace6a117b9becb344b822019b0137e"
+    },
+    {
+      "path": "src/assets/fonts/Tajawal-Medium.ttf",
+      "sha1": "3b18ed6cf6b7c4cb3591c94ce5c1d6c4789ab57e"
+    },
+    {
+      "path": "src/assets/fonts/Tajawal-Regular.ttf",
+      "sha1": "6231d7c967bf36a7891e3479e0fbb72d35badce2"
     }
   ]
 }

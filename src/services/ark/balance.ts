@@ -147,6 +147,12 @@ export async function fetchArkBalance(): Promise<ArkBalanceSummary | null> {
  * `spendableSats` into `pendingExitSats` (the SDK's own pendingExitSats
  * reads 0 during broadcast — same quirk as pendingExitsTotalSats()). The
  * exiting subtraction only needs the vtxo list, not the chain tip.
+ *
+ * AND subtracts VTXOs the Ark server has said are already spent (see
+ * `ArkVtxoView.serverSpent`). bark keeps counting them as Spendable because
+ * it never asks the server, so without this the headline, swap "Max" and the
+ * swap balance check all offer sats that no longer exist. They are dropped,
+ * not moved to another bucket: nothing on this wallet will pay them out.
  */
 export function applyExpiredVtxoFilter(
     summary: ArkBalanceSummary,
@@ -159,9 +165,14 @@ export function applyExpiredVtxoFilter(
     const tipKnown = typeof chainTipHeight === 'number' && chainTipHeight > 0;
     let expired = 0;
     let exiting = 0;
+    let serverSpent = 0;
     for (const v of vtxos) {
         if (v.state.toLowerCase() !== 'spendable') continue;
-        if (
+        if (v.serverSpent) {
+            // Checked first: a capsule the server says is gone is neither
+            // expired dust the user still holds nor an exit that will pay out.
+            serverSpent += v.sats;
+        } else if (
             tipKnown &&
             v.expiryHeight > 0 &&
             v.expiryHeight <= (chainTipHeight as number)
@@ -172,13 +183,16 @@ export function applyExpiredVtxoFilter(
             exiting += v.sats;
         }
     }
-    if (expired === 0 && exiting === 0) {
+    if (expired === 0 && exiting === 0 && serverSpent === 0) {
         return { ...summary, expiredUnrecoverableSats: 0 };
     }
-    const adjustedSpendable = Math.max(0, summary.spendableSats - expired - exiting);
+    const adjustedSpendable = Math.max(
+        0,
+        summary.spendableSats - expired - exiting - serverSpent,
+    );
     console.log(
         '[Ark balance] filter subtracted', expired, 'expired +',
-        exiting, 'exiting sats; spendable',
+        exiting, 'exiting +', serverSpent, 'server-spent sats; spendable',
         summary.spendableSats,
         '→',
         adjustedSpendable,

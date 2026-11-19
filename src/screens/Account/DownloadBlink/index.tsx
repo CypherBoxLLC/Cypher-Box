@@ -5,6 +5,7 @@ import { GradientText } from "@Cypher/components";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../../loc";
 
 export default function DownloadBlink() {
 
@@ -26,12 +27,12 @@ export default function DownloadBlink() {
         <ScreenLayout disableScroll showToolbar progress={0}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <GradientText>Download Blink</GradientText>
-                    <Text h4 style={styles.descption}>To use Cypher Box, you should download Blink wallet from the app store and register your account by providing them with your phone number.</Text>
-                    <Button onPress={appleStoreClickHandler} text="Download Blink wallet" leftIcon="logo-apple" textStyle={{color:colors.black.default}}/>
+                    <GradientText>{loc.cypherbox.account.download_blink.title}</GradientText>
+                    <Text h4 style={styles.descption}>{loc.cypherbox.account.download_blink.desc}</Text>
+                    <Button onPress={appleStoreClickHandler} text={loc.cypherbox.account.download_blink.download_button} leftIcon="logo-apple" textStyle={{color:colors.black.default}}/>
                 </View>
-                <Text style={styles.info}>If you’ve manged to create a account, or already have an existing account on Blink, you can login now!</Text>
-                <Button onPress={loginClickHandler} text="Login" style={styles.login} textStyle={{color:colors.black.default}}/>
+                <Text style={styles.info}>{loc.cypherbox.account.download_blink.info}</Text>
+                <Button onPress={loginClickHandler} text={loc.cypherbox.account.common.login} style={styles.login} textStyle={{color:colors.black.default}}/>
             </View>
         </ScreenLayout>
     )

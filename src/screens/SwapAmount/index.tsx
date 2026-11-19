@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 import { View, Image, ActivityIndicator, TouchableOpacity, Animated, Easing, Alert } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { ScreenLayout, Text } from "@Cypher/component-library";
+import loc from "../../../loc";
 import LinearGradient from "react-native-linear-gradient";
 import { CustomKeyboard, GradientInput , LightningSendSuccess } from "@Cypher/components";
 import { dispatchNavigate, dispatchReset } from "@Cypher/helpers";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import LockedInRefreshNotice from "@Cypher/components/LockedInRefreshNotice";
 import SimpleToast from "react-native-simple-toast";
@@ -34,6 +35,17 @@ import { getFiatRate } from "../../../models/fiatUnit";
 // COPY: Bam finalizes.
 const WARN_YELLOW = ['#FFD54F', '#FFB300'];
 const SMALL_RECEIVE_SATS = 700;
+
+// The Ark provider's balance preflight throws this in English, which the logs keep; it's shown in the app's
+// language, with the same numbers. A message that doesn't match is shown as it is.
+const ARK_BALANCE_SHORT =
+    /^Not enough Ark balance, need ([\d.]+) sats \(([\d.]+) \+ ([\d.]+) routing fee\) but only ([\d.]+) spendable\. Try swapping ([\d.]+) sats\.$/;
+const arkBalanceShortText = (message: string) => {
+    const short = ARK_BALANCE_SHORT.exec(message);
+    if (!short) return message;
+    const [, required, amount, fee, spendable, suggested] = short;
+    return String(loc.formatString(loc.cypherbox.payments.swap_amount.not_enough_ark_balance, { required, amount, fee, spendable, suggested }));
+};
 
 export default function SwapAmount() {
     const navigation = useNavigation();
@@ -251,7 +263,7 @@ export default function SwapAmount() {
     const handleSwap = async () => {
         const amount = Number(sats);
         if (!amount || amount <= 0) {
-            SimpleToast.show('Please enter an amount', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.payments.common.enter_amount, SimpleToast.SHORT);
             return;
         }
 
@@ -291,11 +303,11 @@ export default function SwapAmount() {
                 // after the alert appeared, reading as a spinner hang.
                 setLoading(false);
                 Alert.alert(
-                    'Payment submitted, not yet confirmed',
+                    loc.cypherbox.payments.swap_amount.pending_title,
                     error.message,
                     [
                         {
-                            text: 'OK, I will check',
+                            text: loc.cypherbox.payments.swap_amount.pending_ack,
                             style: 'default',
                             // Close the swap flow entirely once the user
                             // acknowledges. Staying on SwapAmount with a
@@ -314,10 +326,10 @@ export default function SwapAmount() {
 
             // Tailored toast per failure stage so the user knows whether
             // the destination's invoice or the source's payment failed.
-            const fallback = 'Swap failed. Please try again.';
+            const fallback = loc.cypherbox.payments.swap_amount.swap_failed;
             let message = fallback;
             if (error instanceof InvoiceCreationFailedError) {
-                message = `${toProvider?.displayName ?? sendTo} couldn't create an invoice: ${(error.cause as Error)?.message ?? error.message}`;
+                message = String(loc.formatString(loc.cypherbox.payments.common.provider_invoice_failed, { provider: toProvider?.displayName ?? sendTo, error: (error.cause as Error)?.message ?? error.message }));
             } else if (error instanceof PaymentFailedError) {
                 // The Ark server is the only authority on whether a VTXO is
                 // still spendable, and it only tells us when a spend fails, so
@@ -330,25 +342,27 @@ export default function SwapAmount() {
                 const notSpendable = await recordServerSpentFromError(error);
                 if (notSpendable) {
                     const { title, body } = notSpendableMessage(notSpendable);
-                    Alert.alert(title, body, [{ text: 'OK', style: 'default' }], { cancelable: true });
+                    Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
                     setLoading(false);
                     return;
                 }
+                // what the source provider threw: the Ark preflight's message, or the wallet's own error
+                const cause: any = error.cause;
                 // The Ark preflight's insufficient-balance message carries the
                 // exact actionable numbers ("need X, only Y spendable, try
                 // swapping Z"). A 2-second toast flashes it away before anyone
                 // can read it; show it as a blocking alert instead.
                 if (typeof cause?.message === 'string' && cause.message.startsWith('Not enough Ark balance')) {
                     Alert.alert(
-                        'Not enough balance',
-                        cause.message,
-                        [{ text: 'OK', style: 'default' }],
+                        loc.cypherbox.payments.swap_amount.not_enough_balance_title,
+                        arkBalanceShortText(cause.message),
+                        [{ text: loc._.ok, style: 'default' }],
                         { cancelable: true },
                     );
                     setLoading(false);
                     return;
                 }
-                message = `${fromProvider?.displayName ?? swapFrom} payment failed, ${cause?.message ?? error.message}`;
+                message = String(loc.formatString(loc.cypherbox.payments.swap_amount.provider_payment_failed, { provider: fromProvider?.displayName ?? swapFrom, error: cause?.message ?? error.message }));
             } else if (error instanceof LightningSwapError) {
                 message = error.message;
             } else if (error instanceof Error) {
@@ -391,7 +405,7 @@ export default function SwapAmount() {
         return (
             <ScreenLayout showToolbar isBackButton={false}>
                 <LightningSendSuccess
-                    title="Swap Sent ⚡"
+                    title={loc.cypherbox.payments.swap_amount.swap_sent}
                     sats={swappedSats}
                     fiat={swappedFiat}
                     fiatSymbol={currency === 'EUR' ? '€' : '$'}
@@ -403,7 +417,7 @@ export default function SwapAmount() {
                     detail={
                         <View style={styles.successDirection}>
                             {renderProviderBadge(fromProvider, swapFrom, 'success')}
-                            <Text style={styles.successArrow}>→</Text>
+                            <Text style={[styles.successArrow, rtl.mirror]}>→</Text>
                             {renderProviderBadge(toProvider, sendTo, 'success')}
                         </View>
                     }
@@ -436,7 +450,7 @@ export default function SwapAmount() {
             showToolbar
             isBackButton
             title={
-                isDustTopup ? 'Dust Top-up' : purpose === 'dust-exit' ? 'Move Dust Out' : 'Lightning Swap'
+                isDustTopup ? loc.cypherbox.payments.swap_amount.title_dust_topup : purpose === 'dust-exit' ? loc.cypherbox.payments.swap_amount.title_move_dust_out : loc.cypherbox.payments.swap_amount.title_lightning_swap
             }
         >
             <View style={styles.main}>
@@ -446,7 +460,7 @@ export default function SwapAmount() {
                 )}
                 <View style={styles.directionRow}>
                     {renderProviderBadge(fromProvider, swapFrom, 'inline')}
-                    <Text style={styles.arrow}>→</Text>
+                    <Text style={[styles.arrow, rtl.mirror]}>→</Text>
                     {renderProviderBadge(toProvider, sendTo, 'inline')}
                 </View>
                 {feeSats !== null && feeSats > 0 && (() => {
@@ -468,13 +482,13 @@ export default function SwapAmount() {
                             : ` (${feePct.toFixed(feePct < 1 ? 2 : 1)}%)`;
                     return (
                         <Text style={styles.feePreview}>
-                            Estimated network fee: {feeSats} sats{pctStr}{feeNote ? ` · ${feeNote}` : ''}
+                            {loc.formatString(loc.cypherbox.payments.swap_amount.estimated_network_fee, { fee: feeSats, pct: pctStr, note: feeNote ? ` · ${feeNote}` : '' })}
                         </Text>
                     );
                 })()}
                 {smallBarkSwapWarn && (
                     <Text style={{ textAlign: 'center', marginTop: 8, marginHorizontal: 8, fontSize: 12, color: '#FFD54F', lineHeight: 17 }}>
-                        Small amounts can leave un-refreshable dust that expires. Swapping 700 sats or more keeps them refreshable.
+                        {loc.cypherbox.payments.swap_amount.small_amount_warning}
                     </Text>
                 )}
                 {/* Replaces the warning above rather than sitting alongside it.
@@ -485,19 +499,18 @@ export default function SwapAmount() {
                     COPY: Bam finalizes. */}
                 {isDustTopup && (
                     <Text style={{ textAlign: 'center', marginTop: 8, marginHorizontal: 8, fontSize: 12, color: '#ddd', lineHeight: 17 }}>
-                        This is meant to be small. It has to stay under {ARK_REFRESH_MIN_SATS} sats to combine with
-                        the dust you already have.
+                        {loc.formatString(loc.cypherbox.payments.swap_amount.dust_topup_note, { sats: ARK_REFRESH_MIN_SATS })}
                     </Text>
                 )}
             </View>
             {loading ? (
                 <View style={styles.loadingView}>
                     <ActivityIndicator size="large" color={colors.pink.default} />
-                    <Text style={styles.loadingText}>Processing swap...</Text>
+                    <Text style={styles.loadingText}>{loc.cypherbox.payments.swap_amount.processing_swap}</Text>
                     {slowHint && (
                         <>
                             <Text style={{ color: colors.gray.light, fontSize: 13, marginTop: 10, textAlign: 'center', marginHorizontal: 20 }}>
-                                It's taking longer than expected...
+                                {loc.cypherbox.payments.swap_amount.taking_longer}
                             </Text>
                             {/* Slow swaps almost always LAND, minutes late (the
                                 LN path to the Ark server settles slowly; verified
@@ -506,7 +519,7 @@ export default function SwapAmount() {
                                 Home. The claim/movement watchers pick the result
                                 up in the background and the balance updates. */}
                             <Text style={{ color: colors.gray.light, fontSize: 13, marginTop: 6, textAlign: 'center', marginHorizontal: 20 }}>
-                                The swap will keep confirming in the background. It's safe to go Home, your balance will update when it lands.
+                                {loc.cypherbox.payments.swap_amount.background_notice}
                             </Text>
                             <TouchableOpacity onPress={() => dispatchReset('HomeScreen')} style={styles.homeButton}>
                                 <LinearGradient
@@ -515,7 +528,7 @@ export default function SwapAmount() {
                                     colors={[colors.pink.extralight, colors.pink.default]}
                                     style={styles.homeButtonGradient}
                                 >
-                                    <Text bold style={styles.homeText}>Home</Text>
+                                    <Text bold style={styles.homeText}>{loc.cypherbox.payments.common.home}</Text>
                                 </LinearGradient>
                             </TouchableOpacity>
                         </>
@@ -523,7 +536,7 @@ export default function SwapAmount() {
                 </View>
             ) : (
                 <CustomKeyboard
-                    title={smallBarkSwapWarn ? "Swap anyways" : "Swap"}
+                    title={smallBarkSwapWarn ? loc.cypherbox.payments.swap_amount.swap_anyways : loc.cypherbox.payments.swap_amount.swap}
                     prevSats={sats}
                     onPress={handleSwap}
                     setSATS={setSats}

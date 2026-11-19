@@ -15,6 +15,8 @@ interface QRCodeComponentProps {
   logoSize?: number;
   size?: number;
   ecl?: 'H' | 'Q' | 'M' | 'L';
+  /** white margin around the code, in points, drawn inside `size` plus twice this */
+  quietZone?: number;
   onError?: () => void;
 }
 
@@ -62,6 +64,7 @@ const QRCodeComponent: React.FC<QRCodeComponentProps> = ({
   logoSize = 90,
   size = 300,
   ecl = 'H',
+  quietZone = 0,
   onError = () => {},
 }) => {
   const qrCode = useRef<any>();
@@ -120,6 +123,7 @@ const QRCodeComponent: React.FC<QRCodeComponentProps> = ({
       logoBackgroundColor={colors.brandingColor}
       backgroundColor="#FFFFFF"
       ecl={ecl}
+      quietZone={quietZone}
       getRef={(c: any) => (qrCode.current = c)}
       onError={onError}
     />

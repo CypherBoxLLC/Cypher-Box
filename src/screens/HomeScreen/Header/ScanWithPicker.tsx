@@ -15,6 +15,7 @@ import {
     StrikeFull,
 } from '@Cypher/assets/images';
 import { colors } from '@Cypher/style-guide';
+import loc from '../../../../loc';
 
 /**
  * Stable wallet keys — used by the parent's onSelect to dispatch the right
@@ -26,6 +27,8 @@ export type ScanTargetKey = 'strike' | 'coinos' | 'hotVault' | 'coldVault' | 'ar
 
 interface Props {
     visible: boolean;
+    /** open for a bitcoin: or lightning: link the phone opened Cypher Box with, rather than for the scanner */
+    forLink?: boolean;
     onClose: () => void;
     onSelect: (key: ScanTargetKey) => void;
     available: {
@@ -52,7 +55,7 @@ interface Props {
  * routing dance. Keeping this component dumb means the same picker can
  * later be reused for a "Receive with" flow if we want a symmetric UX.
  */
-export default function ScanWithPicker({ visible, onClose, onSelect, available }: Props) {
+export default function ScanWithPicker({ visible, forLink = false, onClose, onSelect, available }: Props) {
     const rows: Array<{
         key: ScanTargetKey;
         label: string;
@@ -65,7 +68,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
         {
             key: 'strike',
             label: 'Strike',
-            subtitle: 'Lightning · custodial',
+            subtitle: loc.cypherbox.scan_with.lightning_custodial,
             icon: StrikeFull,
             isLogo: true,
             accent: colors.pink.default,
@@ -73,30 +76,30 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
         {
             key: 'coinos',
             label: 'CoinOS',
-            subtitle: 'Lightning · custodial',
+            subtitle: loc.cypherbox.scan_with.lightning_custodial,
             icon: CoinOSIcon,
             isLogo: true,
             accent: '#ffd166',
         },
         {
             key: 'ark',
-            label: 'Bark Vault',
-            subtitle: 'Lightning · self-custodial',
+            label: loc.cypherbox.scan_with.bark_vault,
+            subtitle: loc.cypherbox.scan_with.lightning_self_custodial,
             icon: null,
             textLabel: 'ARK',
             accent: colors.ark?.light ?? '#7DD3FC',
         },
         {
             key: 'hotVault',
-            label: 'Hot Vault',
-            subtitle: 'Bitcoin on-chain',
+            label: loc.cypherbox.home.hot_vault,
+            subtitle: loc.cypherbox.scan_with.bitcoin_onchain,
             icon: HotIcon,
             accent: '#ff9a3c',
         },
         {
             key: 'coldVault',
-            label: 'Cold Vault',
-            subtitle: 'Bitcoin on-chain',
+            label: loc.cypherbox.home.cold_vault,
+            subtitle: loc.cypherbox.scan_with.bitcoin_onchain,
             icon: ColdIcon,
             accent: '#7fb3ff',
         },
@@ -114,10 +117,10 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                     backdrop dismiss only fires when tapping outside. */}
                 <Pressable style={modalStyles.sheet} onPress={() => {}}>
                     <Text bold style={modalStyles.title}>
-                        Scan with
+                        {forLink ? loc.cypherbox.scan_with.link_title : loc.cypherbox.scan_with.title}
                     </Text>
                     <Text style={modalStyles.subtitle}>
-                        Choose which wallet pays the scanned address or invoice.
+                        {forLink ? loc.cypherbox.scan_with.link_subtitle : loc.cypherbox.scan_with.subtitle}
                     </Text>
 
                     {rows.map((row) => {
@@ -157,7 +160,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                                         {row.label}
                                     </Text>
                                     <Text style={modalStyles.rowSubtitle}>
-                                        {enabled ? row.subtitle : `${row.subtitle} · not connected`}
+                                        {enabled ? row.subtitle : `${row.subtitle} · ${loc.cypherbox.scan_with.not_connected}`}
                                     </Text>
                                 </View>
                             </TouchableOpacity>
@@ -165,7 +168,7 @@ export default function ScanWithPicker({ visible, onClose, onSelect, available }
                     })}
 
                     <TouchableOpacity onPress={onClose} style={modalStyles.cancel}>
-                        <Text bold style={modalStyles.cancelText}>Cancel</Text>
+                        <Text bold style={modalStyles.cancelText}>{loc._.cancel}</Text>
                     </TouchableOpacity>
                 </Pressable>
             </Pressable>

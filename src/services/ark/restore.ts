@@ -10,6 +10,7 @@ import {
 import { getEsploraHealth, noteEsploraFailure } from './esploraHealth';
 import { ARK_DATADIR } from './datadir';
 import { cacheArkMnemonicForReopen, getArkWalletHandle, getCachedArkMnemonic, openArkWallet } from './walletHandle';
+import loc from '../../../loc';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
@@ -103,7 +104,9 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
     }
     openInFlight = true;
     try {
-        return await openWithRetry(seed);
+        // The seed came out of the saved entry, which lets the open correct
+        // the vault's consent record (walletHandle's recordSavedSeedConsent).
+        return await openWithRetry(seed, { fromSavedSeed: true });
     } finally {
         openInFlight = false;
     }
@@ -145,7 +148,10 @@ export function isTransientArkOpenError(detail: string): boolean {
  * lookups kept re-earning 429s this map already knew about. One IP means one
  * quota, so one map. See esploraHealth.ts.
  */
-async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
+async function openWithRetry(
+    seed: string,
+    opts?: { fromSavedSeed?: boolean },
+): Promise<ArkRestoreResult> {
     let lastErr: Error | undefined;
     for (let attempt = 1; attempt <= OPEN_ATTEMPTS; attempt++) {
         // Health-driven, not round-robin. The old `(attempt - 1) % len` walked
@@ -161,7 +167,7 @@ async function openWithRetry(seed: string): Promise<ArkRestoreResult> {
         });
         const esploraUrl = choice.url;
         try {
-            await openArkWallet(seed, { esploraUrl });
+            await openArkWallet(seed, { esploraUrl, fromSavedSeed: opts?.fromSavedSeed === true });
             if (__DEV__ && (attempt > 1 || esploraUrl !== ESPLORA_URLS_BARK[0])) {
                 console.log(
                     `[Ark restore] open succeeded on attempt ${attempt}/${OPEN_ATTEMPTS} via ${esploraUrl}`,
@@ -318,8 +324,7 @@ export async function ensureArkWalletHandleReady(
         // when the cause is no connectivity: waiting never succeeds.
         if (openError) throw openError;
         throw new Error(
-            'The vault could not be opened. It needs a connection, so check yours, ' +
-            'or switch between Wi-Fi and mobile data, then try again.',
+            loc.cypherbox.services.ark_exit.vault_could_not_open,
         );
     }
     return handle;

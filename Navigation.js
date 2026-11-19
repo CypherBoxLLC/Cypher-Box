@@ -2,6 +2,7 @@ import React, { useCallback, useState, useEffect, useMemo } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { Platform, useWindowDimensions, Dimensions, I18nManager } from 'react-native';
+import { safeTopInset } from './src/helpers/safeTopInset';
 
 import Settings from './screen/settings/settings';
 import Security from './screen/settings/security';
@@ -96,6 +97,15 @@ import ForgetPassword from '@Cypher/screens/Account/ForgetPassword';
 import HardwareWalletTransaction from '@Cypher/screens/HardwareWalletTransaction';
 import HardwareWalletTransactionContinue from '@Cypher/screens/HardwareWalletTransactionContinue';
 import ConfirmHardwareTransaction from '@Cypher/screens/ConfirmHardwareTransaction';
+import VerifyTransactionGuide from '@Cypher/screens/VerifyTransactionGuide';
+import SigningSafetyGuide from '@Cypher/screens/SigningSafetyGuide';
+import SignOnce from '@Cypher/screens/SignOnce';
+import SeedQRBackup from '@Cypher/screens/SeedQRBackup';
+import SeedSignerGate from '@Cypher/screens/SeedSignerGate';
+import CreateSignerSeed from '@Cypher/screens/CreateSignerSeed';
+import SignerWallets from '@Cypher/screens/SignerWallets';
+import RegisterSignerWallet from '@Cypher/screens/RegisterSignerWallet';
+import CheckSignerAddress from '@Cypher/screens/CheckSignerAddress';
 import ColdVaultIntro from '@Cypher/screens/ColdVaultIntro';
 import ColdVaultIntro2 from '@Cypher/screens/ColdVaultIntro2';
 import CheckingAccountIntro from '@Cypher/screens/CheckingAccountIntro';
@@ -135,16 +145,7 @@ const HotVaultStack = createNativeStackNavigator();
 const HotVaultFlow = () => (
   <HotVaultStack.Navigator screenOptions={{ headerShown: false }}>
     <HotVaultStack.Screen name="SavingVaultIntro" component={SavingVaultIntro} />
-    {/* BlueWallet's dice/coin entropy screen, reachable from the hot-vault
-        instruction page ("create your own entropy"). Registered here (in
-        addition to AddWalletStack) because cross-stack navigate can't reach
-        the legacy add-wallet flow from SavingVaultIntro. Header re-enabled
-        per-screen so the user has a back affordance besides Save. */}
-    <HotVaultStack.Screen
-      name="ProvideEntropy"
-      component={ProvideEntropy}
-      options={{ headerShown: true, title: loc.entropy.title }}
-    />
+    {/* No dice screen here: SavingVaultIntro's "create your own entropy" opens the one in WalletsStack (see there). */}
     <HotVaultStack.Screen
       name="SavingVault"
       component={SavingVault}
@@ -310,6 +311,31 @@ const WalletsRoot = () => {
       <WalletsStack.Screen name="HardwareWalletTransaction" component={HardwareWalletTransaction} options={{ headerShown: false }} />
       <WalletsStack.Screen name="HardwareWalletTransactionContinue" component={HardwareWalletTransactionContinue} options={{ headerShown: false }} />
       <WalletsStack.Screen name="ConfirmHardwareTransaction" component={ConfirmHardwareTransaction} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="VerifyTransactionGuide" component={VerifyTransactionGuide} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="SigningSafetyGuide" component={SigningSafetyGuide} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="SignOnce" component={SignOnce} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="SeedQRBackup" component={SeedQRBackup} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="SeedSignerGate" component={SeedSignerGate} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="CreateSignerSeed" component={CreateSignerSeed} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="SignerWallets" component={SignerWallets} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="RegisterSignerWallet" component={RegisterSignerWallet} options={{ headerShown: false }} />
+      <WalletsStack.Screen name="CheckSignerAddress" component={CheckSignerAddress} options={{ headerShown: false }} />
+      {/* The dice screen, for the Hot Vault's "create your own entropy" (SavingVaultIntro, in HotVaultFlow) and
+          CreateSignerSeed's "Add your own dice rolls". One copy, here in the JS stack: the copy that was in the native
+          HotVaultFlow drew its native header under the iOS status bar (the back arrow over the clock). Navigating to it
+          from HotVaultFlow bubbles up to this stack, and the screen hands its rolls back through onGenerated and pops.
+          On iOS the header's status-bar height is the one measured at launch (safeTopInset), the floor ScreenLayout also
+          uses. The back title is set because CreateSignerSeed has none, and its route name would show. */}
+      <WalletsStack.Screen
+        name="ProvideEntropy"
+        component={ProvideEntropy}
+        options={{
+          headerShown: true,
+          title: loc.entropy.title,
+          headerBackTitle: loc.cypherbox.account.common.back,
+          ...(Platform.OS === 'ios' ? { headerStatusBarHeight: safeTopInset(undefined) } : null),
+        }}
+      />
       <WalletsStack.Screen name="TransactionBroadCastNew" component={TransactionBroadCastNew} options={{ headerShown: false }} />
       <WalletsStack.Screen name="PurchaseVault" component={PurchaseVault} options={{ headerShown: false }} />
       <WalletsStack.Screen name="TransactionNew" component={TransactionNew} options={{ headerShown: false }} />
@@ -448,6 +474,8 @@ const SendDetailsRoot = () => {
         component={PsbtWithHardwareWallet}
         options={PsbtWithHardwareWallet.navigationOptions(theme)}
       />
+      <SendDetailsStack.Screen name="VerifyTransactionGuide" component={VerifyTransactionGuide} options={{ headerShown: false }} />
+      <SendDetailsStack.Screen name="SigningSafetyGuide" component={SigningSafetyGuide} options={{ headerShown: false }} />
       <SendDetailsStack.Screen name="CreateTransaction" component={SendCreate} options={SendCreate.navigationOptions(theme)} />
       <SendDetailsStack.Screen name="PsbtMultisig" component={PsbtMultisig} options={PsbtMultisig.navigationOptions(theme)} />
       <SendDetailsStack.Screen

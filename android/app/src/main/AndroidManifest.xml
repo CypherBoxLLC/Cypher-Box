@@ -7,6 +7,12 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- MainActivity is locked to portrait, which on its own makes Play require a portrait screen and hide the app
+         from devices without one (some tablets, desktop mode, Android XR). Phones still open it in portrait. -->
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -111,18 +117,23 @@
 <!--        </activity>-->
 
 
+        <!-- Portrait only, like the iPhone app: several screens size themselves from the width read at start-up. -->
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTop"
+            android:screenOrientation="portrait"
             android:theme="@style/BootTheme"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Payment links only. The data lines of one filter combine, so a host on any of them would be required of
+                 bitcoin:address links too, which have none. Strike's sign-in link (cypherbox://oauth/callback) is
+                 received by the sign-in library's own activity, which claims the cypherbox scheme. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
@@ -131,36 +142,8 @@
 
                 <data android:scheme="bitcoin" />
                 <data android:scheme="lightning" />
-                <data android:scheme="cypherbox" android:host="oauth/callback" />
-                <data android:scheme="lapp" />
-                <data android:scheme="blue" />
-                <data android:scheme="http" />
-                <data android:scheme="https" />
             </intent-filter>
-            <intent-filter tools:ignore="AppLinkUrlError">
-                <action android:name="android.intent.action.VIEW" />
-                <action android:name="android.intent.action.EDIT" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <data
-                    android:mimeType="application/octet-stream"
-                    android:pathPattern=".*\\.psbt" />
-            </intent-filter>
-            <intent-filter tools:ignore="AppLinkUrlError">
-                <action android:name="android.intent.action.VIEW" />
-                <action android:name="android.intent.action.EDIT" />
-
-                <category android:name="android.intent.category.DEFAULT" />
-                <data
-                    android:mimeType="text/plain"
-                    android:pathPattern=".*\\.psbt" />
-            </intent-filter>
-
         </activity>
-
-        <meta-data
-            android:name="com.bugsnag.android.API_KEY"
-            android:value="17ba9059f676f1cc4f45d98182388b01" />
     </application>
 
     <queries>

@@ -1,10 +1,11 @@
 import React, { useMemo } from "react";
-import { Modal, Pressable, StyleSheet, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { Text } from "@Cypher/component-library";
 import useEvents from "@Cypher/custom-hooks/useEvents";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { Row } from "@Cypher/screens/Activity";
+import loc from "../../../loc";
 
 interface Props {
     visible: boolean;
@@ -71,10 +72,13 @@ export default function ActivityDropdown({ visible, onClose }: Props) {
                 <Pressable style={styles.card} onPress={() => {}}>
                     {events.length === 0 ? (
                         <View style={styles.empty}>
-                            <Text style={styles.emptyText}>No activity yet.</Text>
+                            <Text style={styles.emptyText}>{loc.cypherbox.components.activity_dropdown.no_activity}</Text>
                         </View>
                     ) : (
-                        <View style={styles.list}>
+                        // Scrolls inside the card's maxHeight, so tall rows (an
+                        // ignored Home notice carries its whole message) cannot
+                        // push "Show more" out of the card.
+                        <ScrollView style={styles.list} bounces={false}>
                             {preview.map((ev, idx) => (
                                 <View key={ev.id}>
                                     <Row ev={ev} now={now} />
@@ -83,14 +87,14 @@ export default function ActivityDropdown({ visible, onClose }: Props) {
                                     )}
                                 </View>
                             ))}
-                        </View>
+                        </ScrollView>
                     )}
                     <Pressable
                         style={styles.showMore}
                         onPress={handleShowMore}
-                        accessibilityLabel="Show all activity"
+                        accessibilityLabel={loc.cypherbox.components.activity_dropdown.show_all_a11y}
                     >
-                        <Text style={styles.showMoreText}>Show more</Text>
+                        <Text style={styles.showMoreText}>{loc.cypherbox.components.activity_dropdown.show_more}</Text>
                     </Pressable>
                 </Pressable>
             </Pressable>
@@ -121,6 +125,9 @@ const styles = StyleSheet.create({
     },
     list: {
         paddingTop: 4,
+        // Content height up to the card's maxHeight, then scroll.
+        flexGrow: 0,
+        flexShrink: 1,
     },
     sep: {
         height: StyleSheet.hairlineWidth,

@@ -105,6 +105,8 @@ interface Style {
     linearSecondStyle: ViewStyle;
     circleContainer: ViewStyle;
     swapIcon: ViewStyle;
+    swapIconDisabled: ViewStyle;
+    regionNotice: TextStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -778,5 +780,13 @@ export default StyleSheet.create<Style>({
         justifyContent: 'center',
         width: 40,
         height: 40,
-    }
+    },
+    swapIconDisabled: {
+        opacity: 0.3,
+    },
+    regionNotice: {
+        color: '#23C47F',
+        paddingHorizontal: 20,
+        paddingTop: 10,
+    },
 });

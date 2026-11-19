@@ -21,8 +21,9 @@ import { AbstractWallet } from "../../../class";
 import useAuthStore from "@Cypher/stores/authStore";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import { getArkOnchainAddress } from "@Cypher/services/ark/receive";
-import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
 import MaskedView from "@react-native-masked-view/masked-view";
+import loc from "../../../loc";
 
 const whiteCapsule = require("@Cypher/assets/images/whitecapsule.png");
 const orangeCapsule = require("@Cypher/assets/images/orangeCapsule.png");
@@ -113,7 +114,11 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     const [frozen, setFrozen] = useState(
         utxo.filter(out => wallet.getUTXOMetadata(out.txid, out.vout).frozen).map(({ txid, vout }) => `${txid}:${vout}`),
     );
-    const { walletID, coldStorageWalletID, isAuth, isStrikeAuth, isArkAuth, strikeUser } = useAuthStore();
+    const { walletID, coldStorageWalletID, isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, strikeUser } = useAuthStore();
+    // Region gates (services/featureFlags): a connected rail that is not
+    // offered in this region is treated as unavailable on this surface.
+    const isAuth = isCoinosConnected && isCoinosAllowed();
+    const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
     const { wallets, saveToDisk, sleep, isElectrumDisabled } = useContext(BlueStorageContext);
 
     const debouncedSaveFronen = useRef(
@@ -251,14 +256,14 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             if (found) capsuleTotal += found.value
         });
         if(vaultTab && !walletID){
-            SimpleToast.show("You need to create a Hot Vault first before moving capsules to it", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.capsules.need_hot_vault, SimpleToast.SHORT)
         } else if(!vaultTab && !coldStorageWalletID){
-            SimpleToast.show("You need to create a Cold Vault first before moving capsules to it", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.capsules.need_cold_vault, SimpleToast.SHORT)
         }
         else if (ids.length > 0) {
             dispatchNavigate('ColdStorage', {wallet, currency, utxo, ids, maxUSD: total, isMaxEdit: true, inUSD: inUSD, total: total, matchedRate, capsulesData, to: sendToAddress, vaultTab, vaultSend: true, title: !vaultTab ? "Transfer To Cold Vault" : undefined, capsuleTotal});
         } else {
-            SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.capsules.select_to_send, SimpleToast.SHORT)
         }
     }
 
@@ -278,7 +283,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         if (ids.length > 0) {
             dispatchNavigate('ColdStorage', {wallet, currency, capsuleTotal, utxo, ids, isMaxEdit: true, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: selfAddress, vaultTab, vaultSend: true, title: vaultTab ? "Batch Capsules" : undefined, isBatch: true});
         } else {
-            SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.capsules.select_to_send, SimpleToast.SHORT)
         }
     }
 
@@ -288,7 +293,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
         //     return;
         // }
         if (!isAuth && !isStrikeAuth && !isArkAuth) {
-            SimpleToast.show('You need to be logged in to wallet to top up', SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.capsules.login_to_top_up, SimpleToast.SHORT);
             return
         }
         let capsulesData: any = [];
@@ -309,7 +314,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             dispatchNavigate('EditAmount', { isEdit: false, currency, capsuleTotal, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, toArk: bitcoinArkHash, type: "TOPUP" });
             // dispatchNavigate('ColdStorage', {wallet, currency, capsuleTotal, utxo, ids, vaultTab, maxUSD: total, inUSD: inUSD, total: total, matchedRate, capsulesData, to: bitcoinHash, toStrike: bitcoinStrikeHash, type: "TOPUP"});
         } else {
-            SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.capsules.select_to_send, SimpleToast.SHORT)
         }
     };
     
@@ -355,7 +360,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
             const capsuleTotal = capsulesData.reduce((acc: number, c: any) => acc + (c.value || 0), 0);
             dispatchNavigate('EditAmount', { isEdit: false, currency, vaultTab, wallet, utxo, ids, maxUSD: total, inUSD: inUSD.toFixed(2), total, matchedRate, to, toStrike, capsulesData, capsuleTotal });
         } else {
-            SimpleToast.show("Please select Capsules to Send", SimpleToast.SHORT)
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.capsules.select_to_send, SimpleToast.SHORT)
         }
     };
 
@@ -383,16 +388,16 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
     return (
         <View style={styles.flex}>
             <View style={{flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'}}>
-                <Text bold style={[styles.desc, {flex: 1, marginHorizontal: undefined, marginRight: 10, marginLeft: 20}]}>Select your UTXO capsules to send, consolidate, move to Cold Vault, or Top-up your Lightning Account:</Text>
+                <Text bold style={[styles.desc, {flex: 1, marginHorizontal: undefined, marginRight: 10, marginLeft: 20}]}>{loc.cypherbox.vault.storage_vault.capsules.intro}</Text>
                 <TouchableOpacity onPress={() => dispatchNavigate('CapsuleCatalog')} style={{marginLeft: 10, marginRight: 15, marginTop: 5, width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: vaultTab ? colors.coldGreen : colors.green, alignItems: 'center', justifyContent: 'center'}}>
                     <Text bold style={{color: vaultTab ? colors.coldGreen : colors.green, fontSize: 14}}>?</Text>
                 </TouchableOpacity>
             </View>
             <View style={styles.titleStyle}>
-                <Text bold style={styles.coin}>Capsules</Text>
-                <Text bold style={styles.size}>Size</Text>
-                <Text bold style={styles.label}>Label</Text>
-                <Text bold style={styles.select}>Select</Text>
+                <Text bold style={styles.coin}>{loc.cypherbox.vault.storage_vault.capsules.column_capsules}</Text>
+                <Text bold style={styles.size}>{loc.cypherbox.vault.storage_vault.capsules.column_size}</Text>
+                <Text bold style={styles.label}>{loc.cypherbox.vault.storage_vault.capsules.column_label}</Text>
+                <Text bold style={styles.select}>{loc.cypherbox.vault.storage_vault.capsules.column_select}</Text>
             </View>
             <View style={styles.border} />
             {loading ?
@@ -404,7 +409,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                     showsVerticalScrollIndicator={false}
                     ListEmptyComponent={() => (
                         <View style={{ height: screenHeight / 3.5, justifyContent: 'center', alignItems: 'center', marginTop: 30 }}>
-                            <Text white h3 bold>This wallet does not have any coins at the moment.</Text>
+                            <Text white h3 bold>{loc.cypherbox.vault.storage_vault.capsules.empty}</Text>
                         </View>
                     )}
                     renderItem={({ item, index }) => <ListView wallet={wallet} item={item} onPress={onPressClickHandler} handleChoose={handleChoose} ids={ids} vaultTab={vaultTab} />}
@@ -415,7 +420,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                 {data.map((data_, index) => <ListView item={data_} onPress={onPressClickHandler} ids={ids} />)}
             </ScrollView> */}
             <View style={styles.bottomViewNew}>
-                <Text h2 center>Size of selected capsules:</Text>
+                <Text h2 center>{loc.cypherbox.vault.storage_vault.capsules.selected_size}</Text>
                 <View style={styles.priceView}>
                     <Input
                         onChange={setBtc}
@@ -426,7 +431,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                     />
                     <Text h2 bold numberOfLines={1} style={{ marginStart: 10, width: 100, }}>~$ {inUSD.toFixed(2)}</Text>
                 </View>
-                <Text bold center style={styles.tips}>Tip: Selecting small capsules will increase network fees</Text>
+                <Text bold center style={styles.tips}>{loc.cypherbox.vault.storage_vault.capsules.tip_small}</Text>
                 {vaultTab ?
                     <View style={{
                         flexDirection: 'row',
@@ -440,7 +445,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                             bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                         >
-                            <Text h3 center>Send</Text>
+                            <Text h3 center>{loc.cypherbox.vault.storage_vault.capsules.send}</Text>
                         </GradientView>
                         <GradientView
                             onPress={addressClickHandler}
@@ -450,7 +455,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                             linearGradientStyle={styles.capsuleMainShadowStyle}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                         >
-                            <Text h3 center>Top-up</Text>
+                            <Text h3 center>{loc.cypherbox.vault.storage_vault.capsules.top_up}</Text>
                         </GradientView>
                     </View>
                 :
@@ -466,7 +471,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                             bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                         >
-                            <Text h3 center>Send</Text>
+                            <Text h3 center>{loc.cypherbox.vault.storage_vault.capsules.send}</Text>
                         </GradientView>
                         <GradientView
                             onPress={addressClickHandler}
@@ -476,7 +481,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                             linearGradientStyle={styles.capsuleMainShadowStyle}
                             linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                         >
-                            <Text h3 center>Top-up</Text>
+                            <Text h3 center>{loc.cypherbox.vault.storage_vault.capsules.top_up}</Text>
                         </GradientView>
                     </View>
                 }
@@ -495,7 +500,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                         bottomShadowStyle={[styles.capsuleInnerShadowStyle, vaultTab && { shadowColor: colors.coldGreen}]}
                         linearGradientStyleMain={styles.capsuleLinearGradientStyleMain}
                     >
-                        <Text h3 center>Consolidate</Text>
+                        <Text h3 center>{loc.cypherbox.vault.storage_vault.capsules.consolidate}</Text>
                     </GradientView>
                     <GradientView
                         onPress={moveToVaultClickHandler}
@@ -505,7 +510,7 @@ export default function Capsules({ wallet, matchedRate, currency, to, vaultTab, 
                         linearGradientStyle={styles.capsuleMainShadowStyle}
                         linearGradientStyleMain={[styles.capsuleLinearGradientStyleMain]}
                     >
-                        <Text h4 center>{vaultTab ? "Move to Hot Vault" : "Move to Cold Vault"}</Text>
+                        <Text h4 center>{vaultTab ? loc.cypherbox.vault.storage_vault.capsules.move_to_hot : loc.cypherbox.vault.storage_vault.capsules.move_to_cold}</Text>
                     </GradientView>
                 </View>
             </View>

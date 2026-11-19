@@ -1,5 +1,5 @@
 import React, {useContext, useReducer, useState, useRef, useEffect} from "react";
-import { View, Image, InteractionManager, Switch, TouchableOpacity, Animated, Keyboard, KeyboardEvent, Platform } from "react-native";
+import { Alert, View, Image, InteractionManager, Switch, TouchableOpacity, Animated, Keyboard, KeyboardEvent, Platform } from "react-native";
 import * as bip39 from 'bip39';
 import SimpleToast from "react-native-simple-toast";
 import styles from "./styles";
@@ -7,6 +7,8 @@ import { Button, Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { colors } from "@Cypher/style-guide";
 import { HDSegwitBech32Wallet } from "../../../class";
+import { assertMnemonicHealthy } from "../../../class/seedHealth";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import loc from '../../../loc';
 import { initialState, walletReducer } from "../../../screen/wallets/add";
 import { BlueStorageContext } from '../../../blue_modules/storage-context';
@@ -21,7 +23,7 @@ export default function SavingVaultIntro() {
     // BIP39 passphrase ("25th word"), strictly opt-in via the toggle so
     // nothing is ever typed (or applied) without a deliberate choice. The
     // passphrase is used exactly as typed (case-sensitive, spaces count),
-    // never trimmed, never stored anywhere — it only feeds setPassphrase()
+    // never trimmed. It only feeds setPassphrase(), and the wallet keeps it on the phone (never in the Keychain backup)
     // at generation time. Confirm-field guards the create-time typo that
     // would otherwise strand funds on a wallet nobody can recover.
     const [usePassphrase, setUsePassphrase] = useState(false);
@@ -112,7 +114,7 @@ export default function SavingVaultIntro() {
     const label = state.label;
     const { addWallet, saveToDisk, isAdvancedModeEnabled, wallets } = useContext(BlueStorageContext);
     const A = require('../../../blue_modules/analytics');
-    const { setWalletID } = useAuthStore();
+    const { setWalletID, signingMode } = useAuthStore();
 
     /**
      * Create a fresh HDSegwitBech32 hot vault — and get out of the user's
@@ -167,11 +169,11 @@ export default function SavingVaultIntro() {
       // match exactly — there is no recovery from a create-time typo.
       if (usePassphrase) {
         if (!passphrase) {
-          SimpleToast.show('Enter a passphrase, or turn the passphrase toggle off', SimpleToast.LONG);
+          SimpleToast.show(loc.cypherbox.vault.saving_vault_intro.enter_passphrase, SimpleToast.LONG);
           return;
         }
         if (passphrase !== passphraseConfirm) {
-          SimpleToast.show('Passphrases do not match', SimpleToast.LONG);
+          SimpleToast.show(loc.cypherbox.vault.saving_vault_intro.passphrases_mismatch, SimpleToast.LONG);
           return;
         }
       }
@@ -185,25 +187,40 @@ export default function SavingVaultIntro() {
 
       const w = new HDSegwitBech32Wallet();
       w.setLabel(label || loc.wallets.details_title);
-      if (diceEntropy && diceEntropy.length >= 16) {
-        // Already mixed. The entropy screen hashes the user's rolls with 16
-        // device CSPRNG bytes and hands back the RESULT, having first shown
-        // every input so the derivation can be checked by hand.
-        //
-        // The mix is not optional, and it lives there rather than here so the
-        // user can see it. The counter on that screen measures BITS PUSHED,
-        // not entropy, and a face maps to the same value every time, so 64
-        // taps of one button once satisfied the 128-bit gate with 128 zero
-        // bits and produced the all-zeros BIP39 test vector, which is swept
-        // within seconds of being funded. Tapping one face was also the
-        // FASTEST way to fill the counter, so it was reachable by impatience.
-        //
-        // Hashing gets both sources into 16 bytes and 12 words. Safe if EITHER
-        // is sound, rather than only if the dice are. See mixEntropy in
-        // screen/wallets/provideEntropy.
-        w.setSecret(bip39.entropyToMnemonic(diceEntropy.slice(0, 16).toString('hex')));
-      } else {
-        await w.generate();   // BIP39 mnemonic — ~5ms on device
+      // Minting and checking share one try: generate() refuses when the phone's
+      // randomness isn't working, and an uncaught refusal here left the button
+      // spinning with no message.
+      try {
+        if (diceEntropy && diceEntropy.length >= 16) {
+          // Already mixed. The entropy screen hashes the user's rolls with 16
+          // device CSPRNG bytes and hands back the RESULT, having first shown
+          // every input so the derivation can be checked by hand.
+          //
+          // The mix is not optional, and it lives there rather than here so the
+          // user can see it. The counter on that screen measures BITS PUSHED,
+          // not entropy, and a face maps to the same value every time, so 64
+          // taps of one button once satisfied the 128-bit gate with 128 zero
+          // bits and produced the all-zeros BIP39 test vector, which is swept
+          // within seconds of being funded. Tapping one face was also the
+          // FASTEST way to fill the counter, so it was reachable by impatience.
+          //
+          // Hashing gets both sources into 16 bytes and 12 words. Safe if EITHER
+          // is sound, rather than only if the dice are. See mixEntropy in
+          // screen/wallets/provideEntropy.
+          w.setSecret(bip39.entropyToMnemonic(diceEntropy.slice(0, 16).toString('hex')));
+        } else {
+          await w.generate();   // BIP39 mnemonic — ~5ms on device
+        }
+        // Validate the freshly minted seed before it becomes a wallet: a broken
+        // entropy source (dice or RNG) is caught here rather than stored.
+        assertMnemonicHealthy(w.getSecret());
+      } catch (e: any) {
+        setIsLoading(false);
+        Alert.alert(
+          loc.cypherbox.safety_checks.create_failed_title,
+          safetyErrorText(e, loc.cypherbox.safety_checks.seed_unsafe),
+        );
+        return;
       }
       // MUST run before getID()/addWallet(): the wallet ID hash includes the
       // passphrase, so setting it later would silently change the vault's
@@ -237,14 +254,24 @@ export default function SavingVaultIntro() {
         <ScreenLayout showToolbar progress={0} color={[colors.green, colors.green]}>
             <Animated.View style={[styles.container, { transform: [{ translateY: contentLift }] }]}>
                 <View style={styles.innerView}>
-                    <Text style={styles.title}>Hot Savings Vault</Text>
-                    <Text h4 style={styles.descption}>Hot Vault, commonly known as a ‘hot wallet’, allows you to become the sole owner of your bitcoin, as the saying goes: Not your keys, not your coins. Money stored in this vault will be secured by the main Bitcoin network, not by a third party custodian.
+                    <Text style={styles.title}>{signingMode ? loc.cypherbox.vault.saving_vault_intro.seed_title : loc.cypherbox.vault.saving_vault_intro.title}</Text>
+                    {/* a seed-signer's seed isn't a vault: it's backed up, wiped from the phone and scanned in to sign */}
+                    {signingMode ? (
+                    <Text h4 style={styles.descption}>{loc.cypherbox.vault.saving_vault_intro.seed_para_1}
                         {'\n\n'}
-                        To create a Hot Vault, you first need to generate your keys: your phone will  create the private key, encrypt it, and store it in its memory. It will also create a backup copy (12 words), just in case you lose access to your phone.
+                        {loc.cypherbox.vault.saving_vault_intro.seed_para_2}
+                        {'\n\n'}
+                        {loc.cypherbox.vault.saving_vault_intro.seed_para_3}
+                    </Text>
+                    ) : (
+                    <Text h4 style={styles.descption}>{loc.cypherbox.vault.saving_vault_intro.para_1}
+                        {'\n\n'}
+                        {loc.cypherbox.vault.saving_vault_intro.para_2}
                         
                         {'\n\n'}
-                        Caution: while it offers a much more secure storage environment than the Lightning Account, the keys to your Hot Vault are generated and stored on an internet-connect device. As your balance and technical skills increase, you should think about investing in an offline hardware signing device for enhanced security.
+                        {loc.cypherbox.vault.saving_vault_intro.para_3}
                     </Text>
+                    )}
 
                     <Image
                       source={require('@Cypher/assets/images/fireShield.png')}
@@ -257,7 +284,7 @@ export default function SavingVaultIntro() {
                         them; default flow is untouched. */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 18 }}>
                         <Text bold style={{ color: '#FFF', fontSize: 15, flex: 1 }}>
-                            Optional Passphrase
+                            {loc.cypherbox.vault.saving_vault_intro.optional_passphrase}
                         </Text>
                         <Switch
                             value={usePassphrase}
@@ -269,16 +296,16 @@ export default function SavingVaultIntro() {
                     {usePassphrase && (
                         <View style={{ marginTop: 8 }}>
                             <Text h4 style={{ color: '#CCC', fontSize: 12, lineHeight: 17 }}>
-                                Adds a secret "25th word" to your vault: anyone who finds your 12 words alone cannot spend your funds, and the seed copy stored on this phone stays useless without it.
+                                {loc.cypherbox.vault.saving_vault_intro.passphrase_info}
                             </Text>
                             <Text h4 style={{ color: '#FFD54F', fontSize: 12, lineHeight: 17, marginTop: 6 }}>
-                                ⚠ Losing the passphrase means irrecoverably losing your Hot Vault funds, even if you possess the 12-word seed phrase. It is case-sensitive and spaces count. You should be able to memorise it, and include it on your seed phrase paper.
+                                {loc.cypherbox.vault.saving_vault_intro.passphrase_warning}
                             </Text>
                             <View ref={passWrapRef} collapsable={false}>
                                 <Input
                                     onChange={setPassphrase}
                                     value={passphrase}
-                                    label="Passphrase"
+                                    label={loc.cypherbox.vault.saving_vault_intro.passphrase_label}
                                     autoCapitalize="none"
                                     secureTextEntry
                                     textInputStyle={{ color: '#FFF' }}
@@ -291,7 +318,7 @@ export default function SavingVaultIntro() {
                                 <Input
                                     onChange={setPassphraseConfirm}
                                     value={passphraseConfirm}
-                                    label="Confirm passphrase"
+                                    label={loc.cypherbox.vault.saving_vault_intro.confirm_passphrase_label}
                                     autoCapitalize="none"
                                     secureTextEntry
                                     textInputStyle={{ color: '#FFF' }}
@@ -310,12 +337,12 @@ export default function SavingVaultIntro() {
                     {diceEntropy ? (
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
                             <Text bold style={{ color: colors.green, fontSize: 13, flex: 1 }}>
-                                ✓ Dice rolls added, mixed with your phone's randomness
+                                {loc.cypherbox.vault.saving_vault_intro.dice_added}
                             </Text>
                             <TouchableOpacity
                                 onPress={() => setDiceEntropy(null)}
                                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                accessibilityLabel="Discard dice entropy"
+                                accessibilityLabel={loc.cypherbox.vault.saving_vault_intro.discard_dice}
                             >
                                 <Text bold style={{ color: '#888', fontSize: 16 }}>✗</Text>
                             </TouchableOpacity>
@@ -335,12 +362,12 @@ export default function SavingVaultIntro() {
                             style={{ marginTop: 14 }}
                         >
                             <Text bold style={{ color: colors.green, fontSize: 14 }}>
-                                Advanced: create your own entropy via your dice rolls 🎲
+                                {loc.cypherbox.vault.saving_vault_intro.dice_advanced}
                             </Text>
                         </TouchableOpacity>
                     )}
                 </View>
-                <Button text="Generate Private Key" onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
+                <Button text={signingMode ? loc.cypherbox.vault.saving_vault_intro.generate_seed : loc.cypherbox.vault.saving_vault_intro.generate_key} onPress={createWallet} loading={isLoading} style={styles.button} textStyle={styles.btnText} />
             </Animated.View>
         </ScreenLayout>
     )

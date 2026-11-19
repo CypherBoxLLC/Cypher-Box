@@ -6,8 +6,6 @@ interface Style {
     main: ViewStyle;
     flex: ViewStyle;
     savingVault: ViewStyle;
-    bitcoinText: TextStyle;
-    bitcoinImage: ImageStyle;
     title: TextStyle;
     innerShadowStyle: any;
     outerShadowStyle: any;
@@ -15,8 +13,34 @@ interface Style {
     mainShadowStyle?: ViewStyle;
     base: ViewStyle;
     linearGradientStyleMain: ViewStyle;
+    keyWarning: ViewStyle;
+    keyWarningText: TextStyle;
+    keyWarningHide: TextStyle;
+    pendingCard: ViewStyle;
+    pendingHeader: ViewStyle;
+    pendingTitle: TextStyle;
+    pendingAge: TextStyle;
+    pendingWhat: TextStyle;
+    pendingNote: TextStyle;
+    pendingActions: ViewStyle;
+    pendingResume: ViewStyle;
+    pendingResumeText: TextStyle;
+    pendingDiscard: ViewStyle;
+    pendingDiscardText: TextStyle;
+    broadcastShadow: ViewStyle;
+    broadcastButton: ViewStyle;
+    broadcastImport: ViewStyle;
+    broadcastLabel: TextStyle;
+    broadcastDivider: ViewStyle;
+    broadcastScan: ViewStyle;
+    signLocked: ViewStyle;
+    signShadow: ViewStyle;
+    signStatus: ViewStyle;
+    signStatusText: TextStyle;
+    signStatusLink: TextStyle;
     info: ImageStyle;
     textInfo: TextStyle;
+    scrollContent: ViewStyle;
     qrcode: ViewStyle;
     qrcodeImage: ImageStyle;
     copyImage: ImageStyle;
@@ -30,6 +54,7 @@ interface Style {
     backbtn: ImageStyle;
     settingView: ViewStyle;
     settingView2: ViewStyle;
+    signerRows: ViewStyle;
     typeText: TextStyle;
     typeView: ViewStyle;
     infoView: ViewStyle;
@@ -95,13 +120,6 @@ export default StyleSheet.create<Style>({
     savingVault: {
         width: widths - 40,
         height: 130,
-    },
-    bitcoinText: {
-        fontSize: 16,
-    },
-    bitcoinImage: {
-        width: 37,
-        height: 33,
     },
     title: {
         fontSize: 18,
@@ -172,6 +190,143 @@ export default StyleSheet.create<Style>({
         width: widths - 40,
         // width: (widths / 1) - 30,
     },
+    // "Your Cold Vault's key is on this phone": a red status line under the savings card, like the Bark card's
+    keyWarning: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginHorizontal: 20,
+        marginBottom: 14,
+    },
+    keyWarningText: {
+        flex: 1,
+        color: colors.redLight,
+    },
+    keyWarningHide: {
+        marginLeft: 12,
+        color: colors.gray.light,
+        textDecorationLine: 'underline',
+    },
+    // Waiting for signature: a cold vault spend exported for signing and not broadcast yet, above the broadcast button
+    pendingCard: {
+        marginHorizontal: 20,
+        marginBottom: 14,
+        padding: 14,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: colors.coldGreen,
+        backgroundColor: '#161616',
+    },
+    pendingHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    pendingTitle: {
+        marginLeft: 8,
+        fontSize: 15,
+        color: colors.coldGreen,
+    },
+    pendingAge: {
+        marginLeft: 'auto',
+        fontSize: 13,
+        color: colors.gray.light,
+    },
+    pendingWhat: {
+        marginTop: 8,
+        fontSize: 16,
+        lineHeight: 22,
+    },
+    pendingNote: {
+        marginTop: 6,
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.gray.light,
+    },
+    pendingActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 12,
+    },
+    pendingResume: {
+        flex: 1,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: colors.coldGreen,
+    },
+    pendingResumeText: {
+        fontSize: 15,
+        color: '#000000',
+    },
+    pendingDiscard: {
+        height: 40,
+        marginLeft: 16,
+        paddingHorizontal: 8,
+        justifyContent: 'center',
+    },
+    pendingDiscardText: {
+        fontSize: 15,
+        color: colors.gray.light,
+    },
+    // Broadcast a signed transaction, above Vault Addresses on the cold vault: the same pill, split into a wide
+    // file area and a QR section behind a thin grey divider
+    broadcastShadow: {
+        height: 47,
+        marginBottom: 14,
+    },
+    broadcastButton: {
+        borderRadius: 25,
+        height: 47,
+        width: widths - 40,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    broadcastImport: {
+        flex: 1,
+        height: 47,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingLeft: 16,
+        paddingRight: 8,
+    },
+    broadcastLabel: {
+        marginLeft: 8,
+    },
+    broadcastDivider: {
+        width: 1,
+        height: 26,
+        backgroundColor: '#5C5C60',
+    },
+    broadcastScan: {
+        width: 56,
+        height: 47,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Sign a transaction, on the Hot Vault: the broadcast pill, dimmed with a warning under it while the phone is online
+    signLocked: {
+        opacity: 0.4,
+    },
+    signShadow: {
+        height: 47,
+        marginBottom: 8,
+    },
+    signStatus: {
+        paddingHorizontal: 28,
+        marginBottom: 16,
+    },
+    signStatusText: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.redLight,
+    },
+    signStatusLink: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.blueText,
+        textDecorationLine: 'underline',
+    },
     info: {
         width: 17,
         height: 18,
@@ -179,6 +334,10 @@ export default StyleSheet.create<Style>({
     },
     textInfo: {
         textDecorationLine: 'underline',
+    },
+    // Room under the last row (the Cold Vault address), so it can be scrolled clear of the screen edge.
+    scrollContent: {
+        paddingBottom: 30,
     },
     qrcode: {
         borderColor: colors.greenShadow,
@@ -188,7 +347,9 @@ export default StyleSheet.create<Style>({
         aspectRatio:1,
         //height: "36%",
         alignSelf: 'center',
-        marginTop: 20,
+        // 14 and the address row's 8 (were 20 and 15), with the warning's 14 above: on an iPhone 17 the Cold Vault
+        // screen then fits down to the address without scrolling.
+        marginTop: 14,
         backgroundColor: colors.white
     },
     qrcodeImage: {
@@ -201,7 +362,7 @@ export default StyleSheet.create<Style>({
     },
     codeViewMain: {
         flexDirection: 'row',
-        marginTop: 15,
+        marginTop: 8,
         // backgroundColor: 'red',
         alignItems: 'center',
         justifyContent: 'center',
@@ -256,6 +417,11 @@ export default StyleSheet.create<Style>({
     settingView: {
         flex: 1,
         marginTop: 50,
+    },
+    // the rows on a signing phone's home, under the signer, which brings its own space at the top
+    signerRows: {
+        flex: 1,
+        paddingBottom: 24,
     },
     settingView2: {
         flex: 1,

@@ -1,21 +1,23 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Linking, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
 
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SwipeButton } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
+import { assertSignedTxMatchesPsbt, isRawTransactionHex } from "@Cypher/helpers";
+import signedTxErrorText from "@Cypher/helpers/signedTxErrorText";
 import { shortenAddress } from "../ColdStorage";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { useIsFocused } from "@react-navigation/native";
 import loc from "../../../loc";
+// with its title and button in the app's language (the global alert() titles it "Alert" in English)
+import alert from "../../../components/Alert";
 import Biometric from "../../../class/biometrics";
 import Notifications from "../../../blue_modules/notifications";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
 import Clipboard from "@react-native-clipboard/clipboard";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
-import DocumentPicker from 'react-native-document-picker';
-import RNFS from 'react-native-fs';
 import { DynamicQRCode } from "../../../components/DynamicQRCode";
 import { DynamicPSBTQRCode } from "../../../components/DynamicPSBTQRCode";
 import { SecondButton } from "../../../BlueComponents";
@@ -40,23 +42,34 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
     const [txHex, setTxHex] = useState(route.params.txhex);
 
     const _combinePSBT = receivedPSBT => {
-        console.log(psbt, receivedPSBT)
         return fromWallet.combinePsbt(psbt, receivedPSBT);
       };
     
+    // a signed transaction that checks out goes straight to the last screen (what it pays, the broadcast, the
+    // cross-check advice); the hex and Next stay here for a return visit
+    const confirm = (hex: string) => {
+        setTxHex(hex);
+        navigation.navigate("ConfirmHardwareTransaction", { walletID, isCustomFee, fromWallet, sats, inUSD, sentFrom, destinationAddress, networkFees, serviceFees, totalFees, fee, memo, tx, psbt, to, txHex: hex });
+    };
+
     const onBarScanned = ret => {
         if (ret && !ret.data) ret = { data: ret };
         if (ret.data.toUpperCase().startsWith('UR')) {
           alert('BC-UR not decoded. This should never happen');
         }
-        if (ret.data.indexOf('+') === -1 && ret.data.indexOf('=') === -1 && ret.data.indexOf('=') === -1) {
-          // this looks like NOT base64, so maybe its transaction's hex
-          setTxHex(ret.data);
+        if (isRawTransactionHex(ret.data)) {
+          // a finished transaction instead of a signed PSBT: only accept it if it is the one the user reviewed
+          try {
+            assertSignedTxMatchesPsbt(ret.data, psbt);
+            confirm(ret.data.trim());
+          } catch (Err: any) {
+            alert(signedTxErrorText(Err.message));
+          }
           return;
         }
         try {
           const Tx = _combinePSBT(ret.data);
-          setTxHex(Tx.toHex());
+          confirm(Tx.toHex());
         //   if (launchedBy) {
         //     // we must navigate back to the screen who requested psbt (instead of broadcasting it ourselves)
         //     // most likely for LN channel opening
@@ -133,29 +146,15 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
         }
     };
     
-    const handleOnVerifyPressed = () => {
-        Linking.openURL('https://coinb.in/?verify=' + txHex);
-    };
-    
     const copyHexToClipboard = () => {
         Clipboard.setString(txHex);
     };
     
     const openSignedTransaction = async () => {
-        try {
-            const res = await DocumentPicker.pickSingle({
-                type: Platform.OS === 'ios' ? ['io.bluewallet.psbt', 'io.bluewallet.psbt.txn'] : [DocumentPicker.types.allFiles],
-            });
-            const file = await RNFS.readFile(res.uri);
-            if (file) {
-                onBarScanned({ data: file });
-            } else {
-                throw new Error();
-            }
-        } catch (err) {
-            if (!DocumentPicker.isCancel(err)) {
-                alert(loc.send.details_no_signed_tx);
-            }
+        // the shared reader handles binary .psbt files and file names with spaces, and alerts on failure itself
+        const file = await fs.openSignedTransaction();
+        if (file) {
+            onBarScanned({ data: file });
         }
     };
     
@@ -179,19 +178,27 @@ export default function HardwareWalletTransactionContinue({ route, navigation }:
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
-                <Text style={styles.title} center>Transaction signing</Text>
+                <Text style={styles.title} center>{loc.cypherbox.payments.common.transaction_signing}</Text>
                 <View style={styles.recipientView}>
-                    <Text h4 style={{marginBottom: 20}}>Did you finish signing from your hardware device? Scan or import the signed transaction</Text>
+                    <Text h4 style={{marginBottom: 20}}>{loc.cypherbox.payments.hardware_wallet_transaction_continue.instructions}</Text>
                     <TouchableOpacity onPress={openScanner} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
-                        <Text h3>Scan</Text>
+                        <Text h3>{loc.cypherbox.payments.common.scan}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={openSignedTransaction} style={[styles.nextBtn, {borderColor: colors.blueText, borderWidth: 1}]}>
-                        <Text h3>Import</Text>
+                        <Text h3>{loc.cypherbox.payments.hardware_wallet_transaction_continue.import}</Text>
                     </TouchableOpacity>
-                    <Text h4 style={{marginTop: 20}}>{txHex}</Text>
+                    {/* resuming from the vault tab lands here; the device may still need the unsigned one */}
+                    <TouchableOpacity
+                        onPress={() => navigation.navigate('HardwareWalletTransaction', route.params)}
+                        accessibilityRole="button"
+                        style={styles.showAgain}
+                    >
+                        <Text h4 style={styles.showAgainText}>{loc.cypherbox.payments.hardware_wallet_transaction_continue.show_again}</Text>
+                    </TouchableOpacity>
+                    <Text h4 style={[{marginTop: 20}, rtl.ltrText]}>{txHex}</Text>
                 </View>
                 <TouchableOpacity onPress={nextClickHandler} disabled={!txHex} style={[styles.nextBtn , {backgroundColor: txHex ? colors.blueText : colors.gray.default}]}>
-                    <Text h3>Next</Text>
+                    <Text h3>{loc.cypherbox.payments.common.next}</Text>
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

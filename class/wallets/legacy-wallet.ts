@@ -5,8 +5,8 @@ import { AbstractWallet } from './abstract-wallet';
 import { HDSegwitBech32Wallet } from '..';
 import * as bitcoin from 'bitcoinjs-lib';
 import * as BlueElectrum from '../../blue_modules/BlueElectrum';
-import coinSelect, { CoinSelectOutput, CoinSelectReturnInput, CoinSelectTarget, CoinSelectUtxo } from 'coinselect';
-import coinSelectSplit from 'coinselect/split';
+import { CoinSelectOutput, CoinSelectReturnInput, CoinSelectTarget, CoinSelectUtxo } from 'coinselect';
+import { selectCoins } from './coin-selection';
 import { CreateTransactionResult, CreateTransactionUtxo, Transaction, Utxo } from './types';
 import { ECPairAPI, ECPairFactory, Signer } from 'ecpair';
 
@@ -386,20 +386,17 @@ export class LegacyWallet extends AbstractWallet {
   } {
     if (!changeAddress) throw new Error('No change address provided');
 
-    let algo = coinSelect;
-    // if targets has output without a value, we want send MAX to it
-    if (targets.some(i => !('value' in i))) {
-      algo = coinSelectSplit;
-    }
-
-    const { inputs, outputs, fee } = algo(utxos, targets, feeRate);
+    // a target without a value gets the rest (MAX); a target with neither address nor value asks to spend every
+    // UTXO given and keep the remainder as change (see coin-selection.ts)
+    const { inputs, outputs, fee } = selectCoins(utxos, targets, feeRate);
 
     // .inputs and .outputs will be undefined if no solution was found
     if (!inputs || !outputs) {
       throw new Error('Not enough balance. Try sending smaller amount or decrease the fee.');
     }
 
-    return { inputs, outputs, fee };
+    // coinselect hands back the UTXO objects it was given, as it always did
+    return { inputs: inputs as unknown as CoinSelectReturnInput[], outputs, fee };
   }
 
   /**

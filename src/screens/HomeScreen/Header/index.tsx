@@ -1,14 +1,22 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Image, Text as RNText, TouchableOpacity, View } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useIsFocused, useNavigation, useRoute } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 import { Text } from "@Cypher/component-library";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { dispatchNavigate, looksLikePsbt } from "@Cypher/helpers";
+import { scannedVaultSend } from "@Cypher/helpers/capsuleSpend";
+import { startSigning } from "../../SignOnce/start";
+import loc from "../../../../loc";
+import { arabicFont } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
+import usePaymentLinkStore from "@Cypher/stores/paymentLinkStore";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
 import { requestCameraAuthorization } from "../../../../helpers/scan-qr";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
+import DeeplinkSchemaMatch from "../../../../class/deeplink-schema-match";
 
 import styles from "../styles";
 import ScanWithPicker, { ScanTargetKey } from "./ScanWithPicker";
@@ -48,6 +56,9 @@ interface Props {
  * `capsulesData = ALL UTXOs` to EditAmount, so the downstream flow uses
  * BlueWallet's `createTransaction` to pick the actual inputs. The capsule
  * grid never appears.
+ *
+ * A bitcoin: or lightning: link the phone opens Cypher Box with lands here too: the picker asks which wallet pays it,
+ * and the link takes the scanner's place.
  */
 export default React.memo(function Header({
     matchedRate,
@@ -61,10 +72,35 @@ export default React.memo(function Header({
     const routeName = useRoute().name;
     const { sleep } = React.useContext(BlueStorageContext);
 
-    const { isAuth, isStrikeAuth, isArkAuth, walletID, coldStorageWalletID } = useAuthStore();
+    const { isAuth: isCoinosConnected, isStrikeAuth: isStrikeConnected, isArkAuth, walletID, coldStorageWalletID } = useAuthStore();
+    // Region gates (services/featureFlags): a connected rail that is not
+    // offered in this region is treated as unavailable on this surface.
+    // Re-render when the App Store storefront resolves after launch, so the
+    // region gates below reflect the real region.
+    useRegionGate();
+    const isAuth = isCoinosConnected && isCoinosAllowed();
+    const isStrikeAuth = isStrikeConnected && isStrikeAllowed();
 
     const [pickerVisible, setPickerVisible] = useState(false);
+    // the link the picker is open for, or null when it's open for the scanner
+    const [pickerLink, setPickerLink] = useState<string | null>(null);
+    const paymentLink = usePaymentLinkStore((s) => s.link);
+    const clearPaymentLink = usePaymentLinkStore((s) => s.clearLink);
+    const isFocused = useIsFocused();
     const [activityDropdownVisible, setActivityDropdownVisible] = useState(false);
+
+    // only once the home screen is in front, so the picker never opens over another screen
+    useEffect(() => {
+        if (!paymentLink || !isFocused) return;
+        clearPaymentLink();
+        setPickerLink(paymentLink);
+        setPickerVisible(true);
+    }, [paymentLink, isFocused, clearPaymentLink]);
+
+    const openPickerForScanner = () => {
+        setPickerLink(null);
+        setPickerVisible(true);
+    };
 
     const navigateToSettings = () => {
         dispatchNavigate("Settings");
@@ -105,7 +141,7 @@ export default React.memo(function Header({
                 })
                 .catch((err: any) => {
                     console.warn('[Home/scan] camera authorization failed:', err?.message ?? err);
-                    SimpleToast.show('Camera permission needed to scan', SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.home.camera_permission_scan, SimpleToast.SHORT);
                     resolve(null);
                 });
         });
@@ -128,8 +164,8 @@ export default React.memo(function Header({
         if (!vaultWallet) {
             SimpleToast.show(
                 which === 'hot'
-                    ? 'Hot Vault not ready. Open the vault once and try again.'
-                    : 'Cold Vault not ready. Open the vault once and try again.',
+                    ? loc.cypherbox.home.hot_vault_not_ready
+                    : loc.cypherbox.home.cold_vault_not_ready,
                 SimpleToast.LONG,
             );
             return;
@@ -139,11 +175,13 @@ export default React.memo(function Header({
         } catch (e) {
             if (__DEV__) console.log('[Home/scan] vault fetchUtxo failed', e);
         }
-        const utxoList = vaultWallet.getUtxo(true).sort(
+        // getUtxo() without `true` leaves frozen capsules out: nobody picked
+        // these for this send, and frozen ones are only spent when ticked
+        const utxoList = vaultWallet.getUtxo().sort(
             (a: any, b: any) => a.height - b.height || a.txid.localeCompare(b.txid) || a.vout - b.vout,
         );
         if (!utxoList || utxoList.length === 0) {
-            SimpleToast.show('No spendable capsules in this vault', SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.home.no_spendable_capsules, SimpleToast.LONG);
             return;
         }
         const capsulesData = utxoList.map((u: any) => ({
@@ -157,13 +195,16 @@ export default React.memo(function Header({
         // set to choose from.
         const allIds = capsulesData.map((c: any) => c.id);
         const isVault = which === 'cold';
+        // A bitcoin: link (scanned, or one the phone opened) carries the
+        // address and maybe an amount; a bare address comes through as it
+        // is. The most the vault can send goes in `maxUSD`, in BTC as
+        // SendListNew passes it: without it EditAmount kept Next off.
+        const send = scannedVaultSend(DeeplinkSchemaMatch.decodeBitcoinUri(scannedAddress), capsuleTotal, matchedRateBTC);
         // matchedRateBTC is BTC-per-fiat (dollar/BTC); the vault flow
-        // uses it directly. `total` and `inUSD` shapes mirror the values
-        // SendListNew.handleSend passes when the user picks capsules
-        // manually — keeping them identical lets the rest of the pipe
-        // (EditAmount → ColdStorage) work without a special-case branch.
+        // uses it directly.
         dispatchNavigate('EditAmount', {
-            isEdit: false,
+            // an amount the link asks for opens the screen filled in, as editing an amount does
+            isEdit: send.isEdit,
             currency,
             vaultTab: isVault,
             wallet: vaultWallet,
@@ -171,17 +212,15 @@ export default React.memo(function Header({
             ids: allIds,
             // Pre-fill the recipient from the QR scan. EditAmount reads
             // params.to and forwards it through the rest of the pipeline.
-            to: scannedAddress,
-            // No fiat conversion at the entry point — let EditAmount
-            // compute it once it has matchedRate. We pass 0/'' rather
-            // than guessing, same as the manual flow when no capsule
-            // is selected yet.
-            maxUSD: '',
-            inUSD: '',
-            total: '',
+            to: send.to,
+            maxUSD: send.maxUSD,
+            inUSD: send.inUSD,
+            total: send.total,
             matchedRate: matchedRateBTC,
             capsulesData,
             capsuleTotal,
+            // a pool for coinselect to pick from, not a selection to spend whole
+            autoSelected: true,
         });
     }, [wallet, coldStorageWallet, sleep, currency, matchedRateBTC]);
 
@@ -193,8 +232,15 @@ export default React.memo(function Header({
      * landing, not a hard crash, but they're worth keeping in sync.
      */
     const handleWalletPicked = useCallback(async (key: ScanTargetKey) => {
-        const scanned = await openScanner();
+        const scanned = pickerLink ?? await openScanner();
+        setPickerLink(null);
         if (!scanned) return;
+        // an unsigned transaction is something to sign, whichever wallet was picked to pay with. Outside Offline
+        // Seed-Signer mode the signing screen only signs with the Hot Vault, and points anything else to a signing device
+        if (looksLikePsbt(scanned)) {
+            startSigning({ psbt: scanned });
+            return;
+        }
         switch (key) {
             case 'strike':
                 dispatchNavigate('SendScreen', {
@@ -231,7 +277,7 @@ export default React.memo(function Header({
                 // anything that still listens at the home-screen level.
                 if (onBarScanned) onBarScanned(scanned);
         }
-    }, [openScanner, matchedRate, currency, navigateVaultSend, onBarScanned]);
+    }, [pickerLink, openScanner, matchedRate, currency, navigateVaultSend, onBarScanned]);
 
     return (
         <>
@@ -246,8 +292,8 @@ export default React.memo(function Header({
                     `subHeader` prop on @Cypher Text resolves to
                     fontSize 22 / lineHeight ~28 / Lato-Bold; we
                     replicate inline so visual weight is preserved. */}
-                <RNText style={{ fontSize: 22, fontFamily: 'Lato-Bold', color: '#FFF' }}>
-                    Total Assets
+                <RNText style={[{ fontSize: 22, fontFamily: 'Lato-Bold', color: '#FFF' }, arabicFont({ fontFamily: 'Lato-Bold' })]}>
+                    {loc.cypherbox.home.total_assets}
                 </RNText>
                 {/*
                   Right-side action row — scan first, then settings. Bam's
@@ -260,7 +306,7 @@ export default React.memo(function Header({
                         activeOpacity={0.6}
                         style={styles.imageView}
                         onPress={toggleActivityDropdown}
-                        accessibilityLabel="Activity"
+                        accessibilityLabel={loc.cypherbox.home.activity_a11y}
                     >
                         <Ionicons name="notifications-outline" size={28} color="#FFFFFF" />
                     </TouchableOpacity>
@@ -277,7 +323,7 @@ export default React.memo(function Header({
                     </TouchableOpacity>
                     <TouchableOpacity
                         activeOpacity={0.7}
-                        onPress={() => setPickerVisible(true)}
+                        onPress={openPickerForScanner}
                         style={{
                             width: 42,
                             height: 42,
@@ -296,6 +342,7 @@ export default React.memo(function Header({
 
             <ScanWithPicker
                 visible={pickerVisible}
+                forLink={!!pickerLink}
                 onClose={() => setPickerVisible(false)}
                 onSelect={handleWalletPicked}
                 available={{

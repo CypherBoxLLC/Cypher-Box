@@ -2,6 +2,7 @@ import bolt11 from 'bolt11';
 
 import { getArkWalletHandle } from './walletHandle';
 import { looksLikeConnectionLoss } from './networkFault';
+import loc from '../../../loc';
 
 /**
  * Plain-JS view of a pending Lightning receive.
@@ -310,7 +311,7 @@ export async function cancelArkLightningReceive(
 ): Promise<CancelArkLightningReceiveResult> {
     const handle = getArkWalletHandle();
     if (!handle) {
-        return { ok: false, kind: 'unknown', reason: 'Ark wallet not open' };
+        return { ok: false, kind: 'unknown', reason: loc.cypherbox.services.ark_lightning.wallet_not_open };
     }
 
     try {
@@ -327,14 +328,14 @@ export async function cancelArkLightningReceive(
             return {
                 ok: false,
                 kind: 'preimage-revealed',
-                reason: 'Payment is already in flight, so it can\'t be cancelled.',
+                reason: loc.cypherbox.services.ark_lightning.cancel_in_flight,
             };
         }
         if (/already finished/i.test(msg)) {
             return {
                 ok: false,
                 kind: 'already-finished',
-                reason: 'Receive already settled, so there is nothing to cancel.',
+                reason: loc.cypherbox.services.ark_lightning.cancel_already_settled,
             };
         }
         // A dropped connection is not a refusal. Without this branch anything
@@ -350,7 +351,7 @@ export async function cancelArkLightningReceive(
             return {
                 ok: false,
                 kind: 'unknown',
-                reason: 'The connection dropped, so this may or may not have been cancelled. Check again in a moment.',
+                reason: loc.cypherbox.services.ark_lightning.cancel_connection_dropped,
             };
         }
         console.warn('[Ark cancel-ln-recv] failed:', err);
@@ -361,7 +362,7 @@ export async function cancelArkLightningReceive(
             // had it backwards: it showed the SDK's own vocabulary, unbounded
             // in length and written for developers, and the human fallback only
             // appeared when the SDK gave us nothing at all.
-            reason: 'Cancel failed; try again or wait for the next sync.',
+            reason: loc.cypherbox.services.ark_lightning.cancel_failed,
         };
     }
 }

@@ -10,6 +10,7 @@ import {
     ViewStyle,
 } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Text } from "@Cypher/component-library";
 import { Shadow } from "react-native-neomorph-shadows";
 import { ProgressBar5, ProgressBarColdStorage } from "@Cypher/assets/images";
@@ -36,7 +37,7 @@ interface Props extends TouchableOpacityProps {
     isColorable?: boolean;
 }
 
-export default function LightningVaultCreate({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = 'Savings Vault', titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
+export default function LightningVaultCreate({ isVault, container, innerContainer, shadowTopBottom, shadowBottomBottom, bitcoinText, onPress, imageStyle, title = loc.cypherbox.components.saving_vault.savings_vault, titleStyle, bitcoinValue, inDollars, isColorable = false }: Props) {
     const { wallets } = useContext(BlueStorageContext);
     const { walletID, coldStorageWalletID, vaultTab, strikeToken } = useAuthStore();
     const isStrike = !!strikeToken;
@@ -83,7 +84,7 @@ export default function LightningVaultCreate({ isVault, container, innerContaine
                         
                         <View style={styles.view}>
                             <Text bold style={[styles.sats, { fontSize: 12 }]}>
-                            withdrawal threshold
+                            {loc.cypherbox.components.lightning_vault_create.withdrawal_threshold}
                             </Text>
                             {/* <Text bold style={styles.totalsats}>
                             {formatNumber(Number(withdrawThreshold) + Number(reserveAmount))} sats

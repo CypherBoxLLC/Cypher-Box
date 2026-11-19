@@ -1,6 +1,7 @@
 import { assertNoActiveArkExit } from './exit';
 import { getArkWalletHandle } from './walletHandle';
 import { runBroadcastCall } from './indeterminate';
+import loc from '../../../loc';
 
 /**
  * Cooperative on-chain offboard of SPECIFIC VTXOs (coin control).
@@ -18,7 +19,7 @@ import { runBroadcastCall } from './indeterminate';
 function requireHandle() {
     const handle = getArkWalletHandle();
     if (!handle) throw new Error(
-            'The vault is not open yet. It needs a connection to open, so check yours and reopen the vault, then try again.',
+            loc.cypherbox.services.ark_exit.vault_not_open,
         );
     return handle;
 }
@@ -60,6 +61,6 @@ export async function offboardArkVtxos(
     const handle = requireHandle();
     return await runBroadcastCall(
         () => handle.offboardVtxos(vtxoIds, address.trim()),
-        'transfer',
+        loc.cypherbox.services.indeterminate.what_transfer,
     );
 }

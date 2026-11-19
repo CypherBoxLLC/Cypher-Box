@@ -6,8 +6,9 @@ import { Icon } from 'react-native-elements';
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { SavingVault, SwipeButton, VaultCapsules } from "@Cypher/components";
-import { colors } from "@Cypher/style-guide";
-import { dispatchNavigate } from "@Cypher/helpers";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
+import { dispatchNavigate, formatSats, formatUsd } from "@Cypher/helpers";
+import { confirmLabels, vaultSendKind } from "@Cypher/helpers/vaultSendKind";
 import { shortenAddress } from "../ColdStorage";
 import PayjoinTransaction from "../../../class/payjoin-transaction";
 import { PayjoinClient } from "payjoin-client";
@@ -25,6 +26,9 @@ import { sendStrikeLightningPayment } from "@Cypher/api/strikeAPIs";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 const bitcoin = require('bitcoinjs-lib');
 
+// three rows of capsules, then "+N": a 79-capsule grid drew over the amounts
+const MAX_GRID_CAPSULES = 15;
+
 interface Props {
     route: any;
 }
@@ -32,6 +36,19 @@ interface Props {
 export default function ConfirmTransction({ route }: Props) {
     const { data } = route?.params;
     const { recipients = [], walletID, vaultTab, fee, memo, tx, satoshiPerByte, psbt, capsulesData = null, to = null, vaultSend, capsuleTotal, isBatch } = data;
+    // by flow: a consolidation here is from and to Hot Vault addresses, a move goes
+    // to the Cold Vault. `to` is the CoinOS deposit address even when the top-up
+    // went to Strike or Bark.
+    const labels = confirmLabels(vaultSendKind({ isBatch, vaultSend, vaultTab, to, toStrike: data?.toStrike, toArk: data?.toArk, autoSelected: data?.autoSelected }), {
+        vaultTab,
+        toCoinos: !!to && data?.destinationAddress === to,
+    });
+    // the change the transaction really has (in sats, from the built transaction)
+    const changeSats = typeof data?.changeSats === 'number' ? data.changeSats : (data?.capsuleTotal || 0) - (data?.sats || 0) - (data?.networkFees || 0);
+    // a long selection is summarised instead of pushing the amounts off screen
+    const capsuleCount = capsulesData ? capsulesData.length : (data?.coinsSelected || 0);
+    const gridCapsules = capsulesData ? capsulesData.slice(0, MAX_GRID_CAPSULES) : [];
+    const moreCapsules = capsulesData ? capsulesData.length - gridCapsules.length : 0;
 
     const [usd, setUSD] = useState('40');
     const [sats, setSats] = useState('100K sats  ~$' + usd);
@@ -168,7 +185,7 @@ export default function ConfirmTransction({ route }: Props) {
     return (
         <ScreenLayout showToolbar disableScroll>
             <View style={styles.container}>
-                <Text style={styles.title} center>Confirm transaction</Text>
+                <Text style={styles.title} center>{loc.cypherbox.payments.confirm_transaction.title}</Text>
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
@@ -181,22 +198,27 @@ export default function ConfirmTransction({ route }: Props) {
                     bitcoinValue='0.1 BTC ~ $6500'
                 // onPress={savingVaultClickHandler}
                 /> */}
-                <View style={styles.recipientView}>
+                {/* scrolls, so nothing is drawn over the amounts or the slider */}
+                <ScrollView style={styles.details} contentContainerStyle={styles.recipientView}>
                     {!isBatch &&
-                        <Text bold style={styles.coinselected}>Capsules selected:</Text>
+                        <Text bold style={styles.coinselected}>{loc.cypherbox.payments.confirm_transaction.capsules_selected + ' ' + capsuleCount}</Text>
                     }
                     {capsulesData && capsulesData.length > 0 ? (
-                        <View style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
-                            {capsulesData.map((item: any, i: number) => (
-                                <View key={item.id || i} style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                        <View style={styles.capsuleGrid}>
+                            {gridCapsules.map((item: any, i: number) => (
+                                <View key={item.id || i} style={styles.capsuleCell}>
                                     <VaultCapsules item={item.value} />
                                 </View>
                             ))}
+                            {moreCapsules > 0 &&
+                                // ltr(): with no Latin letter in it, Android lays "+N" out right to left, as "N+"
+                                <Text style={[styles.moreCapsules, rtl.ltrText]}>{ltr('+' + moreCapsules)}</Text>
+                            }
                         </View>
                     ) : !isBatch && (
-                        <View style={{flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 10}}>
-                            {Array(data?.coinsSelected || 0).fill(0).map((_, i) => (
-                                <View key={i} style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                        <View style={styles.capsuleGrid}>
+                            {Array(Math.min(data?.coinsSelected || 0, MAX_GRID_CAPSULES)).fill(0).map((_, i) => (
+                                <View key={i} style={styles.capsuleCell}>
                                     <VaultCapsules item={0} />
                                 </View>
                             ))}
@@ -204,10 +226,10 @@ export default function ConfirmTransction({ route }: Props) {
                     )}
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{isBatch ? "Amount to be batched:" : to ? "Top-up amount:" : "Recipient will get:"}</Text>
-                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{data?.sats + ' sats ~$'+ data?.inUSD}</Text>
-                            <View style={{flexDirection: 'row', marginTop: 8}}>
-                                <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
+                            <Text style={styles.recipientTitle}>{labels.amount}</Text>
+                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{formatSats(Number(data?.sats) || 0) + ' ~' + formatUsd(data?.inUSD)}</Text>
+                            <View style={styles.capsuleRow}>
+                                <View style={styles.capsuleCell}>
                                     <VaultCapsules item={data?.sats || 0} />
                                 </View>
                             </View>
@@ -216,43 +238,37 @@ export default function ConfirmTransction({ route }: Props) {
                             <Text>Edit amount</Text>
                         </TouchableOpacity> */}
                     </View>
-                    {data?.capsuleTotal > 0 && data?.networkFees > 0 && !isBatch &&
-                        (() => {
-                            const changeSats = data.capsuleTotal - data.sats - data.networkFees;
-                            if (changeSats > 0) {
-                                return (
-                                    <View style={[styles.priceView, {marginTop: 5}]}>
-                                        <View>
-                                            <Text style={styles.recipientTitle}>Change:</Text>
-                                            <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}]}>{changeSats.toFixed(0) + ' sats' + (data?.matchedRate ? ' ~$' + (changeSats / 100000000 * Number(data.matchedRate)).toFixed(2) : '')}</Text>
-                                            <View style={{flexDirection: 'row', marginTop: 8}}>
-                                                <View style={{width: "17%", marginRight: 2, marginLeft: 2}}>
-                                                    <VaultCapsules item={changeSats} />
-                                                </View>
-                                            </View>
-                                        </View>
+                    {/* a Consolidate edited to a smaller capsule has change too */}
+                    {changeSats > 0 &&
+                        <View style={[styles.priceView, {marginTop: 5}]}>
+                            <View>
+                                <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.change}</Text>
+                                <Text bold style={[styles.value, vaultTab && {color: colors.coldGreen}, rtl.ltrText]}>{formatSats(changeSats) + (data?.matchedRate ? ' ~' + formatUsd(changeSats / 100000000 * Number(data.matchedRate)) : '')}</Text>
+                                <View style={styles.capsuleRow}>
+                                    <View style={styles.capsuleCell}>
+                                        <VaultCapsules item={changeSats} />
                                     </View>
-                                );
-                            }
-                            return null;
-                        })()
+                                </View>
+                            </View>
+                        </View>
                     }
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>Sent from:</Text>
-                            <Text style={styles.fees}>{isBatch ? "Cold Vault address: " : "Vault address: "}{shortenAddress(data.sentFrom)}</Text>
+                            <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.sent_from}</Text>
+                            <Text style={styles.fees}>{labels.from}{shortenAddress(data.sentFrom)}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>{to && !vaultSend ? "To Coinos Bitcoin address" : "To:"}</Text>
-                            <Text style={StyleSheet.flatten([styles.fees, { color: vaultTab ? colors.coldGreen : colors.green }])}>{isBatch ? "Cold Vault address: " : "Bitcoin Address: "}{shortenAddress(data?.destinationAddress)}</Text>
+                            <Text style={styles.recipientTitle}>{labels.toTitle}</Text>
+                            <Text style={StyleSheet.flatten([styles.fees, { color: vaultTab ? colors.coldGreen : colors.green }])}>{labels.to}{shortenAddress(data?.destinationAddress)}</Text>
                         </View>
                     </View>
                     <View style={styles.priceView}>
                         <View>
-                            <Text style={styles.recipientTitle}>Network fee:</Text>
-                            <Text style={StyleSheet.flatten(styles.fees)}>~ {data?.isCustomFee ? data.networkFees + " sats/vByte" :  data?.networkFees + " sats"}{!data?.isCustomFee && data?.networkFees && data?.matchedRate ? ` (~$${(data.networkFees / 100000000 * Number(data.matchedRate)).toFixed(2)}) (${(data.networkFees / data.sats * 100).toFixed(1)}%)` : ''}</Text>
+                            <Text style={styles.recipientTitle}>{loc.cypherbox.payments.confirm_transaction.network_fee}</Text>
+                            {/* the built transaction's fee in sats, also when a custom rate was picked */}
+                            <Text style={StyleSheet.flatten([styles.fees, rtl.ltrText])}>~ {formatSats(Number(data?.networkFees) || 0)}{data?.networkFees && data?.matchedRate ? ` (~${formatUsd(data.networkFees / 100000000 * Number(data.matchedRate))})${data?.sats > 0 ? ` (${(data.networkFees / data.sats * 100).toFixed(1)}%)` : ''}` : ''}</Text>
                             {/* <Text style={StyleSheet.flatten(styles.fees)}>~ {btcToSatoshi(data?.fee)}</Text> */}
                         </View>
                     </View>
@@ -269,9 +285,9 @@ export default function ConfirmTransction({ route }: Props) {
                         </View>
                     </View> */}
                     {data?.note &&
-                        <Text h4>Note: {data?.note}</Text>                        
+                        <Text h4>{loc.formatString(loc.cypherbox.payments.confirm_transaction.note, { note: data?.note })}</Text>                        
                     }
-                </View>
+                </ScrollView>
                 <View style={styles.swipeview}>
                     <SwipeButton ref={swipeButtonRef} onToggle={handleToggle} isLoading={isLoading} />
                 </View>
@@ -290,12 +306,12 @@ export default function ConfirmTransction({ route }: Props) {
 
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 9999 }}>
                     <View style={{ backgroundColor: '#0a0a0a', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#FF65D4', width: '85%', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>On-chain confirmed! Ready to fire Lightning</Text>
+                        <Text style={{ fontSize: 18, color: '#FF65D4', fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>{loc.cypherbox.payments.confirm_transaction.onchain_confirmed_fire}</Text>
                         
                         {/* Destination */}
                         <View style={{ marginBottom: 16, paddingHorizontal: 16 }}>
-                            <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>To:</Text>
-                            <Text style={{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }}>{lightningInvoice}</Text>
+                            <Text style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 4 }}>{loc.cypherbox.payments.common.to_colon}</Text>
+                            <Text style={[{ fontSize: 13, color: '#ccc', textAlign: 'center', numberOfLines: 2 }, rtl.ltrText]}>{lightningInvoice}</Text>
                         </View>
                         
                         {/* Amount */}
@@ -313,45 +329,45 @@ export default function ConfirmTransction({ route }: Props) {
                                 shadowRadius: 20,
                                 elevation: 10
                             }}>
-                                <Text style={{ fontSize: 24, color: '#fff', fontWeight: 'bold' }}>{data?.sats || '0'} sats</Text>
+                                <Text style={[{ fontSize: 24, color: '#fff', fontWeight: 'bold' }, rtl.ltrText]}>{data?.sats || '0'} sats</Text>
                             </View>
                         </View>
                         
-                        <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>Via {bridgeProvider}</Text>
+                        <Text style={{ fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20 }}>{loc.formatString(loc.cypherbox.payments.confirm_transaction.via_provider, { provider: bridgeProvider })}</Text>
                         
                         <TouchableOpacity 
                             onPress={async () => {
                                 if (bridgeProvider === 'STRIKE') {
                                     try {
-                                        SimpleToast.show('Sending via Strike...', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.payments.confirm_transaction.sending_via_strike, SimpleToast.SHORT);
                                         const result = await sendStrikeLightningPayment(lightningInvoice);
                                         console.log('Strike Lightning result:', result);
                                         setShowFirePopup(false);
-                                        SimpleToast.show('Lightning payment sent via Strike!', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.payments.confirm_transaction.sent_via_strike, SimpleToast.SHORT);
                                     } catch (err) {
                                         console.error('Strike payment error:', err);
-                                        SimpleToast.show('Payment failed: ' + err.message, SimpleToast.LONG);
+                                        SimpleToast.show(String(loc.formatString(loc.cypherbox.payments.confirm_transaction.payment_failed, { error: err.message })), SimpleToast.LONG);
                                     }
                                 } else if (bridgeProvider === 'COINOS') {
                                     try {
-                                        SimpleToast.show('Sending via Coinos...', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.payments.confirm_transaction.sending_via_coinos, SimpleToast.SHORT);
                                         const result = await sendLightningPayment(lightningInvoice, '', data?.sats);
                                         console.log('Coinos Lightning result:', result);
                                         setShowFirePopup(false);
-                                        SimpleToast.show('Lightning payment sent via Coinos!', SimpleToast.SHORT);
+                                        SimpleToast.show(loc.cypherbox.payments.confirm_transaction.sent_via_coinos, SimpleToast.SHORT);
                                     } catch (err) {
                                         console.error('Coinos payment error:', err);
-                                        SimpleToast.show('Payment failed: ' + err.message, SimpleToast.LONG);
+                                        SimpleToast.show(String(loc.formatString(loc.cypherbox.payments.confirm_transaction.payment_failed, { error: err.message })), SimpleToast.LONG);
                                     }
                                 }
                             }}
                             style={{ backgroundColor: '#FF65D4', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 25 }}
                         >
-                            <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>Route Lightning</Text>
+                            <Text style={{ fontSize: 16, color: '#fff', fontWeight: 'bold' }}>{loc.cypherbox.payments.confirm_transaction.route_lightning}</Text>
                         </TouchableOpacity>
                         
                         <TouchableOpacity onPress={() => setShowFirePopup(false)} style={{ marginTop: 16 }}>
-                            <Text style={{ fontSize: 14, color: '#666' }}>Cancel</Text>
+                            <Text style={{ fontSize: 14, color: '#666' }}>{loc._.cancel}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>

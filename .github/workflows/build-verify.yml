@@ -1,12 +1,24 @@
 name: Reproducible build verify
 
 # Security plan §11.8 / §5: prove the release AAB is byte-for-byte reproducible
-# from public source. UNSIGNED, NO secrets, hosted runner. The build runs
+# from public source. UNSIGNED, NO secrets, hosted runners. Each build runs
 # entirely inside the pinned Dockerfile.build image, so nothing here touches a
-# signing key or any project infrastructure (§0, §5.2). `make repro-verify`
-# builds the unsigned release AAB twice and asserts the two SHA-256s match; a
-# mismatch fails the job. The AAB + its SHA-256 are published as an artifact so
-# anyone can compare it against the Play binary (see walletscrutiny/).
+# signing key or any project infrastructure (§0, §5.2).
+#
+# The same commit is built on TWO MACHINES, and the two unsigned AABs must have
+# the same SHA-256; a mismatch fails the run. Two builds on one machine are not
+# enough, because they share its file system, kernel and CPUs, and anything that
+# depends on those comes out the same both times. That is how the order of the
+# native debug symbol tables in the bundle went unnoticed: AGP adds them in the
+# order the disk lists a directory, which stays the same on one machine and
+# changes on the next. So the builds run on two runners with different Ubuntu
+# images, each on a freshly made ext4 file system with its own fixed directory
+# hash seed, so the two machines list every build directory in a different
+# order. The run also checks that they really listed the symbol tables in
+# different orders, so a MATCH means the order was tested.
+#
+# The AAB + its SHA-256 are published as an artifact so anyone can compare it
+# against the Play binary (see walletscrutiny/).
 
 on:
   push:
@@ -28,18 +40,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  repro-verify:
-    # Linux runner so the pinned linux/amd64 image runs NATIVELY (no emulation;
-    # the canonical arch the build targets). Reproducibility comes from the
-    # container toolchain, not the runner OS.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
+  build:
+    name: Build on ${{ matrix.runner }}
+    strategy:
+      # Let both builds finish, so a failed run still shows both machines.
+      fail-fast: false
+      matrix:
+        include:
+          # Two different runner images, so the kernel and Docker differ too.
+          # When GitHub retires ubuntu-22.04, replace it with another image than
+          # the first one's. Each machine gets its own directory hash seed.
+          - runner: ubuntu-24.04
+            hash_seed: 86c46402-62e5-4495-a294-dd7441431ff0
+          - runner: ubuntu-22.04
+            hash_seed: 7051645a-7039-49e3-829e-fd689e863634
+    # Linux runners so the pinned linux/amd64 image runs NATIVELY (no emulation;
+    # the canonical arch the build targets).
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
 
     steps:
       - name: Free runner disk
-        # The repro image (Android SDK + NDK, several GB) plus two clean
-        # RN/Gradle builds need more than the ~14 GB a hosted runner ships free.
-        # Drop preinstalled toolchains this job never uses (it builds in Docker).
+        # The repro image (Android SDK + NDK, several GB) plus a clean RN/Gradle
+        # build need more than the ~14 GB a hosted runner ships free. Drop
+        # preinstalled toolchains this job never uses (it builds in Docker).
         run: |
           set -eux
           df -h /
@@ -59,20 +83,155 @@ jobs:
           # release-notes.json are deterministic for the tag.
           fetch-depth: 0
 
-      - name: Reproducible build x2 + assert identical SHA-256
-        # `make repro-verify` builds the unsigned AAB twice in the pinned
-        # container and exits non-zero on any byte difference. docker + make are
-        # preinstalled on the runner; no host JDK / SDK / node is used.
-        run: make repro-verify
+      - name: Make a fresh file system to build on
+        # ext4 lists a directory in the order of its file names' hashes, and the
+        # hash takes a seed stored in the file system. A different fixed seed on
+        # each machine makes the two builds see every directory in a different,
+        # repeatable order. The repo copy, node_modules and the Gradle home all
+        # live on this file system (the Makefile's BUILD_DIR). The image file is
+        # sparse, so it only takes the space the build writes.
+        run: |
+          set -eux
+          img="$RUNNER_TEMP/build-fs.img"
+          truncate -s 60G "$img"
+          mkfs.ext4 -q -F "$img"
+          debugfs -w -R "ssv hash_seed ${{ matrix.hash_seed }}" "$img"
+          dumpe2fs -h "$img" 2>/dev/null | grep -i 'hash seed'
+          sudo mkdir -p /mnt/build-fs
+          sudo mount -o loop "$img" /mnt/build-fs
+          sudo mkdir /mnt/build-fs/build
+          df -h /mnt/build-fs
+
+      - name: Reproducible build
+        # docker + make are preinstalled on the runner; no host JDK / SDK / node
+        # is used.
+        run: make repro-build BUILD_DIR=/mnt/build-fs/build
+
+      - name: Record the bundle and the machine
+        run: |
+          set -eu
+          mkdir -p result
+          cp out/app-release.aab result/app-release.aab
+          # The order this machine's disk lists the symbol tables in, which is the
+          # order AGP adds them to the bundle before build.gradle sorts them.
+          sym="$(sudo find /mnt/build-fs/build/repo/android/app/build/intermediates -name '*.so.sym' -print -quit)"
+          if [ -n "$sym" ]; then
+            sudo ls -U "$(dirname "$sym")" > result/symbol-listing.txt
+          fi
+          {
+            echo "runner: ${{ matrix.runner }}, image ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+            echo "kernel: $(uname -r), cpus: $(nproc), docker: $(docker version --format '{{.Server.Version}}')"
+            echo "build file system hash seed: ${{ matrix.hash_seed }}"
+            echo "bundle sha256: $(sha256sum < result/app-release.aab | cut -d' ' -f1)"
+          } | tee result/machine.txt
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: build-${{ matrix.runner }}
+          path: result/
+          if-no-files-found: error
+          retention-days: 7
+
+  repro-verify:
+    name: Compare the two machines
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Download both bundles
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: build-*
+          path: builds
+
+      - name: Compare the SHA-256 of the two bundles
+        id: compare
+        run: |
+          set -eu
+          dirs=(builds/build-*)
+          if [ "${#dirs[@]}" -ne 2 ]; then
+            echo "Expected 2 builds, got ${#dirs[@]}: ${dirs[*]}" >&2
+            exit 1
+          fi
+          {
+            echo '### Reproducible build on two machines'
+            echo
+            echo '```'
+            cat "${dirs[0]}/machine.txt"
+            echo
+            cat "${dirs[1]}/machine.txt"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          sha0="$(sha256sum < "${dirs[0]}/app-release.aab" | cut -d' ' -f1)"
+          sha1="$(sha256sum < "${dirs[1]}/app-release.aab" | cut -d' ' -f1)"
+          if [ "$sha0" = "$sha1" ]; then
+            echo "match=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "match=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Show what differs
+        if: steps.compare.outputs.match != 'true'
+        shell: python3 -I {0}
+        run: |
+          import glob, zipfile
+          paths = sorted(glob.glob("builds/build-*/app-release.aab"))
+          machines = [p.split("/")[1][len("build-"):] for p in paths]
+          zips = [zipfile.ZipFile(p) for p in paths]
+          names = [[e.filename for e in z.infolist()] for z in zips]
+          for i in (0, 1):
+              for n in sorted(set(names[i]) - set(names[1 - i])):
+                  print(f"only in the {machines[i]} bundle: {n}")
+          changed = [n for n in sorted(set(names[0]) & set(names[1])) if zips[0].read(n) != zips[1].read(n)]
+          for n in changed:
+              print(f"content differs: {n}")
+          if names[0] != names[1]:
+              moved = [a for a, b in zip(names[0], names[1]) if a != b]
+              print(f"the entry order differs at {len(moved)} positions, starting with:")
+              for n in moved[:10]:
+                  print(f"  {n}")
+          elif not changed:
+              print("Same entries, contents and order: the zip headers differ (timestamps, extra fields or compression).")
+
+      - name: Assert the same SHA-256 on both machines
+        run: |
+          if [ "${{ steps.compare.outputs.match }}" != "true" ]; then
+            echo "DIFFER - the two machines built different bundles from the same commit; the step above shows how."
+            echo '**DIFFER**: the two machines built different bundles from the same commit.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "MATCH - the build is reproducible across machines"
+
+      - name: Check the two machines listed the symbol tables differently
+        # Without this, a MATCH could come from two disks that happened to list
+        # the directory the same way, which would not test the order at all.
+        run: |
+          set -eu
+          dirs=(builds/build-*)
+          a="${dirs[0]}/symbol-listing.txt"
+          b="${dirs[1]}/symbol-listing.txt"
+          if [ ! -s "$a" ] || [ ! -s "$b" ]; then
+            echo "::warning::No native symbol tables were found, so this run could not check that the two machines listed directories in different orders."
+          elif cmp -s "$a" "$b"; then
+            echo "::error::Both machines listed the native symbol tables in the same order, so this run did not vary the directory order. Check the hash seeds in the build job."
+            exit 1
+          else
+            echo "The two machines listed the native symbol tables in different orders:"
+            paste "$a" "$b"
+          fi
 
       - name: Record the unsigned AAB SHA-256
         run: |
           set -eux
+          dirs=(builds/build-*)
+          mkdir -p out
+          cp "${dirs[0]}/app-release.aab" out/app-release.aab
           shasum -a 256 out/app-release.aab | tee out/app-release.aab.sha256
           {
-            echo '### Reproducible build verified'
             echo
-            echo 'Unsigned release AAB SHA-256:'
+            echo 'Unsigned release AAB SHA-256, the same on both machines:'
             echo '```'
             cat out/app-release.aab.sha256
             echo '```'

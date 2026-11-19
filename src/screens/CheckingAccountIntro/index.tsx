@@ -4,6 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import styles from "./styles";
 import { Button, ScreenLayout, Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
 
 // On-demand explainer about custodial Lightning risk. Previously this
 // screen was a one-time gate on the way to CheckingAccountLogin — gated
@@ -23,10 +24,10 @@ export default function CheckingAccountIntro() {
         <ScreenLayout showToolbar progress={0} color={[colors.pink.light, colors.pink.light]}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text style={styles.title}>Lightning Account</Text>
-                    <Text h4 style={styles.descption}>To use Bitcoin efficiently, you can create a Lightning Account at a reliable custodian. This entity will help you send and receive payments globally, instantaneously, with ~zero fees. You can also use it to accumulate a measured amount of bitcoin until you are able to economically withdraw to self-custody.
+                    <Text style={styles.title}>{loc.cypherbox.account.checking_intro.title}</Text>
+                    <Text h4 style={styles.descption}>{loc.cypherbox.account.checking_intro.body}
                       {'\n\n'}
-                      Be careful: while bitcoin custodians and exchanges offer user friendly financial services, it's wise to exercise caution with the amount of money you entrust to them. As your balance increases, Cypher Box will notify you and provide instructions on how to secure your wealth independently, without the reliance on any third party custodian.
+                      {loc.cypherbox.account.checking_intro.caution}
                     </Text>
                     <View style={{
                         flexDirection: 'row',
@@ -42,7 +43,7 @@ export default function CheckingAccountIntro() {
                         />
                     </View>
                 </View>
-                <Button text="Got it" onPress={closeHandler} style={styles.button} textStyle={styles.btnText} />
+                <Button text={loc.cypherbox.account.checking_intro.got_it} onPress={closeHandler} style={styles.button} textStyle={styles.btnText} />
             </View>
         </ScreenLayout>
     )

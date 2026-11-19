@@ -14,11 +14,13 @@ import {
     checkArkSeedKeychainConflict,
     connectGoogleDrive,
     createArkWallet,
+    getArkWalletHandle,
     getSavedSafBackupFolder,
     isGoogleDriveConnected,
     isICloudBackupAvailable,
     messageForDriveError,
     messageForSafError,
+    offersArkReset,
     pickSafBackupFolder,
     resetArkWalletState,
     saveArkSeedToKeychain,
@@ -28,10 +30,12 @@ import {
 } from "@Cypher/services/ark";
 import type { DriveErrorClass, SafErrorClass } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 
 import styles from "./styles";
+import loc from "../../../../loc";
+import { arkSeedKeychainText } from "@Cypher/helpers/arkSeedKeychainText";
 
 /**
  * Ark Keychain storage convention.
@@ -40,7 +44,9 @@ import styles from "./styles";
  * username slot: 'ark' — fixed identifier; one Ark wallet per device.
  * password slot: the BIP39 mnemonic (space-separated).
  *
- * Access control: BIOMETRY_ANY_OR_DEVICE_PASSCODE — FaceID/TouchID OR passcode.
+ * Access control: BIOMETRY_ANY_OR_DEVICE_PASSCODE — FaceID/TouchID OR passcode
+ *   on iOS. On Android react-native-keychain's read prompt allows a strong biometric
+ *   only (a fingerprint on most phones), with no PIN or passcode fallback.
  * Accessibility: WHEN_PASSCODE_SET_THIS_DEVICE_ONLY — never synced anywhere,
  *   readable only when device is unlocked.
  *
@@ -55,9 +61,10 @@ import styles from "./styles";
  *     of which live inside the app's UID-scoped sandbox. When the
  *     user uninstalls, the package manager assigns a fresh UID on the
  *     next install and the OS wipes everything keyed to the old UID,
- *     including the Keystore entry. NO recovery property. The
- *     onboarding copy in the keychain row says so explicitly so users
- *     don't think the toggle gives them more than it actually does.
+ *     including the Keystore entry. NO recovery property. The keychain
+ *     row only names the Android Keystore and the fingerprint, and no
+ *     Android text may claim the copy outlives an uninstall (see
+ *     helpers/arkSeedKeychainText.ts).
  *     This is the gap that contributed to the 2026-05-05 loss-event
  *     scenario — see project_play_signing_oauth.md memory.
  *
@@ -95,7 +102,8 @@ import styles from "./styles";
  *
  * `backupDestination` is a free-form audit string; downstream code only
  * stores it for analytics, no behavior keys off it. Legacy 'icloud' /
- * 'manual' / 'auto+manual' values from older builds still round-trip.
+ * 'manual' / 'auto+manual' values from older builds still round-trip. A
+ * wallet created without a backup file records null.
  */
 type BackupDestination = "local" | "auto+manual" | "icloud" | "manual";
 
@@ -138,6 +146,7 @@ export default function ArkSeedPhraseScreen() {
     } = useAuthStore();
 
     const words: string[] = (mnemonic || "").trim().split(/\s+/).filter(Boolean);
+    const keychainText = arkSeedKeychainText();
 
     const [revealed, setRevealed] = useState(false);
     const [revealing, setRevealing] = useState(false);
@@ -230,7 +239,7 @@ export default function ArkSeedPhraseScreen() {
     const ensureWalletCreated = async (): Promise<boolean> => {
         if (walletReady) return true;
         if (!mnemonic || !mnemonic.trim()) {
-            SimpleToast.show("No seed phrase available. Go back and try again.", SimpleToast.LONG);
+            SimpleToast.show(loc.cypherbox.account.ark_seed.no_seed, SimpleToast.LONG);
             return false;
         }
         try {
@@ -240,19 +249,24 @@ export default function ArkSeedPhraseScreen() {
         } catch (err) {
             console.warn("[Ark] Wallet.create failed during backup setup:", err);
             const msg = (err as Error)?.message ?? "unknown error";
-            // bark's error strings for "a datadir already exists on disk but
-            // this seed can't open it": Internal / Database (0-byte or schema
-            // residue) and "incorrect mnemonic" (the datadir was created with a
-            // DIFFERENT seed, i.e. the poisoned-datadir trap left by a create that
-            // died mid-flight, e.g. the esplora bot-block). All three route to
-            // the user-confirmed Reset & retry below; without "incorrect
-            // mnemonic" here that case dead-ended on a bare toast and the only
-            // way out was reinstalling the app.
-            const looksLikeStaleDatadir = /Internal|InvalidMnemonic|Database|incorrect mnemonic/i.test(msg);
+            // Routed to the user-confirmed Reset & retry below: bark's errors for
+            // "a datadir already exists on disk but this seed can't open it"
+            // (Internal / Database residue, and "incorrect mnemonic" from a
+            // create that died mid-flight with a different seed), and the
+            // one-vault refusal when no vault is open or recorded, which is the
+            // leftover such a create leaves before the vault is recorded. Without
+            // those, each dead-ended on a bare toast and the only way out was
+            // reinstalling the app. A real vault still gets the refusal. See
+            // offersArkReset in services/ark/createErrors.ts.
+            const looksLikeStaleDatadir = offersArkReset(err, {
+                handleOpen: !!getArkWalletHandle(),
+                storeLoaded: useAuthStore.persist.hasHydrated(),
+                isArkAuth: useAuthStore.getState().isArkAuth === true,
+            });
 
             // Non-stale-datadir errors: just toast and bail. Caller retries on next tap.
             if (!looksLikeStaleDatadir) {
-                SimpleToast.show(`Ark wallet creation failed: ${msg}`, SimpleToast.LONG);
+                SimpleToast.show(String(loc.formatString(loc.cypherbox.account.ark_seed.create_failed, { error: msg })), SimpleToast.LONG);
                 return false;
             }
 
@@ -264,12 +278,12 @@ export default function ArkSeedPhraseScreen() {
             // wipes the orphan + retries the create with the seed in hand.
             return await new Promise<boolean>((resolve) => {
                 Alert.alert(
-                    "Couldn't create wallet on top of old state",
-                    "Leftover data from a previous Ark wallet is on this device. The new seed phrase you're about to back up can't replace it without wiping the old state first.\n\nIf you don't have access to the previous wallet's seed AND its backup file, those funds (if any) are not recoverable from this device anyway. Reset to continue.",
+                    loc.cypherbox.account.ark_seed.stale_title,
+                    loc.cypherbox.account.ark_seed.stale_body,
                     [
-                        { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                        { text: loc._.cancel, style: "cancel", onPress: () => resolve(false) },
                         {
-                            text: "Reset & retry",
+                            text: loc.cypherbox.account.ark_seed.reset_retry,
                             style: "destructive",
                             onPress: async () => {
                                 try {
@@ -280,7 +294,7 @@ export default function ArkSeedPhraseScreen() {
                                 } catch (resetErr: any) {
                                     console.warn("[Ark] resetArkWalletState failed:", resetErr);
                                     SimpleToast.show(
-                                        `Couldn't reset: ${resetErr?.message ?? "unknown error"}`,
+                                        String(loc.formatString(loc.cypherbox.account.ark_seed.reset_failed, { error: resetErr?.message ?? loc.cypherbox.account.common.unknown_error })),
                                         SimpleToast.LONG,
                                     );
                                     resolve(false);
@@ -293,7 +307,7 @@ export default function ArkSeedPhraseScreen() {
                                 } catch (retryErr: any) {
                                     console.warn("[Ark] Wallet.create still failed after reset:", retryErr);
                                     SimpleToast.show(
-                                        `Wallet still couldn't be created after reset: ${retryErr?.message ?? "unknown error"}. Try force-quitting and reopening the app.`,
+                                        String(loc.formatString(loc.cypherbox.account.ark_seed.still_failed, { error: retryErr?.message ?? loc.cypherbox.account.common.unknown_error })),
                                         SimpleToast.LONG,
                                     );
                                     resolve(false);
@@ -331,7 +345,7 @@ export default function ArkSeedPhraseScreen() {
     const handleConnectAndBackupCloud = async () => {
         if (cloudBackupBusy || cloudBackupDone) return;
         if (!revealed) {
-            SimpleToast.show("Reveal your seed first.", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.reveal_seed_first, SimpleToast.SHORT);
             return;
         }
         setCloudBackupBusy(true);
@@ -343,7 +357,7 @@ export default function ArkSeedPhraseScreen() {
                     // User dismissed the Google account picker — don't
                     // promote to a hard error, they can tap again.
                     SimpleToast.show(
-                        "Couldn't connect Google Drive. Make sure Play Services is up to date and try again.",
+                        loc.cypherbox.account.ark_seed.drive_connect_failed,
                         SimpleToast.LONG,
                     );
                     return;
@@ -361,8 +375,8 @@ export default function ArkSeedPhraseScreen() {
                 // Local write failure is rare (disk full, sandbox glitch).
                 // Treat as hard error — neither path completed.
                 Alert.alert(
-                    "Backup write failed",
-                    `Couldn't write the encrypted backup file on this device: ${result.local.error}. Free up storage and try again.`,
+                    loc.cypherbox.account.common.backup_write_failed_title,
+                    String(loc.formatString(loc.cypherbox.account.common.backup_write_failed_local, { error: result.local.error })),
                 );
                 return;
             }
@@ -395,7 +409,7 @@ export default function ArkSeedPhraseScreen() {
                 if (iCloudOn) {
                     setCloudBackupDone(true);
                     SimpleToast.show(
-                        'iCloud Drive is on for Cypher Box. Backup syncs automatically.',
+                        loc.cypherbox.account.ark_seed.icloud_on,
                         SimpleToast.LONG,
                     );
                     return;
@@ -411,8 +425,8 @@ export default function ArkSeedPhraseScreen() {
                     file = await writeArkBackupToTempFile(m);
                 } catch (writeErr: any) {
                     Alert.alert(
-                        "Backup write failed",
-                        `Couldn't prepare the backup file: ${writeErr?.message ?? "unknown error"}. Free up storage and try again.`,
+                        loc.cypherbox.account.common.backup_write_failed_title,
+                        String(loc.formatString(loc.cypherbox.account.ark_seed.prepare_failed, { error: writeErr?.message ?? loc.cypherbox.account.common.unknown_error })),
                     );
                     return;
                 }
@@ -434,11 +448,11 @@ export default function ArkSeedPhraseScreen() {
 
                 const saved = await new Promise<boolean>((resolve) => {
                     Alert.alert(
-                        "Did you save the backup file?",
-                        "The .cbark file is encrypted with your seed phrase, safe to keep in iCloud Drive, email to yourself, or any cloud storage. Without this file plus your seed, your Bark balance can't be fully recovered.\n\nThe best path is to enable iCloud Drive for Cypher Box (iOS Settings → [your name] → iCloud → iCloud Drive → Cypher Box). Cypher Box will then keep an encrypted copy current in your iCloud Drive automatically. Until you do that, re-export from the reminder banner in Bark Settings → Bark Backup after every Lightning receive.",
+                        loc.cypherbox.account.ark_seed.saved_q_title,
+                        loc.cypherbox.account.ark_seed.saved_q_body,
                         [
-                            { text: "Not yet", style: "cancel", onPress: () => resolve(false) },
-                            { text: "Yes, I saved it", onPress: () => resolve(true) },
+                            { text: loc.cypherbox.account.ark_seed.not_yet, style: "cancel", onPress: () => resolve(false) },
+                            { text: loc.cypherbox.account.ark_seed.yes_saved, onPress: () => resolve(true) },
                         ],
                         { cancelable: true, onDismiss: () => resolve(false) },
                     );
@@ -447,7 +461,7 @@ export default function ArkSeedPhraseScreen() {
                 if (saved) {
                     setCloudBackupDone(true);
                     setArkIosBackupReminderActive(true);
-                    SimpleToast.show("Backup saved.", SimpleToast.SHORT);
+                    SimpleToast.show(loc.cypherbox.account.ark_seed.backup_saved, SimpleToast.SHORT);
                 }
                 return;
             }
@@ -465,7 +479,7 @@ export default function ArkSeedPhraseScreen() {
                 case 'uploaded-and-verified':
                     setCloudBackupDone(true);
                     SimpleToast.show(
-                        "Backup uploaded to Google Drive and verified. It will keep updating automatically.",
+                        loc.cypherbox.account.ark_seed.drive_verified,
                         SimpleToast.LONG,
                     );
                     break;
@@ -498,7 +512,7 @@ export default function ArkSeedPhraseScreen() {
                     setDriveError({
                         cls: 'unknown',
                         message:
-                            "Google Drive accepted the upload, but reading it back didn't return a valid backup. Save the backup file manually below to be safe.",
+                            loc.cypherbox.account.ark_seed.drive_verify_failed,
                     });
                     if (__DEV__) {
                         console.warn("[Ark] Drive verify failed:", result.drive.error);
@@ -511,7 +525,7 @@ export default function ArkSeedPhraseScreen() {
         } catch (err: any) {
             console.warn("[Ark] Cloud backup failed:", err);
             SimpleToast.show(
-                `Backup failed: ${err?.message ?? "unknown error"}. Try again, or save the backup file manually below.`,
+                String(loc.formatString(loc.cypherbox.account.ark_seed.backup_failed, { error: err?.message ?? loc.cypherbox.account.common.unknown_error })),
                 SimpleToast.LONG,
             );
         } finally {
@@ -536,18 +550,18 @@ export default function ArkSeedPhraseScreen() {
         const conflict = await checkArkSeedKeychainConflict(mnemonic || "");
         if (conflict.kind === 'different-wallet' || conflict.kind === 'unreadable') {
             const ok = await new Promise<boolean>(resolve => {
-                const keychainLabel = isIOS ? 'Keychain' : 'Keystore';
-                const biometricLabel = isIOS ? 'Face ID' : 'fingerprint';
+                const keychainLabel = keychainText.keychain;
+                const biometricLabel = keychainText.biometric;
                 const message =
                     conflict.kind === 'different-wallet'
-                        ? `A saved seed already exists on this device's ${keychainLabel} behind ${biometricLabel} for wallet ${conflict.existingFingerprint}.\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe.`
-                        : `A saved seed already exists on this device's ${keychainLabel} but couldn't be read to compare (${conflict.reason}).\n\nIf you want the new seed to take its place, make sure the old seed is written down somewhere safe. It may otherwise be lost.`;
+                        ? String(loc.formatString(keychainText.conflict.different, { keychain: keychainLabel, biometric: biometricLabel, fingerprint: conflict.existingFingerprint }))
+                        : String(loc.formatString(keychainText.conflict.unreadable, { keychain: keychainLabel, reason: conflict.reason }));
                 Alert.alert(
-                    "Replace keychain-saved seed?",
+                    keychainText.conflict.title,
                     message,
                     [
-                        { text: `Keep old seed in ${keychainLabel}`, style: "cancel", onPress: () => resolve(false) },
-                        { text: `Save new seed in ${keychainLabel}`, onPress: () => resolve(true) },
+                        { text: String(loc.formatString(keychainText.conflict.keepOld, { keychain: keychainLabel })), style: "cancel", onPress: () => resolve(false) },
+                        { text: String(loc.formatString(keychainText.conflict.saveNew, { keychain: keychainLabel })), onPress: () => resolve(true) },
                     ],
                     { cancelable: true, onDismiss: () => resolve(false) },
                 );
@@ -574,8 +588,8 @@ export default function ArkSeedPhraseScreen() {
         if (saved.kind === 'no-biometric-gate') {
             console.warn('[Ark] seed NOT saved: no biometric gate, storage=', saved.storage);
             Alert.alert(
-                "Seed not saved on this device",
-                "Your seed was not saved behind a fingerprint, because this device has no strong biometric set up right now. Nothing was stored, so write your 12 words down and keep them safe.",
+                loc.cypherbox.account.common.seed_not_saved_title,
+                loc.cypherbox.account.ark_seed.seed_not_saved_body,
             );
             setKeychainStatus("err");
             return 'error';
@@ -605,7 +619,7 @@ export default function ArkSeedPhraseScreen() {
         if (safBackupBusy) return;
         if (isIOS) return;
         if (!revealed) {
-            SimpleToast.show("Reveal your seed first.", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.reveal_seed_first, SimpleToast.SHORT);
             return;
         }
         setSafBackupBusy(true);
@@ -632,7 +646,7 @@ export default function ArkSeedPhraseScreen() {
                 // "tap to pick again" rather than "something failed".
                 setSafError({
                     cls: 'cancelled',
-                    message: 'No folder picked. Tap "Pick folder" to try again.',
+                    message: loc.cypherbox.account.ark_seed.no_folder_picked,
                 });
                 return;
             }
@@ -646,8 +660,8 @@ export default function ArkSeedPhraseScreen() {
 
             if (!result.local.ok) {
                 Alert.alert(
-                    "Backup write failed",
-                    `Couldn't write the encrypted backup file on this device: ${result.local.error}. Free up storage and try again.`,
+                    loc.cypherbox.account.common.backup_write_failed_title,
+                    String(loc.formatString(loc.cypherbox.account.common.backup_write_failed_local, { error: result.local.error })),
                 );
                 return;
             }
@@ -663,7 +677,7 @@ export default function ArkSeedPhraseScreen() {
                 case 'written-and-verified':
                     setSafBackupConfirmed(true);
                     SimpleToast.show(
-                        "Backup saved to your folder and verified. It will keep updating automatically.",
+                        loc.cypherbox.account.ark_seed.folder_verified,
                         SimpleToast.LONG,
                     );
                     break;
@@ -680,7 +694,7 @@ export default function ArkSeedPhraseScreen() {
                     setSafError({
                         cls: 'unknown',
                         message:
-                            "The backup was written to your folder but reading it back didn't return a valid file. Try picking a different folder.",
+                            loc.cypherbox.account.ark_seed.folder_verify_failed,
                     });
                     if (__DEV__) {
                         console.warn("[Ark/SAF] verify failed:", result.saf.error);
@@ -695,7 +709,7 @@ export default function ArkSeedPhraseScreen() {
         } catch (err: any) {
             console.warn("[Ark/SAF] unexpected:", err);
             SimpleToast.show(
-                `Couldn't save the backup to that folder: ${err?.message ?? "unknown error"}.`,
+                String(loc.formatString(loc.cypherbox.account.ark_seed.folder_save_failed, { error: err?.message ?? loc.cypherbox.account.common.unknown_error })),
                 SimpleToast.LONG,
             );
         } finally {
@@ -705,45 +719,65 @@ export default function ArkSeedPhraseScreen() {
 
     const handleContinue = async () => {
         if (!revealed) {
-            SimpleToast.show("Please reveal and back up your seed phrase first", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.ark_seed.reveal_and_backup, SimpleToast.SHORT);
             return;
         }
 
-        // STRICT GATE: at least one verified backup destination must
-        // exist before this wallet is allowed to receive funds. Two
-        // channels (one cloud, one local) and the gate accepts either:
-        //   - cloudBackupDone: Drive upload+verified (Android) OR local
-        //     Documents write succeeded (iOS — Apple transparently
-        //     mirrors Documents to iCloud Drive when the user has
-        //     iCloud Drive on for Cypher Box).
+        // BACKUP FILE: RECOMMENDED, NOT REQUIRED (owner ruling 2026-09-21).
+        // The written seed is the requirement (the `revealed` check above).
+        // Since bark 0.6.1 the seed alone restores the wallet through the
+        // server's recovery mailbox, and the .cbark file brings back what
+        // that scan can miss. Two channels (one cloud, one local) count as
+        // a saved file:
+        //   - cloudBackupDone: Drive upload+verified (Android) OR, on iOS,
+        //     iCloud Drive on for Cypher Box (the auto-tick writes into the
+        //     ubiquity container) or a share-sheet save the user confirmed.
         //   - safBackupConfirmed (Android only): user picked a Storage
         //     Access Framework folder, .cbark write+roundtrip-verified.
         //     Survives `pm uninstall`.
         //
-        // No "Continue anyway" override. The previous version allowed
-        // it and the user lost 5000 sats on 2026-05-05 when Drive
-        // silently failed, the wallet showed "created", and uninstall
-        // wiped the local copy. If you change this gate, re-read
-        // memory/project_play_signing_oauth.md first.
+        // Skipping the file is allowed, but never silently. This used to be
+        // a hard gate (bd7be37) after the 2026-05-05 loss of 5000 sats:
+        // Drive failed silently, the wallet showed "created", and uninstall
+        // wiped the only copy, at a time when the seed could not restore
+        // capsules on its own. So creating without a file takes an explicit
+        // "Create without it" on a dialog that says what the file adds.
         const hasVerifiedBackup = cloudBackupDone || safBackupConfirmed;
         if (!hasVerifiedBackup) {
             Alert.alert(
-                "Save your backup first",
-                isIOS
-                    ? "Your seed phrase can restore the wallet on its own, but the backup file brings back capsule state the server scan can miss. Tap 'Save backup file' above and save it somewhere you trust (iCloud Drive recommended)."
-                    : "Your seed phrase can restore the wallet on its own, but the backup file brings back capsule state the server scan can miss. Pick at least one: Google Drive (off-device), or a folder on this phone (survives uninstall).",
-                [{ text: "OK" }],
+                loc.cypherbox.account.ark_seed.no_backup_confirm_title,
+                loc.cypherbox.account.ark_seed.no_backup_confirm_body,
+                [
+                    { text: loc.cypherbox.account.ark_seed.no_backup_confirm_save, style: 'cancel' },
+                    {
+                        text: loc.cypherbox.account.ark_seed.no_backup_confirm_create,
+                        style: 'destructive',
+                        onPress: () => { void completeArkCreate(); },
+                    },
+                ],
                 { cancelable: true },
             );
             return;
         }
 
+        await completeArkCreate();
+    };
+
+    // Everything after the backup decision. Reached with a saved backup file,
+    // or after the user confirmed creating without one. (Not named
+    // createArkWallet: that is the imported service ensureWalletCreated calls.)
+    const completeArkCreate = async () => {
         setSubmitting(true);
 
+        // Taken from this save's own result. `keychainStatus` is the value this
+        // render started with, so it still read null right after a successful
+        // save, and every vault made here was recorded as not saved.
+        let keychainSaved = false;
         if (saveToKeychain) {
             const result = await persistToKeychain();
+            keychainSaved = result === 'ok';
             if (result === 'error') {
-                SimpleToast.show("Keychain save failed. Please back up manually", SimpleToast.LONG);
+                SimpleToast.show(keychainText.seed.failedToast, SimpleToast.LONG);
             }
             // 'cancelled' = user kept the existing keychain seed by
             // choice. Silent, not a failure.
@@ -761,23 +795,27 @@ export default function ArkSeedPhraseScreen() {
         // values ("local" / "icloud" / "manual" / "auto+manual") for
         // backwards-compat with older wallet records and pick the most
         // descriptive label for the active backup channels.
-        let backupDestination: BackupDestination;
+        let backupDestination: BackupDestination | null;
         if (cloudBackupDone && safBackupConfirmed) {
             backupDestination = "auto+manual";
         } else if (cloudBackupDone) {
             backupDestination = isIOS ? "icloud" : "auto+manual";
-        } else {
+        } else if (safBackupConfirmed) {
             // SAF-only path. Tagged "manual" in the legacy string set —
             // initial decision was a manual folder pick, even though
             // subsequent updates are automatic.
             backupDestination = "manual";
+        } else {
+            // Created without a backup file (confirmed in handleContinue).
+            // null, as RecoverArkScreen records for a restored wallet.
+            backupDestination = null;
         }
 
         const wallet = {
             id: `ark-${Date.now()}`,
             createdAt: new Date().toISOString(),
             useHotVaultSeed: arkUseHotVaultSeed,
-            keychainSaved: saveToKeychain && keychainStatus === "ok",
+            keychainSaved,
             backupDestination,
         };
         setArkWallet(wallet);
@@ -785,23 +823,26 @@ export default function ArkSeedPhraseScreen() {
         if (!allBTCWallets.includes("ARK")) {
             setAllBTCWallets([...allBTCWallets, "ARK"]);
         }
-        // Activity log: emit AFTER the strict backup gate has passed and
-        // setArkAuth has flipped — at this point the wallet is durably
-        // created and a recovery path exists. Earlier emits would record
-        // half-created state if the user backed out at the backup gate.
+        // Activity log: emit AFTER the backup decision and after setArkAuth
+        // has flipped — at this point the wallet is durably created and a
+        // recovery path exists (the written seed, plus the file if saved).
+        // Earlier emits would record half-created state if the user backed
+        // out at the backup step.
         recordEvent({ kind: 'ark-created' });
 
         // Arm background-refresh for the new wallet. The zustand default
         // is `arkBgRefreshEnabled: true` so the toggle in ArkCapsules
-        // shows ON immediately; this call flips the flag and requests
-        // notification permission for the expiry warnings. Wrapped in
-        // try/catch so a permission failure doesn't block the create
-        // flow. The user can flip the toggle off any time from Settings.
+        // shows ON immediately; this call flips the flag. Wrapped in
+        // try/catch so a failure doesn't block the create flow. The user
+        // can flip the toggle off any time from Settings.
         try {
             // requestNotificationPermission: false — do NOT prompt here. This
             // runs before CheckingAccountCreated mounts, so the OS dialog used
             // to land on the user before anything had explained what capsule
-            // reminders are. That screen asks for consent on exit instead.
+            // reminders are. That screen asks for consent on exit instead,
+            // and mints the push token after a "Yes". With false, this call
+            // also skips minting unless notifications are already allowed,
+            // since minting from an undecided permission shows the dialog.
             await setArkBackgroundRefreshEnabled(true, { requestNotificationPermission: false });
         } catch (err) {
             console.warn("[Ark create] failed to arm reminders:", err);
@@ -824,7 +865,7 @@ export default function ArkSeedPhraseScreen() {
             <ScreenLayout showToolbar>
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={colors.ark.light} />
-                    <Text style={styles.loadingText}>Creating Ark wallet…</Text>
+                    <Text style={styles.loadingText}>{loc.cypherbox.account.common.creating_ark_wallet}</Text>
                 </View>
             </ScreenLayout>
         );
@@ -834,22 +875,22 @@ export default function ArkSeedPhraseScreen() {
     return (
         <ScreenLayout showToolbar>
             <View style={styles.container}>
-                <HeaderWithLine title="Your Ark Seed Phrase" titleColor={colors.yellow} />
+                <HeaderWithLine title={loc.cypherbox.account.ark_seed.header} titleColor={colors.yellow} />
 
                 <ScrollView
                     contentContainerStyle={styles.scroll}
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={styles.content}>
-                        <Text style={styles.sectionTitle}>Seed phrase (required)</Text>
-                        <Text style={styles.warnTitle}>⚠ Write these 12 words down</Text>
+                        <Text style={styles.sectionTitle}>{loc.cypherbox.account.ark_seed.seed_required}</Text>
+                        <Text style={styles.warnTitle}>{loc.cypherbox.account.ark_seed.write_down}</Text>
                         <Text style={styles.warnBody}>
-                            Keep it safe and secure offline (paper and pen are good enough).
+                            {loc.cypherbox.account.ark_seed.keep_offline}
                         </Text>
 
                         <View style={styles.keychainRow}>
                             <Text bold style={[styles.keychainLabel, { flex: 1 }]}>
-                                Save to {isIOS ? 'iPhone Keychain' : 'Android Keystore'} ({isIOS ? 'Face ID' : 'fingerprint'})
+                                {loc.formatString(keychainText.seed.saveTo, { store: keychainText.store, biometric: keychainText.biometric })}
                             </Text>
                             <Switch
                                 value={saveToKeychain}
@@ -860,27 +901,23 @@ export default function ArkSeedPhraseScreen() {
                         </View>
 
                         {keychainStatus === "ok" && (
-                            <Text style={styles.statusOk}>✓ Saved to Keychain</Text>
+                            <Text style={styles.statusOk}>{keychainText.seed.saved}</Text>
                         )}
                         {keychainStatus === "err" && (
                             <Text style={styles.statusErr}>
-                                ✗ Keychain save failed. Please back up the words manually
+                                {keychainText.seed.failed}
                             </Text>
                         )}
 
                         <Text style={styles.headerNote}>
-                            These 12 words are what recover this wallet, on this device or a
-                            new one. Your{' '}
-                            <Text style={{ color: '#FF5A5A' }}>Bark backup file</Text>
-                            {' '}is the safety net for capsules the server scan can miss. Set
-                            its destination below.
+                            {loc.formatString(loc.cypherbox.account.ark_seed.header_note, { backup_file: <Text style={{ color: '#FF5A5A' }}>{loc.cypherbox.account.ark_seed.bark_backup_file}</Text> })}
                         </Text>
 
                         <View style={styles.gridWrap}>
                             <View style={styles.grid}>
                                 {words.map((word, idx) => (
                                     <View key={`${idx}-${word}`} style={styles.word}>
-                                        <Text style={styles.wordText}>{`${idx + 1}. ${word}`}</Text>
+                                        <Text style={[styles.wordText, rtl.ltrText]}>{`${idx + 1}. ${word}`}</Text>
                                     </View>
                                 ))}
 
@@ -906,7 +943,7 @@ export default function ArkSeedPhraseScreen() {
                                             ) : (
                                                 <View style={styles.revealCenter}>
                                                     <Text style={styles.revealTitle}>
-                                                        Tap to reveal your seed phrase
+                                                        {loc.cypherbox.account.ark_seed.tap_to_reveal}
                                                     </Text>
                                                     <TouchableOpacity
                                                         style={styles.revealBtn}
@@ -914,7 +951,7 @@ export default function ArkSeedPhraseScreen() {
                                                         activeOpacity={0.85}
                                                     >
                                                         <Image source={EyeVisible} />
-                                                        <Text style={styles.revealBtnText}>Reveal</Text>
+                                                        <Text style={styles.revealBtnText}>{loc.cypherbox.account.ark_seed.reveal}</Text>
                                                     </TouchableOpacity>
                                                 </View>
                                             )}
@@ -940,14 +977,9 @@ export default function ArkSeedPhraseScreen() {
                             scan is best-effort (it can fail while the open still
                             succeeds, and VTXOs past the gap limit are unreachable),
                             so the file is still what covers the remainder. */}
-                        <Text style={styles.sectionTitle}>Bark backup file (recommended)</Text>
+                        <Text style={styles.sectionTitle}>{loc.cypherbox.account.ark_seed.backup_section}</Text>
                         <Text style={styles.sectionSub}>
-                            Can be stored and auto-updated on this device and on your cloud.
-                            Each time you send or receive, an encrypted snapshot updates in{' '}
-                            {isIOS
-                                ? "Files → On My iPhone → Cypher Box"
-                                : "the app's local storage"}.
-                            That covers app reinstalls and data corruption.
+                            {loc.formatString(loc.cypherbox.account.ark_seed.backup_section_desc, { location: isIOS ? loc.cypherbox.account.ark_seed.ios_location : loc.cypherbox.account.ark_seed.android_location })}
                         </Text>
 
                         {/* Optional CTA — off-device redundancy.
@@ -958,9 +990,7 @@ export default function ArkSeedPhraseScreen() {
                                      for Cypher Box). We can't probe the toggle,
                                      so the copy is honest about the conditional. */}
                         <Text style={[styles.sectionSub, { marginTop: 18 }]}>
-                            Lose the phone, though, and the local file goes with it.
-                            Your seed can still restore the wallet, but an off-device
-                            copy brings back capsule state the server scan can miss:
+                            {loc.cypherbox.account.ark_seed.lose_phone}
                         </Text>
                         <View style={[styles.backupOption, styles.backupOptionSelected]}>
                             <View style={[styles.backupRadioOuter, styles.backupRadioOuterSelected]}>
@@ -969,14 +999,14 @@ export default function ArkSeedPhraseScreen() {
                             <View style={styles.backupOptionTextWrap}>
                                 <Text style={styles.backupOptionLabel}>
                                     {isIOS
-                                        ? "Save your backup file"
-                                        : "Optional: sync backup to Google Drive"}
+                                        ? loc.cypherbox.account.ark_seed.ios_option_label
+                                        : loc.cypherbox.account.ark_seed.android_option_label}
                                     {cloudBackupDone ? "  ✓" : ""}
                                 </Text>
                                 <Text style={styles.backupOptionDetail}>
                                     {isIOS
-                                        ? "Opens the share sheet so you can save the encrypted ark-backup file. We recommend saving inside iCloud Drive, so Cypher Box keeps it current automatically as your VTXO capsules change. Anywhere else (email, AirDrop, local Files) works for recovery too, but you'll need to re-export after every Lightning receive. Whoever stores it sees ciphertext only."
-                                        : "Connects your Google account and uploads your ark-backup file to Drive's appDataFolder, hidden from the main Drive UI, only Cypher Box can read it. Updates upload automatically as your VTXO capsules change. Google sees only ciphertext."}
+                                        ? loc.cypherbox.account.ark_seed.ios_option_detail
+                                        : loc.cypherbox.account.ark_seed.android_option_detail}
                                 </Text>
                                 <TouchableOpacity
                                     onPress={handleConnectAndBackupCloud}
@@ -1004,13 +1034,13 @@ export default function ArkSeedPhraseScreen() {
                                         }}>
                                             {cloudBackupDone
                                                 ? (isIOS
-                                                    ? "✓ Saved"
-                                                    : "✓ Connected · backup verified")
+                                                    ? loc.cypherbox.account.ark_seed.saved_check
+                                                    : loc.cypherbox.account.ark_seed.connected_verified)
                                                 : (isIOS
-                                                    ? "Save backup file"
+                                                    ? loc.cypherbox.account.ark_seed.save_backup_file
                                                     : driveError
-                                                        ? "Retry connect & save"
-                                                        : "Connect & save backup")}
+                                                        ? loc.cypherbox.account.ark_seed.retry_connect
+                                                        : loc.cypherbox.account.ark_seed.connect_save)}
                                         </Text>
                                     )}
                                 </TouchableOpacity>
@@ -1030,7 +1060,7 @@ export default function ArkSeedPhraseScreen() {
                                         borderColor: 'rgba(255, 90, 90, 0.35)',
                                     }}>
                                         <Text bold style={{ color: '#FF5A5A', fontSize: 13, marginBottom: 4 }}>
-                                            Google Drive backup didn't complete
+                                            {loc.cypherbox.account.ark_seed.drive_incomplete}
                                         </Text>
                                         <Text style={{ color: colors.white, fontSize: 12, lineHeight: 17 }}>
                                             {driveError.message}
@@ -1044,7 +1074,7 @@ export default function ArkSeedPhraseScreen() {
                                         color: colors.gray.disable,
                                         fontSize: 12,
                                     }}>
-                                        Reveal your seed first.
+                                        {loc.cypherbox.account.common.reveal_seed_first}
                                     </Text>
                                 )}
                             </View>
@@ -1071,17 +1101,11 @@ export default function ArkSeedPhraseScreen() {
                                 </View>
                                 <View style={styles.backupOptionTextWrap}>
                                     <Text style={styles.backupOptionLabel}>
-                                        Save to a folder on this phone (auto-updates)
+                                        {loc.cypherbox.account.ark_seed.folder_option_label}
                                         {safBackupConfirmed ? "  ✓" : ""}
                                     </Text>
                                     <Text style={styles.backupOptionDetail}>
-                                        Pick a folder you control, for example
-                                        Internal Storage → Documents → Backups.
-                                        The encrypted file is written there
-                                        whenever your wallet changes, and unlike
-                                        the app's private storage it{' '}
-                                        <Text bold>survives uninstalling Cypher Box</Text>.
-                                        Whatever stores it sees ciphertext only.
+                                        {loc.formatString(loc.cypherbox.account.ark_seed.folder_option_detail, { survives: <Text bold>{loc.cypherbox.account.ark_seed.survives}</Text> })}
                                     </Text>
                                     <TouchableOpacity
                                         onPress={handlePickAndBackupSafFolder}
@@ -1108,10 +1132,10 @@ export default function ArkSeedPhraseScreen() {
                                                 fontSize: 13,
                                             }}>
                                                 {safBackupConfirmed
-                                                    ? "✓ Folder linked · backup verified"
+                                                    ? loc.cypherbox.account.ark_seed.folder_linked
                                                     : safFolderConfigured
-                                                        ? "Re-pick folder & save"
-                                                        : "Pick folder & save backup"}
+                                                        ? loc.cypherbox.account.ark_seed.repick_folder
+                                                        : loc.cypherbox.account.ark_seed.pick_folder}
                                             </Text>
                                         )}
                                     </TouchableOpacity>
@@ -1129,7 +1153,7 @@ export default function ArkSeedPhraseScreen() {
                                             borderColor: 'rgba(255, 90, 90, 0.35)',
                                         }}>
                                             <Text bold style={{ color: '#FF5A5A', fontSize: 13, marginBottom: 4 }}>
-                                                Phone-folder backup didn't complete
+                                                {loc.cypherbox.account.ark_seed.folder_incomplete}
                                             </Text>
                                             <Text style={{ color: colors.white, fontSize: 12, lineHeight: 17 }}>
                                                 {safError.message}
@@ -1140,10 +1164,14 @@ export default function ArkSeedPhraseScreen() {
                             </View>
                         )}
 
-                        {/* Hard-gate warning — Continue is blocked until at
-                            least one backup destination is verified. Replaces
-                            the prior soft-warn that allowed override (cause of
-                            the 5000-sat loss on 2026-05-05).
+                        {/* No-backup-file notice. Both options above are
+                            optional (the written seed restores the wallet),
+                            so this no longer blocks Create; it says what the
+                            file adds, and Create asks once more before going
+                            ahead without one. Kept red because skipping the
+                            file is how the 5000-sat loss on 2026-05-05
+                            happened, back when the seed alone could not
+                            restore capsules.
                             On iOS without iCloud Drive enabled for the app,
                             users who pass the gate via manual share+confirm
                             see a persistent reminder banner in Settings →
@@ -1156,15 +1184,10 @@ export default function ArkSeedPhraseScreen() {
                         {revealed && !cloudBackupDone && !safBackupConfirmed && (
                             <View style={styles.warnPanel}>
                                 <Text bold style={styles.warnPanelTitle}>
-                                    ⚠ Save your backup before continuing
+                                    {loc.cypherbox.account.ark_seed.no_backup_note_title}
                                 </Text>
                                 <Text style={styles.warnPanelBody}>
-                                    Your seed phrase restores the wallet, and the
-                                    server returns the capsules it still tracks for
-                                    it. That scan is not guaranteed to find
-                                    everything, and the backup file is what covers
-                                    the rest. Pick any one option above before
-                                    creating the wallet.
+                                    {loc.cypherbox.account.ark_seed.no_backup_note_body}
                                 </Text>
                             </View>
                         )}
@@ -1174,17 +1197,17 @@ export default function ArkSeedPhraseScreen() {
                 <Button
                     text={
                         !revealed
-                            ? "Reveal seed phrase first"
+                            ? loc.cypherbox.account.ark_seed.reveal_seed_first_btn
                             : (cloudBackupDone || safBackupConfirmed)
-                                ? "I've backed it up - Create"
-                                : "Save a backup first"
+                                ? loc.cypherbox.account.ark_seed.backed_up_create
+                                : loc.cypherbox.account.ark_seed.written_down_create
                     }
                     onPress={handleContinue}
                     style={styles.button}
                     textStyle={styles.btnText}
                 />
                 <TouchableOpacity onPress={() => dispatchNavigate("HomeScreen")}>
-                    <Text style={styles.cancelText}>Cancel</Text>
+                    <Text style={styles.cancelText}>{loc._.cancel}</Text>
                 </TouchableOpacity>
             </View>
         </ScreenLayout>

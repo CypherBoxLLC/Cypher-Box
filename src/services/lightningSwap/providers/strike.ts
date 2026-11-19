@@ -23,6 +23,7 @@ import {
     sendStrikeLightningPayment,
 } from '@Cypher/api/strikeAPIs';
 import useAuthStore from '@Cypher/stores/authStore';
+import { isStrikeAllowed } from '@Cypher/services/featureFlags';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 
 import type {
@@ -31,6 +32,7 @@ import type {
 } from '../types';
 import { PaymentPendingError } from '../types';
 import { register } from '../registry';
+import loc from '../../../../loc';
 
 /**
  * Format an integer sats amount as a BTC decimal string for Strike's
@@ -52,7 +54,10 @@ const strikeProvider: LightningSwapProvider = {
     icon: StrikeFull,
 
     isAvailable() {
-        return Boolean(useAuthStore.getState().isStrikeAuth);
+        // Region gate lives here for the same reason as CoinOS's: every
+        // swap consumer goes through the registry, so one check covers
+        // the tile, the picker fallback and any programmatic swap.
+        return Boolean(useAuthStore.getState().isStrikeAuth) && isStrikeAllowed();
     },
 
     async createInvoice(amountSats, _memo, sourceId /* _memo unused: Strike's bolt11 endpoint takes no description field */) {
@@ -97,7 +102,7 @@ const strikeProvider: LightningSwapProvider = {
             const msg =
                 response?.data?.message ??
                 response?.message ??
-                'Strike returned no invoice';
+                loc.cypherbox.services.lightning_swap.strike_no_invoice;
             throw new Error(msg);
         }
         return bolt11;
@@ -178,8 +183,7 @@ const strikeProvider: LightningSwapProvider = {
                 }
                 throw new PaymentPendingError(
                     'strike',
-                    `Strike accepted your payment (id ${pidShort}) but it's still settling on Lightning and the app can't confirm the result. ` +
-                    `Do NOT retry. Open the Strike app to check: it will either complete or refund automatically within a few hours.`,
+                    String(loc.formatString(loc.cypherbox.services.lightning_swap.strike_pending_unconfirmed, { id: pidShort })),
                     String(paymentId),
                 );
             }
@@ -193,8 +197,7 @@ const strikeProvider: LightningSwapProvider = {
             if (finalState === 'PENDING' || finalState === 'NEW' || finalState === '') {
                 throw new PaymentPendingError(
                     'strike',
-                    `Strike payment ${pidShort} is still settling on Lightning. ` +
-                    `Do NOT retry. Open the Strike app to check. It will complete or refund automatically within a few hours.`,
+                    String(loc.formatString(loc.cypherbox.services.lightning_swap.strike_pending_settling, { id: pidShort })),
                     String(paymentId ?? ''),
                 );
             }

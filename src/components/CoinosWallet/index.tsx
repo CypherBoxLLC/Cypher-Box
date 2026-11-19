@@ -3,9 +3,14 @@ import { Card, GradientCardWithShadow } from "@Cypher/components";
 import { calculateBalancePercentage, dispatchNavigate, openInAppBrowser } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { rtl } from "@Cypher/style-guide";
+import useRegionGate from "@Cypher/custom-hooks/useRegionGate";
+import HomeNotices from "@Cypher/components/HomeNotices";
+import type { HomeNotice } from "@Cypher/services/homeNotices";
 import React from "react";
 import { Image, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 
 interface Props {
     balance: any;
@@ -17,7 +22,8 @@ interface Props {
     refRBSheet: any;
     refSendRBSheet: any;
     setReceiveType: any;
-    homeMessage?: string | null;
+    /** The tip HomeScreen picks (getHomeNotice), drawn as a notice icon. */
+    homeNotice?: HomeNotice | null;
     hideActionButtons?: boolean;
 }
 
@@ -31,7 +37,7 @@ export default function CoinosWallet({
     refRBSheet,
     refSendRBSheet,
     setReceiveType,
-    homeMessage,
+    homeNotice = null,
     hideActionButtons = false,
 }: Props) {
     const { isAuth, withdrawThreshold, reserveAmount, clearAuth } = useAuthStore();
@@ -47,6 +53,8 @@ export default function CoinosWallet({
      * Removing the card outright would read as "Cypher Box lost my
      * money" for a balance that is, and always was, held by CoinOS.
      */
+    // Re-render when the App Store storefront resolves after launch.
+    useRegionGate();
     const coinosAllowed = isCoinosAllowed();
 
     const receiveClickHandler = (type: boolean) => {
@@ -80,11 +88,22 @@ export default function CoinosWallet({
         // dispatchNavigate("CheckAccount");
     };
 
+    // CoinOS is not offered in this region (services/featureFlags): a green
+    // note, which stays ignored for as long as that is true.
+    const regionNotice: HomeNotice | null = coinosAllowed ? null : {
+        id: 'coinos-region',
+        severity: 'green',
+        icon: 'globe-outline',
+        situation: 'unavailable',
+        text: loc.cypherbox.components.coinos_wallet.region_unavailable,
+    };
+
     return (
         <>
             {isAuth &&
                 <>
                     <Card
+                        hideWithBalances
                         balance={balance}
                         convertedRate={convertedRate}
                         reserveAmount={reserveAmount}
@@ -97,15 +116,10 @@ export default function CoinosWallet({
                         receiveClickHandler={receiveClickHandler}
                         sendClickHandler={sendClickHandler}
                     />
-                    {!coinosAllowed && (
-                        <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
-                            <Text h4 style={styles.alert}>
-                                CoinOS is not available in your region. Your
-                                balance is held by CoinOS, not by Cypher Box,
-                                and it is untouched. Sign in at coinos.io to
-                                use it.
-                            </Text>
-                        </View>
+                    {/* With the shared Receive/Send row the card has no notice
+                        row of its own, so the region note sits under the card. */}
+                    {hideActionButtons && regionNotice && (
+                        <HomeNotices style={{ paddingTop: 10 }} notices={[regionNotice]} />
                     )}
                     {/* When shared buttons are active (`hideActionButtons`),
                         skip this minHeight-40 reserve so the shared row can
@@ -113,11 +127,7 @@ export default function CoinosWallet({
                         gap that Bam called "way below". */}
                     {!hideActionButtons && (
                         <View style={{ minHeight: 40, justifyContent: 'center' }}>
-                            {!isLoading && homeMessage &&
-                                <Text h4 style={styles.alert}>
-                                    {homeMessage}
-                                </Text>
-                            }
+                            <HomeNotices notices={[regionNotice, isLoading ? null : homeNotice]} />
                         </View>
                     )}
                 </>
@@ -132,22 +142,22 @@ export default function CoinosWallet({
                     >
                         <View style={styles.middle}>
                             <Image
-                                style={styles.arrow}
+                                style={[styles.arrow, rtl.mirror]}
                                 resizeMode="contain"
                                 source={require("../../../img/arrow-right.png")}
                             />
                             <Text h2 style={styles.shadow} center>
-                                Login to Your Lightning Account
+                                {loc.cypherbox.components.coinos_wallet.login_to_lightning_account}
                             </Text>
                         </View>
                     </GradientCardWithShadow>
                     <View style={styles.createAccount}>
                         <Text bold style={styles.text}>
-                            Don’t have an account?
+                            {loc.cypherbox.components.coinos_wallet.no_account}
                         </Text>
                         <TouchableOpacity onPress={createChekingAccountClickHandler}>
                             <Text bold style={styles.login}>
-                                Create on Coinos.io
+                                {loc.cypherbox.components.coinos_wallet.create_on_coinos}
                             </Text>
                         </TouchableOpacity>
                     </View>

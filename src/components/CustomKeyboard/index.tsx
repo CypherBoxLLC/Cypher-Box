@@ -8,6 +8,7 @@ import { Cancel, Currency, CurrencyWhite, CurrencyEUR, Sats } from "@Cypher/asse
 import { Text } from "@Cypher/component-library";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import { colors } from "@Cypher/style-guide";
+import loc from "../../../loc";
 
 interface Props {
     onPress(): void;
@@ -142,7 +143,7 @@ export default function CustomKeyBoard({ title, prevSats, disabled, onPress, set
                                     colors={colors_}
                                     style={styles.maxButton}
                                 >
-                                    <Text bold style={styles.maxText}>MAX</Text>
+                                    <Text bold style={styles.maxText}>{loc.cypherbox.components.custom_keyboard.max}</Text>
                                 </LinearGradient>
                             </TouchableOpacity>
                         )

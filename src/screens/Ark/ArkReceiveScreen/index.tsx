@@ -11,11 +11,12 @@ import {
     getArkOnchainAddress,
 } from "@Cypher/services/ark";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { useRoute } from "@react-navigation/native";
 
 import { getFiatRate } from "../../../../models/fiatUnit";
 import styles from "./styles";
+import loc from "../../../../loc";
 
 /**
  * ArkReceiveScreen — Ark has three distinct receive methods, unlike the
@@ -68,14 +69,14 @@ export default function ArkReceiveScreen() {
         try {
             const address = await getArkAddress();
             dispatchNavigate("CopyInvoice", {
-                value: "Bark address",
+                value: loc.cypherbox.ark.receive.bark_address,
                 converted: "",
                 hash: address,
                 receiveType: false,
                 theme: 'ark',
             });
         } catch (err) {
-            setError((err as Error)?.message ?? "Failed to get Bark address");
+            setError((err as Error)?.message ?? loc.cypherbox.ark.receive.bark_address_failed);
         } finally {
             setLoading(null);
         }
@@ -87,14 +88,14 @@ export default function ArkReceiveScreen() {
         try {
             const address = await getArkOnchainAddress();
             dispatchNavigate("CopyInvoice", {
-                value: "Bitcoin address",
-                converted: "Board funds into Bark",
+                value: loc.cypherbox.ark.receive.bitcoin_address,
+                converted: loc.cypherbox.ark.receive.board_funds,
                 hash: address,
                 receiveType: false,
                 theme: 'ark',
             });
         } catch (err) {
-            setError((err as Error)?.message ?? "Failed to get on-chain address");
+            setError((err as Error)?.message ?? loc.cypherbox.ark.receive.onchain_address_failed);
         } finally {
             setLoading(null);
         }
@@ -134,7 +135,7 @@ export default function ArkReceiveScreen() {
         <ScreenLayout showToolbar isBackButton>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text subHeader bold>🐶 Receive to Bark</Text>
+                    <Text subHeader bold>{loc.cypherbox.ark.receive.title}</Text>
 
                     <View style={styles.extra} />
                     <GradientCard
@@ -145,10 +146,9 @@ export default function ArkReceiveScreen() {
                         <View style={styles.background}>
                             <View style={styles.view}>
                                 <View style={styles.container2}>
-                                    <Text subHeader bold style={styles.title}>Bark address</Text>
+                                    <Text subHeader bold style={styles.title}>{loc.cypherbox.ark.receive.bark_address}</Text>
                                     <Text h4 bold style={styles.desc}>
-                                        Instant VTXO capsule transfer from another Bark user.
-                                        No fees, no confirmations.
+                                        {loc.cypherbox.ark.receive.bark_address_desc}
                                     </Text>
                                     {/* A capsule that lands here is short-lived, and the
                                         expiry reminders are LOCAL alarms scheduled by the
@@ -158,10 +158,10 @@ export default function ArkReceiveScreen() {
                                         app has no reminder attached to it at all. Same amber
                                         treatment as the on-chain minimum below. */}
                                     <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 6, fontWeight: '600' }}>
-                                        Open the app soon after you're paid here. Capsules arriving at this address are short-lived, and reminders can only be set while the app is open.
+                                        {loc.cypherbox.ark.receive.bark_address_warning}
                                     </Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>
@@ -175,13 +175,12 @@ export default function ArkReceiveScreen() {
                         <View style={styles.background}>
                             <View style={styles.view}>
                                 <View style={styles.container2}>
-                                    <Text subHeader bold style={styles.title}>Lightning invoice</Text>
+                                    <Text subHeader bold style={styles.title}>{loc.cypherbox.ark.receive.lightning_invoice}</Text>
                                     <Text h4 bold style={styles.desc}>
-                                        BOLT11 invoice via the Bark server. Works with any
-                                        Lightning wallet.
+                                        {loc.cypherbox.ark.receive.lightning_invoice_desc}
                                     </Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>
@@ -195,16 +194,15 @@ export default function ArkReceiveScreen() {
                         <View style={styles.background}>
                             <View style={styles.view}>
                                 <View style={styles.container2}>
-                                    <Text subHeader bold style={styles.title}>Bitcoin on-chain</Text>
+                                    <Text subHeader bold style={styles.title}>{loc.cypherbox.ark.receive.bitcoin_onchain}</Text>
                                     <Text h4 bold style={styles.desc}>
-                                        Deposit to a bitcoin address, then board the funds
-                                        into your Bark balance.
+                                        {loc.cypherbox.ark.receive.bitcoin_onchain_desc}
                                     </Text>
                                     <Text style={{ color: '#FFD54F', fontSize: 12, marginTop: 6, fontWeight: '600' }}>
-                                        Minimum {minBoardSats} sats. Smaller deposits can't be boarded into Bark and would have to be recovered on-chain.
+                                        {loc.formatString(loc.cypherbox.ark.receive.min_board_warning, { amount: minBoardSats })}
                                     </Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>
@@ -217,8 +215,8 @@ export default function ArkReceiveScreen() {
                         <ActivityIndicator size="large" color={colors.ark.light} />
                         <Text style={styles.loadingText}>
                             {loading === "ark"
-                                ? "Generating Bark address…"
-                                : "Generating Bitcoin address…"}
+                                ? loc.cypherbox.ark.receive.generating_bark_address
+                                : loc.cypherbox.ark.receive.generating_bitcoin_address}
                         </Text>
                     </View>
                 )}

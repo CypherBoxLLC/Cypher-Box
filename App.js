@@ -16,8 +16,10 @@ import { NavigationContainer, CommonActions } from '@react-navigation/native';
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
 import { navigationRef } from './NavigationService';
 import * as NavigationService from './NavigationService';
-import { Chain } from './models/bitcoinUnits';
 import DeeplinkSchemaMatch from './class/deeplink-schema-match';
+import { startAuthHydration } from './src/stores/authHydration';
+import { assertNativeRngHealthy } from './class/rngHealth';
+import { startHotVaultKeychainCheck } from './src/services/hotVaultKeychainUpgrade';
 import loc from './loc';
 import { BlueDefaultTheme, BlueDarkTheme } from './components/themes';
 import InitRoot from './Navigation';
@@ -32,6 +34,7 @@ import Privacy from './blue_modules/Privacy';
 import MenuElements from './components/MenuElements';
 import PaymentNotification from './src/components/PaymentNotification';
 import { updateExchangeRate } from './blue_modules/currency';
+import { isSeedSignerLocked } from './src/services/seedSignerLock';
 // Side-effect import: configures the Google Drive OAuth client at app
 // startup using the GOOGLE_WEB_CLIENT_ID from .env (via react-native-
 // config). No-op on iOS and on Android if the env var is unset; we
@@ -56,15 +59,38 @@ const App = () => {
   const {
     walletsInitialized,
     wallets,
-    addWallet,
-    saveToDisk,
     fetchAndSaveWalletTransactions,
     refreshAllWalletTransactions,
-    setSharedCosigner,
   } = useContext(BlueStorageContext);
   const appState = useRef(AppState.currentState);
   // const colorScheme = useColorScheme();
   const colorScheme = 'dark';
+
+  // Recover auth-store hydration if the first (creation-time) attempt failed
+  // because the Keychain key was unreadable (e.g. a background wake while the
+  // phone was locked). Re-runs on each foreground until it succeeds; a no-op on
+  // a normal launch. See src/stores/authHydration.
+  useEffect(() => {
+    startAuthHydration();
+  }, []);
+
+  // Early, loud secure-randomness check. Logs only here; the hard refusal to
+  // mint a key happens at generation time (see class/rngHealth).
+  useEffect(() => {
+    assertNativeRngHealthy().catch(e =>
+      console.error('[RNG] startup check:', e?.reason ?? e?.message ?? e),
+    );
+  }, []);
+
+  // Android: the seed copies of Hot Vaults in the app that older builds saved without the fingerprint are removed,
+  // once the wallets and the auth store have loaded. Copies of vaults no longer in the app stay (Recover offers them).
+  // See src/services/hotVaultKeychainUpgrade.
+  useEffect(() => {
+    if (!walletsInitialized) return;
+    startHotVaultKeychainCheck(wallets.map(wallet => wallet.getID()));
+    // once per launch, when the wallets have loaded
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletsInitialized]);
 
   const onNotificationReceived = async notification => {
     const payload = Object.assign({}, notification, notification.data);
@@ -184,26 +210,10 @@ const App = () => {
         }
 
         if (wasTapped) {
-          if (payload.type !== 3 || wallet.chain === Chain.OFFCHAIN) {
-            NavigationService.dispatch(
-              CommonActions.navigate({
-                name: 'WalletTransactions',
-                params: {
-                  walletID,
-                  walletType: wallet.type,
-                },
-              }),
-            );
-          } else {
-            NavigationService.navigate('ReceiveDetailsRoot', {
-              screen: 'ReceiveDetails',
-              params: {
-                walletID,
-                address: payload.address,
-              },
-            });
-          }
-
+          // Cypher Box's home screen, where the banner above shows the payment, not BlueWallet's wallet or receive
+          // screen. The Hot/Cold tab is left alone: the home pager only reads it when it first mounts, so setting it
+          // here could leave the store on one vault while the screen shows the other.
+          NavigationService.dispatch(CommonActions.navigate({ name: 'HomeScreen' }));
           return true;
         }
       } else {
@@ -222,7 +232,8 @@ const App = () => {
   };
 
   const handleAppStateChange = async nextAppState => {
-    if (wallets.length === 0) return;
+    // a seed-signer fetches no rates and has no push notifications to process
+    if (wallets.length === 0 || isSeedSignerLocked()) return;
     if ((appState.current.match(/background/) && nextAppState === 'active') || nextAppState === undefined) {
       setTimeout(() => A(A.ENUM.APP_UNSUSPENDED), 2000);
       updateExchangeRate();
@@ -242,12 +253,7 @@ const App = () => {
   };
 
   const handleOpenURL = event => {
-    DeeplinkSchemaMatch.navigationRouteFor(event, value => NavigationService.navigate(...value), {
-      wallets,
-      addWallet,
-      saveToDisk,
-      setSharedCosigner,
-    });
+    DeeplinkSchemaMatch.navigationRouteFor(event, value => NavigationService.navigate(...value));
   };
 
   useEffect(() => {
@@ -266,7 +272,8 @@ const App = () => {
       <View style={styles.root}>
         <NavigationContainer ref={navigationRef} theme={colorScheme === 'dark' ? BlueDarkTheme : BlueDefaultTheme}>
           <InitRoot />
-          <Notifications onProcessNotifications={processPushNotifications} />
+          {/* push set-up registers with the push servers on start-up, which a seed-signer never does */}
+          {isSeedSignerLocked() ? null : <Notifications onProcessNotifications={processPushNotifications} />}
           <PaymentNotification />
           <MenuElements />
           <DeviceQuickActions />

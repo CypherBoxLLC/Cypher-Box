@@ -40,6 +40,9 @@ export default StyleSheet.create<Style>({
         marginVertical: 20,
     },
     inputColumn: {
+        // the boxes run left to right in every language, like the words they're copied from: right-to-left put
+        // word 1 on the right, with its number after the box
+        direction: "ltr",
         flexDirection: "row",
         flexWrap: "wrap",
         justifyContent: "space-between",

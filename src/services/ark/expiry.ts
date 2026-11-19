@@ -1,5 +1,6 @@
 import { blocksToDays, blocksToHours } from './chainTip';
 import { getArkWalletHandle } from './walletHandle';
+import loc from '../../../loc';
 
 /**
  * Forward-looking expiry / refresh signals from the bark SDK.
@@ -97,18 +98,18 @@ export async function fetchArkNextRequiredRefreshHeight(): Promise<number | null
  * deals in weeks, still wants the coarse version.
  */
 export function formatExitCollectWait(blocks: number): string {
-    if (blocks <= 0) return 'now';
+    if (blocks <= 0) return loc.cypherbox.services.expiry.now;
     const hours = blocksToHours(blocks);
-    if (hours < 1) return 'shortly';
-    if (hours < 72) return `in about ${Math.round(hours)} hours`;
-    return `in about ${Math.round(blocksToDays(blocks))} days`;
+    if (hours < 1) return loc.cypherbox.services.expiry.shortly;
+    if (hours < 72) return String(loc.formatString(loc.cypherbox.services.expiry.in_about_hours, { hours: Math.round(hours) }));
+    return String(loc.formatString(loc.cypherbox.services.expiry.in_about_days, { days: Math.round(blocksToDays(blocks)) }));
 }
 
 export function formatBlocksUntil(blocks: number): string {
-    if (blocks <= 0) return 'now';
+    if (blocks <= 0) return loc.cypherbox.services.expiry.now;
     const hours = blocksToHours(blocks);
-    if (hours < 1) return 'soon';
-    if (hours < 24) return `in ~${Math.round(hours)}h`;
+    if (hours < 1) return loc.cypherbox.services.expiry.soon;
+    if (hours < 24) return String(loc.formatString(loc.cypherbox.services.expiry.in_hours_short, { hours: Math.round(hours) }));
     const days = blocksToDays(blocks);
-    return `in ~${Math.round(days)}d`;
+    return String(loc.formatString(loc.cypherbox.services.expiry.in_days_short, { days: Math.round(days) }));
 }

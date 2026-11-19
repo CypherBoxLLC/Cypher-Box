@@ -29,6 +29,7 @@ import {
 } from '../coinos/withdrawGuard';
 
 import { planExitFunding } from './exitFundingPlan';
+import loc from '../../../loc';
 
 export type CoinosExitFundingDeps = {
     /** Bark's own on-chain address. Local BDK, no ASP. */
@@ -64,7 +65,7 @@ export async function fundExitFeesFromCoinos(
 
     const address = await deps.getOnchainAddress();
     if (!address) {
-        return { ok: false, reason: 'Could not get the on-chain address for the fee reserve.' };
+        return { ok: false, reason: loc.cypherbox.services.exit_funding.no_reserve_address };
     }
 
     // Fee first: the plan cannot be sized without it, because the fee comes off
@@ -98,7 +99,7 @@ export async function fundExitFeesFromCoinos(
             return {
                 ok: false,
                 duplicate: true,
-                reason: 'A matching top-up already went out a moment ago. Check your CoinOS history rather than sending again.',
+                reason: loc.cypherbox.services.exit_funding.duplicate_top_up,
             };
         }
     } catch {
@@ -135,9 +136,9 @@ export async function fundExitFeesFromCoinos(
                 indeterminate: true,
                 reason:
                     (err as Error)?.message ??
-                    'This top-up may already have been sent. Check your CoinOS history before trying again.',
+                    loc.cypherbox.services.exit_funding.top_up_may_have_been_sent,
             };
         }
-        return { ok: false, reason: (err as Error)?.message ?? 'The top-up could not be sent.' };
+        return { ok: false, reason: (err as Error)?.message ?? loc.cypherbox.services.exit_funding.top_up_failed };
     }
 }

@@ -1,4 +1,3 @@
-#import <Bugsnag/Bugsnag.h>
 #import "AppDelegate.h"
 #import "RNBootSplash.h"
 #import <React/RCTLinkingManager.h>
@@ -42,7 +41,8 @@
   // Register legacy Paper view managers (react-native-camera) with Fabric's interop layer.
   [RCTLegacyViewManagerInteropComponentView supportLegacyViewManagerWithName:@"RNCamera"];
 
-  [Bugsnag start];
+  // No crash reporting: Bugsnag is linked but never started, so no crash report leaves the phone.
+  // The key it shipped with was BlueWallet's, so every report went to BlueWallet's account.
   [self copyDeviceUID];
   
   [[NSUserDefaults standardUserDefaults] addObserver:self
@@ -61,6 +61,17 @@
   self.initialProps = @{};
 
   [[RCTI18nUtil sharedInstance] allowRTL:YES];
+
+  // On a fresh install the JS adopts the phone's language, but the layout direction it then sets only applies from the
+  // next launch, so a phone in Arabic opened left-to-right the first time. Until the JS has stored a direction, take it
+  // from the phone's first language, for the only right-to-left language the JS picks: Arabic (loc/index.ts turns any
+  // language the app doesn't offer, Persian and Hebrew included, into English, which must not open mirrored).
+  if ([[NSUserDefaults standardUserDefaults] objectForKey:@"RCTI18nUtil_forceRTL"] == nil) {
+    NSString *language = [[[NSLocale preferredLanguages] firstObject] componentsSeparatedByString:@"-"].firstObject;
+    if ([@[ @"ar" ] containsObject:language ?: @""]) {
+      [[RCTI18nUtil sharedInstance] forceRTL:YES];
+    }
+  }
 
   UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
   center.delegate = self;

@@ -90,7 +90,7 @@ const ImportWalletDiscovery = () => {
       })
       .catch(e => {
         console.warn('import error', e);
-        Alert.alert('import error', e.message);
+        Alert.alert(loc.errors.error, e.message);
       })
       .finally(() => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

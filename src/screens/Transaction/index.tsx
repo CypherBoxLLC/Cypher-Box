@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Image, ImageBackground, ScrollView, StyleSheet, TextInput, Vibration, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { Blink, CustomKeyboard, GradientButton, GradientCard, GradientInput } from "@Cypher/components";
-import { colors, widths, } from "@Cypher/style-guide";
+import { colors, widths, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import * as Progress from 'react-native-progress';
 // import { Ring, Ring3, } from "@Cypher/assets/gif";
@@ -18,6 +19,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { dispatchReset, resetAndNavigate } from "@Cypher/helpers/navigation";
 import { startsWithLn } from "../Send";
+import { displayDestination } from "@Cypher/helpers/addressDisplay";
 import { getStrikeCurrency } from "@Cypher/helpers/coinosHelper";
 import CustomProgressBar from "@Cypher/components/CustomProgressBar";
 import { LightningSendSuccess } from "@Cypher/components";
@@ -26,6 +28,13 @@ export default function Transaction({navigation, route}: any) {
     const {matchedRate, currency = 'USD', type, value, converted, isSats, to, item, swappedTo} = route?.params;
     const amountSat = isSats ? value : converted;
     const amountUSD = !isSats ? value : converted
+    // ReviewPayment names the swap's destination in English, which the badge's colour below goes by; it's shown in
+    // the app's language. CoinOS is a name and stays as it is.
+    const swappedToLabel: string = ({
+        'Bark Vault': loc.cypherbox.payments.common.bark_vault,
+        'Hot Vault': loc.cypherbox.payments.common.hot_vault,
+        'Cold Vault': loc.cypherbox.payments.common.cold_vault,
+    } as Record<string, string>)[swappedTo] ?? swappedTo;
     const [response, setResponse] = useState(false);
     const [progress, setProgress] = useState(0.2);
     const [sats, setSats] = useState('21 sats');
@@ -82,15 +91,6 @@ export default function Transaction({navigation, route}: any) {
             })
         }
     }
-
-    const shortenAddress = (address: string) => {
-        // Take the first 6 characters
-        const start = address.substring(0, 6);
-        // Take the last 6 characters
-        const end = address.substring(address.length - 6);
-        // Combine with three dots in the middle
-        return `${start}...${end}`;
-    };
 
     const fadeIn = () => {
         fadeInOpacity.value = withTiming(1, {
@@ -155,7 +155,7 @@ export default function Transaction({navigation, route}: any) {
                 <View style={styles.container}>
                     {response &&
                         <Animated.View style={animatedStyle}>
-                            <Text h1 semibold center>{type == "BUY" ? "Purchase Complete" : type == "SELL" ? "Sale Complete" : "Payment Sent"}</Text>
+                            <Text h1 semibold center>{type == "BUY" ? loc.cypherbox.payments.transaction.purchase_complete : type == "SELL" ? loc.cypherbox.payments.transaction.sale_complete : loc.cypherbox.payments.transaction.payment_sent}</Text>
                             {/* Swap-destination badge. Renders only when
                                 the BUY auto-routed to a non-Strike rail
                                 (CoinOS or Ark). Bigger + bordered + white
@@ -172,7 +172,7 @@ export default function Transaction({navigation, route}: any) {
                                     borderColor: swappedTo === 'Bark Vault' ? '#FFD93D' : '#FF65D4',
                                 }}>
                                     <Text bold center style={{ color: '#fff', fontSize: 16 }}>
-                                        {`→ Swapped to ${swappedTo}`}
+                                        {loc.formatString(loc.cypherbox.payments.transaction.swapped_to, { destination: swappedToLabel })}
                                     </Text>
                                 </View>
                             )}
@@ -187,10 +187,13 @@ export default function Transaction({navigation, route}: any) {
                                     <CustomProgressBar value={Number(amountSat) || 0} />
                                 </View>
                             )}
-                            <Text semibold center style={styles.sats}>{amountSat} sats</Text>
-                            <Text subHeader bold center>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
+                            <Text semibold center style={[styles.sats, rtl.ltrText]}>{amountSat} sats</Text>
+                            <Text subHeader bold center style={rtl.ltrText}>{getStrikeCurrency(currency || 'USD')}{amountUSD}</Text>
                             { to?.length > 0 && <View style={styles.extra} /> }
-                            { to.length > 0 && <Text subHeader bold center>{type !== 'username' ? shortenAddress(to) : to}</Text> }
+                            {/* A username in the large type; an address in full, wrapped (displayDestination keeps a Lightning invoice short) */}
+                            { to.length > 0 && (type === 'username'
+                                ? <Text subHeader bold center style={rtl.ltrText}>{to}</Text>
+                                : <Text bold center style={[styles.destination, rtl.ltrText]}>{displayDestination(to)}</Text>) }
                         </Animated.View>
                     }
                 </View>
@@ -267,13 +270,13 @@ export default function Transaction({navigation, route}: any) {
                 {(type == "BUY" || type == "SELL") ?
                     <Image source={StrikeFull} style={styles.strikeLogo} resizeMode="contain" />
                 : to.length > 0 ?
-                    <Text semibold center style={styles.text}>Lightning Network</Text>
+                    <Text semibold center style={styles.text}>{loc.cypherbox.payments.transaction.lightning_network}</Text>
                 :
-                    <Text semibold center style={styles.text}>Fiat Network</Text>
+                    <Text semibold center style={styles.text}>{loc.cypherbox.payments.transaction.fiat_network}</Text>
                 }
                 {response &&
                     <GradientButton style={styles.invoiceButton} textStyle={{ fontFamily: 'Lato-Medium', }}
-                        title={type == "BUY" || type == "SELL" || startsWithLn(to) || to.includes("@") || to.length == 0 ? 'Home' : 'Payment Details'}
+                        title={type == "BUY" || type == "SELL" || startsWithLn(to) || to.includes("@") || to.length == 0 ? loc.cypherbox.payments.common.home : loc.cypherbox.payments.transaction.payment_details}
                         disabled={!response}
                         onPress={onPressClickHandler} />
                     // :

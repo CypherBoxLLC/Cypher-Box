@@ -12,6 +12,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { CoinOS } from "@Cypher/assets/images";
 import * as Keychain from 'react-native-keychain';
 import RecaptchaV2 from "./RecaptchaV2";
+import loc from "../../../../loc";
 
 // Strike OAuth configuration
 const SITE_KEY = "6LfCd8YkAAAAANmVJgzN3SQY3n3fv1RhiS5PgMYM"; // from env
@@ -45,7 +46,7 @@ export default function LoginCoinOSScreen() {
                 const credentials = await Keychain.getGenericPassword({ 
                     service: 'coinos-login',
                     authenticationPrompt: {
-                        title: 'Authenticate to auto-fill credentials',
+                        title: loc.cypherbox.account.login_coinos.auth_prompt,
                     },
                 });
                 if (credentials) {
@@ -88,7 +89,7 @@ export default function LoginCoinOSScreen() {
                 // No 2FA, proceed normally
                 completeLogin(response);
             } else {
-                SimpleToast.show("Invalid username or password", SimpleToast.SHORT);
+                SimpleToast.show(loc.cypherbox.account.common.invalid_credentials, SimpleToast.SHORT);
                 setCaptchaToken(""); // Reset to allow retry
             }
         } catch (error: any) {
@@ -105,11 +106,11 @@ export default function LoginCoinOSScreen() {
             
             // More specific error messages
             if (error?.message?.includes('Captcha')) {
-                SimpleToast.show("Captcha verification failed. Please try again.", SimpleToast.LONG);
+                SimpleToast.show(loc.cypherbox.account.login_coinos.captcha_failed, SimpleToast.LONG);
             } else if (error?.message?.includes('429')) {
-                SimpleToast.show("Too many attempts. Please wait and try again.", SimpleToast.LONG);
+                SimpleToast.show(loc.cypherbox.account.login_coinos.too_many_attempts, SimpleToast.LONG);
             } else {
-                SimpleToast.show(error?.message || "Login failed. Please try again.", SimpleToast.SHORT);
+                SimpleToast.show(error?.message || loc.cypherbox.account.login_coinos.login_failed, SimpleToast.SHORT);
             }
             
             // Reset captcha on error so user can try again
@@ -153,7 +154,7 @@ export default function LoginCoinOSScreen() {
 
     const handleTwoFASubmit = async () => {
         if (twoFACode.length !== 6) {
-            SimpleToast.show("Please enter a valid 6-digit code", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.valid_6_digit_code, SimpleToast.SHORT);
             return;
         }
         // Trigger fresh recaptcha for the 2FA re-login
@@ -175,7 +176,7 @@ export default function LoginCoinOSScreen() {
             completeLogin(response);
         } catch (error: any) {
             console.error("2FA verification failed:", error?.message);
-            SimpleToast.show(error?.message || "Invalid 2FA code. Please try again.", SimpleToast.SHORT);
+            SimpleToast.show(error?.message || loc.cypherbox.account.login_coinos.invalid_2fa, SimpleToast.SHORT);
             setTwoFACode('');
         } finally {
             setIsVerifyingTwoFA(false);
@@ -184,11 +185,11 @@ export default function LoginCoinOSScreen() {
 
     const nextClickHandler = async () => {
         if (email === "") {
-            SimpleToast.show("Please enter your username", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.enter_username, SimpleToast.SHORT);
             return;
         }
         if (password === "") {
-            SimpleToast.show("Please enter your password", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.account.common.enter_password, SimpleToast.SHORT);
             return;
         }
 
@@ -210,7 +211,7 @@ export default function LoginCoinOSScreen() {
         <ScreenLayout keyboardAware showToolbar>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <GradientText>Login to Coinos</GradientText>
+                    <GradientText>{loc.cypherbox.account.login_coinos.title}</GradientText>
                     <View style={styles.space} />
                     <GradientCard style={{ width: '100%' }} colors_={email ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}>
                         <Input 
@@ -218,7 +219,7 @@ export default function LoginCoinOSScreen() {
                             value={email}
                             style={styles.textInput}
                             // keyboardType="email-address"
-                            label="Username"
+                            label={loc.cypherbox.account.common.username}
                         />
                     </GradientCard>
                     <View style={styles.extra} />
@@ -228,7 +229,7 @@ export default function LoginCoinOSScreen() {
                             style={styles.textInput}
                             secureTextEntry
                             // maxLength={15}
-                            label="Password"
+                            label={loc.cypherbox.account.common.password}
                         />
                     </GradientCard>
                     {/* <Button title="Login with Strike" onPress={handleLogin} /> */}
@@ -260,14 +261,14 @@ export default function LoginCoinOSScreen() {
                     </View> */}
                     <TouchableOpacity style={{ marginTop: 18, alignSelf: 'flex-end' }} onPress={forgotClickHandler}>
                         <Text bold style={styles.forgot}>
-                            Forgot Password?
+                            {loc.cypherbox.account.login_coinos.forgot_password}
                         </Text>
                     </TouchableOpacity>
                 </View>
                 <View style={styles.coinOsImage}>
                     <Image source={CoinOS} />
                 </View>
-                <GradientButton title="Login" disabled={!email.length || !password.length || isLoading} onPress={nextClickHandler} />
+                <GradientButton title={loc.cypherbox.account.common.login} disabled={!email.length || !password.length || isLoading} onPress={nextClickHandler} />
             </View>
             <Modal
                 visible={showCaptcha}
@@ -285,7 +286,7 @@ export default function LoginCoinOSScreen() {
                         style={modalStyles.closeButton}
                         onPress={closeCaptcha}
                     >
-                        <Text style={modalStyles.closeButtonText}>✕ Close</Text>
+                        <Text style={modalStyles.closeButtonText}>✕ {loc._.close}</Text>
                     </TouchableOpacity>
                 </View>
             </Modal>
@@ -305,10 +306,10 @@ export default function LoginCoinOSScreen() {
                 <ScreenLayout showToolbar>
                     <View style={styles.container}>
                         <View style={styles.innerView}>
-                            <GradientText>Two-Factor Authentication</GradientText>
+                            <GradientText>{loc.cypherbox.account.login_coinos.two_factor_title}</GradientText>
                             <View style={styles.space} />
                             <Text style={styles.twoFAText}>
-                                Enter the 6-digit code from your authenticator app
+                                {loc.cypherbox.account.login_coinos.two_factor_desc}
                             </Text>
                             <GradientCard style={{ width: '100%' }} colors_={twoFACode ? [colors.pink.extralight, colors.pink.default] : [colors.gray.thin, colors.gray.thin2]}>
                                 <Input
@@ -318,12 +319,12 @@ export default function LoginCoinOSScreen() {
                                     keyboardType="numeric"
                                     maxLength={6}
                                     placeholder="000000"
-                                    label="Authentication Code"
+                                    label={loc.cypherbox.account.common.authentication_code}
                                 />
                             </GradientCard>
                             <View style={styles.extra} />
                             <GradientButton
-                                title={isVerifyingTwoFA ? "Verifying..." : "Verify"}
+                                title={isVerifyingTwoFA ? loc.cypherbox.account.login_coinos.verifying : loc.cypherbox.account.login_coinos.verify}
                                 disabled={twoFACode.length !== 6 || isVerifyingTwoFA}
                                 onPress={handleTwoFASubmit}
                             />
@@ -338,7 +339,7 @@ export default function LoginCoinOSScreen() {
                                 }}
                             >
                                 <Text bold style={styles.forgot}>
-                                    Cancel (Logout)
+                                    {loc.cypherbox.account.login_coinos.cancel_logout}
                                 </Text>
                             </TouchableOpacity>
                         </View>

@@ -44,6 +44,7 @@
  */
 
 import { looksLikeConnectionLoss } from './networkFault';
+import loc from '../../../loc';
 
 /**
  * Error marking an outcome as UNKNOWN rather than failed.
@@ -81,8 +82,7 @@ export async function runBroadcastCall<T>(run: () => Promise<T>, what: string): 
     } catch (err) {
         if (!looksLikeConnectionLoss(err)) throw err;
         throw makeIndeterminate(
-            `The connection dropped, so this ${what} may already have gone through. ` +
-            'Check your balance and your transaction history before trying again.',
+            String(loc.formatString(loc.cypherbox.services.indeterminate.connection_dropped, { what })),
         );
     }
 }

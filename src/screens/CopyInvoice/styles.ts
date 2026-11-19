@@ -44,10 +44,13 @@ export default StyleSheet.create<Style>({
         marginTop: 15,
         marginBottom: 10,
     },
+    // the whole address under the QR, wrapped and centred (a Lightning invoice stays short: displayDestination)
     code: {
-        fontSize: 18,
-        lineHeight: 26,
+        fontSize: 16,
+        lineHeight: 22,
         marginVertical: 10,
+        marginHorizontal: 20,
+        textAlign: 'center',
     },
     usd: {
         fontSize: 25,

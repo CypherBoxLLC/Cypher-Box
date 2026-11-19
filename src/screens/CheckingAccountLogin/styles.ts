@@ -1,5 +1,5 @@
 // screens/CheckingAccountLogin/style.ts
-import { StyleSheet } from 'react-native';
+import { I18nManager, StyleSheet } from 'react-native';
 import colors from '@Cypher/style-guide/colors';
 
 export default StyleSheet.create({
@@ -60,7 +60,9 @@ export default StyleSheet.create({
   sectionTitle: {
     color: colors.white,
     fontSize: 12,
-    letterSpacing: 1.2,
+    // The spacing suits the English capitals. In Arabic it spreads each
+    // word's letters apart, so right-to-left languages get none.
+    letterSpacing: I18nManager.isRTL ? 0 : 1.2,
   },
   sectionTitleAccent: {
     color: colors.ark.light,
@@ -77,6 +79,12 @@ export default StyleSheet.create({
   },
   sectionDividerArk: {
     backgroundColor: '#3A2D0F',
+  },
+  sectionTitleSigner: {
+    color: colors.green,
+  },
+  sectionDividerSigner: {
+    backgroundColor: '#123D2A',
   },
   sectionSubtitle: {
     color: '#888',

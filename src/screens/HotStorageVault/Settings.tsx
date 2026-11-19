@@ -1,8 +1,8 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import styles from "./styles";
-import { Dimensions, Image, StyleSheet, TouchableOpacity, View, Animated as RNAnimated, InteractionManager, ActivityIndicator, Alert, Platform } from "react-native";
+import { Dimensions, Image, ScrollView, StyleSheet, TouchableOpacity, View, Animated as RNAnimated, InteractionManager, ActivityIndicator, Alert, I18nManager } from "react-native";
 import { Text } from "@Cypher/component-library";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { Back } from "@Cypher/assets/images";
 import Animated, {
     useSharedValue,
@@ -10,9 +10,6 @@ import Animated, {
     Easing,
     useAnimatedStyle,
 } from "react-native-reanimated";
-import * as bitcoin from 'bitcoinjs-lib';
-import DocumentPicker from 'react-native-document-picker';
-import RNFS from 'react-native-fs';
 
 import SimpleToast from "react-native-simple-toast";
 
@@ -24,27 +21,37 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import Biometric from "../../../class/biometrics";
 import {
     backupHotVaultSeedWithMeta,
+    listHotVaultKeychainBackups,
     resetHotVaultBackupFully,
+    resetHotVaultKeychainBackup,
+    resetHotVaultMeta,
 } from "@Cypher/services/hotVaultKeychain";
+import SignerButton from "../SigningHome/SignerButton";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
+import { hotVaultKeychainText } from "@Cypher/helpers/hotVaultKeychainText";
 import triggerHapticFeedback, { HapticFeedbackTypes } from "../../../blue_modules/hapticFeedback";
 import loc from "../../../loc";
 import Notifications from "../../../blue_modules/notifications";
 import showPrompt from "@Cypher/helpers/prompt";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { useNavigation, useRoute } from "@react-navigation/native";
-import { requestCameraAuthorization, scanQrHelper } from "../../../helpers/scan-qr";
-import BigNumber from "bignumber.js";
+import { useRoute } from "@react-navigation/native";
 import { WatchOnlyWallet } from "../../../class";
 import DeeplinkSchemaMatch from "../../../class/deeplink-schema-match";
+import useImportTransaction from "./useImportTransaction";
+import { startSigning } from "../SignOnce/start";
+import { getBuildNumber, getVersion } from "react-native-device-info";
 
-export default function Settings({wallet, to, matchedRate, toStrike}: any) {
+// `header` is for a signing phone's home, where this is the whole screen: the signer goes above the rows, and the
+// screen scrolls
+export default function Settings({wallet, to, matchedRate, toStrike, header}: any) {
     // const [right] = useState(new Animated.Value(0));
     const firstView = useSharedValue(1);
     const secondView = useSharedValue(0);
     const thirdView = useSharedValue(0);
     const [right] = useState(new RNAnimated.Value(0));
     const [viewType, setViewType] = useState(0);
+    const Container: any = header ? ScrollView : View;
+    const scrollRef = useRef<any>(null);
     const { wallets, isAdvancedModeEnabled, saveToDisk, deleteWallet } = useContext(BlueStorageContext);
     const {
         setWalletID,
@@ -54,18 +61,32 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
         coldStorageWalletID,
         hotVaultKeychainBackups,
         setHotVaultKeychainBackup,
+        signerWallets,
     } = useAuthStore();
+    const multisigCount = Object.keys(signerWallets ?? {}).length;
     const [keychainBusy, setKeychainBusy] = useState(false);
     const thisWalletID = wallet?.getID?.();
     const isKeychainBackedUp = thisWalletID
         ? !!hotVaultKeychainBackups?.[thisWalletID]
         : false;
+    // iPhone Keychain or Android Keystore wording for the backup tile and a signing phone's row, in the current language
+    const keychainText = hotVaultKeychainText().settings;
+    // On a signing phone, whether the Keychain really holds a copy of this vault's seed, from listing the Keychain
+    // (which doesn't open anything): the hint above can be out of date, and a copy nobody can see is the one thing a
+    // signing phone mustn't keep.
+    const [keychainCopy, setKeychainCopy] = useState(false);
+    useEffect(() => {
+        if (!header || !thisWalletID) return;
+        listHotVaultKeychainBackups()
+            .then(ids => setKeychainCopy(ids.includes(thisWalletID)))
+            .catch(() => {});
+    }, [header, thisWalletID, isKeychainBackedUp]);
     // const wallet = vaultTab ? useRef(wallets.find(w => w.getID() === coldStorageWalletID)).current : useRef(wallets.find(w => w.getID() === walletID)).current;
-    const routeName = useRoute().name;
-    const navigation = useNavigation();
-    const { name, params: routeParams } = useRoute();
+    // on a signing phone this tab sits on the home screen, which can have no params
+    const { name, params: routeParams = {} } = useRoute();
     const { isEditable } = routeParams;
     const [transactionMemo, setTransactionMemo] = useState('');
+    const { importFromFile: importTransaction, importFromQr: importQrTransaction } = useImportTransaction(wallet, transactionMemo);
 
     const [hideTransactionsInWalletsList, setHideTransactionsInWalletsList] = useState(!wallet.getHideTransactionsInWalletsList());
     const [isAdvancedModeEnabledRender, setIsAdvancedModeEnabledRender] = useState(false);
@@ -130,6 +151,8 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
 
     const backupSeedPhraseClickHandler = () => {
         setViewType(1);
+        // the second panel starts at the top, which may be scrolled out of sight on a signing phone's home
+        scrollRef.current?.scrollTo?.({ y: 0, animated: true });
         RNAnimated.timing(right, {
             toValue: Dimensions.get('window').width * 1.15,
             duration: 250,
@@ -160,7 +183,7 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
         if (keychainBusy) return;
         const mnemonic = wallet?.getSecret?.();
         if (!thisWalletID || !mnemonic) {
-            SimpleToast.show("Could not read vault seed", SimpleToast.SHORT);
+            SimpleToast.show(loc.cypherbox.vault.storage_vault.settings.seed_read_failed, SimpleToast.SHORT);
             return;
         }
         setKeychainBusy(true);
@@ -178,22 +201,35 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
         if (result.ok) {
             setHotVaultKeychainBackup(thisWalletID, true);
             triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
-            SimpleToast.show("Seed backed up to Keychain", SimpleToast.SHORT);
+            SimpleToast.show(keychainText.savedToast, SimpleToast.SHORT);
+        } else if (result.kind === "no-biometric-gate") {
+            // Android gave back a cipher not bound to a fingerprint; the helper
+            // removed the un-gated entry instead of storing an unprotected
+            // seed. Do not set the backup flag.
+            console.warn(
+                "[HotVault] Keychain save rejected, no biometric gate (storage=",
+                result.storage,
+                ")",
+            );
+            SimpleToast.show(
+                loc.cypherbox.vault.storage_vault.settings.keychain_no_fingerprint,
+                SimpleToast.LONG,
+            );
         } else {
             console.warn("[HotVault] Keychain save failed:", result.error);
-            SimpleToast.show("Keychain save failed", SimpleToast.LONG);
+            SimpleToast.show(keychainText.saveFailedToast, SimpleToast.LONG);
         }
     };
 
     const handleKeychainRemove = () => {
         if (keychainBusy || !thisWalletID) return;
         Alert.alert(
-            "Remove Keychain backup?",
-            "The 12 words will be removed from this device's Keychain. Your wallet and its paper backup are not affected. You can re-enable this anytime.",
+            keychainText.removeTitle,
+            header ? loc.cypherbox.seed_signer.vault.remove_copy_body : keychainText.removeBody,
             [
-                { text: "Cancel", style: "cancel" },
+                { text: loc._.cancel, style: "cancel" },
                 {
-                    text: "Remove",
+                    text: loc.cypherbox.vault.storage_vault.settings.remove,
                     style: "destructive",
                     onPress: async () => {
                         setKeychainBusy(true);
@@ -211,6 +247,12 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
                         // but the user asked to forget about it and we'd
                         // rather be optimistic than leave a stale "✓".
                         setHotVaultKeychainBackup(thisWalletID, false);
+                        // the signing phone's row goes by what the Keychain holds, so look again
+                        if (header) {
+                            listHotVaultKeychainBackups()
+                                .then(ids => setKeychainCopy(ids.includes(thisWalletID)))
+                                .catch(() => {});
+                        }
                         if (ok) {
                             triggerHapticFeedback(
                                 HapticFeedbackTypes.NotificationSuccess,
@@ -270,6 +312,7 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
 
     const rightToLeft = async () => {
         setViewType(0);
+        scrollRef.current?.scrollTo?.({ y: 0, animated: true });
         RNAnimated.timing(right, {
             toValue: Dimensions.get('window').width * 1.32,
             duration: 250,
@@ -329,12 +372,12 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
         triggerHapticFeedback(HapticFeedbackTypes.NotificationWarning);
         try {
             const walletBalanceConfirmation = await showPrompt(
-                "Delete Vault",
-                loc.formatString("This vault has a balance. Before proceeding, please be aware that you will not be able to recover the funds without this vault’s seed phrase. In order to avoid accidental removal, please enter your vault’s balance of {balance} satoshis.", { balance: wallet.getBalance() }),
+                loc.cypherbox.vault.storage_vault.settings.delete_vault,
+                loc.formatString(loc.cypherbox.vault.storage_vault.settings.delete_balance_prompt, { balance: wallet.getBalance() }),
                 true,
                 'plain-text',
                 true,
-                "Delete"
+                loc.cypherbox.vault.storage_vault.settings.delete
             );
             if (Number(walletBalanceConfirmation) === wallet.getBalance()) {
                 navigateToOverviewAndDeleteWallet();
@@ -350,11 +393,11 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
     const handleDeleteButtonTapped = () => {
         triggerHapticFeedback(HapticFeedbackTypes.NotificationWarning);
         Alert.alert(
-            "Delete Vault",
-            "Are you sure?",
+            loc.cypherbox.vault.storage_vault.settings.delete_vault,
+            loc.cypherbox.vault.storage_vault.settings.are_you_sure,
             [
                 {
-                    text: "Yes, delete",
+                    text: loc.cypherbox.vault.storage_vault.settings.yes_delete,
                     onPress: async () => {
                         const isBiometricsEnabled = await Biometric.isBiometricUseCapableAndEnabled();
                         if (isBiometricsEnabled) {
@@ -370,150 +413,90 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
                     },
                     style: 'destructive',
                 },
-                { text: "No, cancel", onPress: () => { }, style: 'cancel' },
+                { text: loc.cypherbox.vault.storage_vault.settings.no_cancel, onPress: () => { }, style: 'cancel' },
             ],
             { cancelable: false },
         );
     };
 
-    const handlePsbtSign = async () => {
-        setIsLoading(true);
-        await new Promise(resolve => setTimeout(resolve, 100)); // sleep for animations
-        console.log('routeName: ', routeName)
-        const scannedData = await scanQrHelper(navigation.navigate, routeName, { wallet, matchedRate });
-        if (!scannedData) return setIsLoading(false);
-    
-        let tx;
-        let psbt;
-        try {
-          psbt = bitcoin.Psbt.fromBase64(scannedData);
-          tx = wallet.cosignPsbt(psbt).tx;
-          console.log('tx: ' , tx, psbt)
-        } catch (e) {
-          Alert.alert(loc.errors.error, e.message);
-          return;
-        } finally {
-          setIsLoading(false);
-        }
-    
-        if (!tx) return setIsLoading(false);
-    
-        // we need to remove change address from recipients, so that Confirm screen show more accurate info
-        const changeAddresses = [];
-        for (let c = 0; c < wallet.next_free_change_address_index + wallet.gap_limit; c++) {
-          changeAddresses.push(wallet._getInternalAddressByIndex(c));
-        }
-        const recipients = psbt.txOutputs.filter(({ address }) => !changeAddresses.includes(address));
-        // navigate('SendDetailsRoot', { screen: 'SendDetails', params });
+    // Signs for a watch-only wallet (a Cold Vault on another phone, Sparrow...): the sign-once screen scans the
+    // transaction and shows what it does before anything is signed
+    const handlePsbtSign = () => startSigning({ mode: 'vault' });
 
-        console.log('new BigNumber(psbt.getFee()).dividedBy(100000000).toNumber(): ', new BigNumber(psbt.getFee()).dividedBy(100000000).toNumber())
-        navigation.navigate('SendDetailsRoot', { screen: "CreateTransaction",
-            params: {
-                fee: new BigNumber(psbt.getFee()).dividedBy(100000000).toNumber(),
-                feeSatoshi: psbt.getFee(),
-                wallet: wallet,
-                tx: tx.toHex(),
-                recipients,
-                satoshiPerByte: psbt.getFeeRate(),
-                showAnimatedQr: true,
-                psbt,
-            },
-        });
+    // A signing phone's Delete is a wipe: the seed leaves the phone, Keychain backup included, which an ordinary
+    // delete keeps for recovery. The app's copy only goes once the Keychain one is confirmed gone, so a failure never
+    // leaves the user thinking the seed is off the phone when it isn't.
+    const wipeSeed = async () => {
+        if (await Biometric.isBiometricUseCapableAndEnabled()) {
+            if (!(await Biometric.unlockWithBiometrics())) return;
+        }
+        const keychainCleared =
+            (await resetHotVaultKeychainBackup(thisWalletID)) &&
+            !(await listHotVaultKeychainBackups()).includes(thisWalletID);
+        if (!keychainCleared) {
+            Alert.alert(
+                loc.cypherbox.seed_signer.vault.wipe_failed_title,
+                loc.cypherbox.seed_signer.vault.wipe_failed_body,
+            );
+            return;
+        }
+        // the backup's date and label, nothing secret
+        await resetHotVaultMeta(thisWalletID);
+        setHotVaultKeychainBackup(thisWalletID, false);
+        navigateToOverviewAndDeleteWallet();
+        SimpleToast.show(loc.cypherbox.seed_signer.vault.wiped, SimpleToast.LONG);
     };
 
-    const importQrTransaction = () => {
-        if (wallet.type !== WatchOnlyWallet.type) {
-          return Alert.alert(loc.errors.error, 'Error: importing transaction in non-watchonly wallet (this should never happen)');
-        }
-    
-        requestCameraAuthorization().then(() => {
-          navigation.navigate('ScanQRCodeRoot', {
-            screen: 'ScanQRCode',
-            params: {
-              onBarScanned: importQrTransactionOnBarScanned,
-              showFileImportButton: false,
-            },
-          });
-        });
-    };
-    
-    const importQrTransactionOnBarScanned = ret => {
-        navigation.getParent().pop();
-        if (!ret.data) ret = { data: ret };
-        if (ret.data.toUpperCase().startsWith('UR')) {
-            Alert.alert(loc.errors.error, 'BC-UR not decoded. This should never happen');
-        } else if (ret.data.indexOf('+') === -1 && ret.data.indexOf('=') === -1 && ret.data.indexOf('=') === -1) {
-          // this looks like NOT base64, so maybe its transaction's hex
-          // we dont support it in this flow
-        } else {
-            // psbt base64?
-        
-            // we construct PSBT object and pass to next screen
-            // so user can do smth with it:
-            const psbt = bitcoin.Psbt.fromBase64(ret.data);
-            navigation.navigate('SendDetailsRoot', { screen: "PsbtWithHardwareWallet", params: {
-            // navigation.navigate('PsbtWithHardwareWallet', {
-                memo: transactionMemo,
-                fromWallet: wallet,
-                psbt,
-            }});
-            setIsLoading(false);
-        }
+    const handleWipeTapped = () => {
+        triggerHapticFeedback(HapticFeedbackTypes.NotificationWarning);
+        Alert.alert(
+            loc.cypherbox.seed_signer.vault.wipe_title,
+            loc.cypherbox.seed_signer.vault.wipe_body,
+            [
+                { text: loc._.cancel, style: 'cancel' },
+                { text: loc.cypherbox.seed_signer.vault.wipe_confirm, style: 'destructive', onPress: wipeSeed },
+            ],
+        );
     };
 
-    const importTransaction = async () => {
-        if (wallet.type !== WatchOnlyWallet.type) {
-          return Alert.alert(loc.errors.error, 'Importing transaction in non-watchonly wallet (this should never happen)');
-        }
-    
-        try {
-            const res = await DocumentPicker.pickSingle({
-                type:
-                Platform.OS === 'ios'
-                    ? ['io.bluewallet.psbt', 'io.bluewallet.psbt.txn', DocumentPicker.types.plainText, 'public.json']
-                    : [DocumentPicker.types.allFiles],
-            });
-        
-            if (DeeplinkSchemaMatch.isPossiblySignedPSBTFile(res.uri)) {
-                // we assume that transaction is already signed, so all we have to do is get txhex and pass it to next screen
-                // so user can broadcast:
-                const file = await RNFS.readFile(res.uri, 'ascii');
-                const psbt = bitcoin.Psbt.fromBase64(file);
-                const txhex = psbt.extractTransaction().toHex();
-                navigation.navigate('SendDetailsRoot', { screen: "PsbtWithHardwareWallet", params: { memo: transactionMemo, fromWallet: wallet, txhex }});
-                setIsLoading(false);
-                return;
-            }
-        
-            if (DeeplinkSchemaMatch.isPossiblyPSBTFile(res.uri)) {
-                // looks like transaction is UNsigned, so we construct PSBT object and pass to next screen
-                // so user can do smth with it:
-                const file = await RNFS.readFile(res.uri, 'ascii');
-                const psbt = bitcoin.Psbt.fromBase64(file);
-                navigation.navigate('SendDetailsRoot', { screen: "PsbtWithHardwareWallet", params: { memo: transactionMemo, fromWallet: wallet, psbt }});
-                setIsLoading(false);
-                return;
-            }
-        
-            if (DeeplinkSchemaMatch.isTXNFile(res.uri)) {
-                // plain text file with txhex ready to broadcast
-                const file = (await RNFS.readFile(res.uri, 'ascii')).replace('\n', '').replace('\r', '');
-                navigation.navigate('SendDetailsRoot', { screen: "PsbtWithHardwareWallet", params: { memo: transactionMemo, fromWallet: wallet, txhex: file }});
-                setIsLoading(false);
-                return;
-            }
-        
-            Alert.alert(loc.errors.error, loc.send.details_unrecognized_file_format);
-        } catch (err) {
-            console.log('err: ', err)
-            if (!DocumentPicker.isCancel(err)) {
-                Alert.alert(loc.errors.error, loc.send.details_no_signed_tx);
-            }
-        }
-    };
+    // A signing phone's home has these under the signer, as one list of buttons, in the order they're needed: the
+    // public key goes to the watch-only wallet first, then the seed is backed up and the addresses checked against
+    // that wallet's, then help and other ways to sign, and last the wipe. There's no way out of the mode: it's one-way
+    // (services/seedSignerLock). The same actions as the rows of an everyday Hot Vault, without signing (it's above).
+    const signerButtons: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean }[] = [
+        { label: loc.cypherbox.seed_signer.vault.public_key, onPress: navigateToXPub },
+        {
+            label: loc.cypherbox.seed_signer.vault.seedqr_backup,
+            onPress: () => dispatchNavigate('SeedQRBackup', { walletID: wallet.getID() }),
+        },
+        { label: loc.cypherbox.vault.storage_vault.settings.show_addresses, onPress: navigateToAddresses },
+        { label: loc.cypherbox.vault.storage_vault.settings.backup_seed, onPress: backupSeedPhraseClickHandler },
+        // No backing up to the Keychain here: a signing phone keeps no second copy of the seed, one that outlives
+        // deleting the vault or the app. A copy made before, in normal mode or by an earlier version, can be removed.
+        ...(keychainCopy || isKeychainBackedUp
+            ? [{
+                label: keychainBusy ? keychainText.signerRemoving : keychainText.signerRemove,
+                onPress: handleKeychainRemove,
+                disabled: keychainBusy,
+            }]
+            : []),
+        { label: loc.cypherbox.seed_signer.signing_safely, onPress: () => dispatchNavigate('SigningSafetyGuide') },
+        { label: loc.cypherbox.seed_signer.vault.sign_from_backup, onPress: () => startSigning() },
+        // one key of a multisig made in Nunchuk, Sparrow or BlueWallet, signed from its SeedQR: the wallets it signs for
+        {
+            label: multisigCount
+                ? String(loc.formatString(loc.cypherbox.seed_signer.multisig_wallets_count, { count: multisigCount }))
+                : loc.cypherbox.seed_signer.multisig_wallets,
+            onPress: () => dispatchNavigate('SignerWallets'),
+        },
+        { label: loc.cypherbox.seed_signer.check_address, onPress: () => dispatchNavigate('CheckSignerAddress') },
+        { label: loc.cypherbox.vault.storage_vault.settings.info, onPress: rightToLeft },
+        { label: loc.cypherbox.seed_signer.app_settings, onPress: () => dispatchNavigate('Settings') },
+        { label: loc.cypherbox.seed_signer.vault.wipe, onPress: handleWipeTapped, danger: true },
+    ];
 
     return (
-        <View style={{
+        <Container ref={scrollRef} style={{
             flex: 1,
         }}>
             {isLoading ?
@@ -533,118 +516,143 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
                 <RNAnimated.View
                     style={[
                         styles.main,
-                        { transform: [{ translateX: RNAnimated.multiply(right, -1) }] },
+                        // right-to-left swaps the second panel's `right` offset to the left side, so there it slides
+                        // in the other way; sliding left as well left Info and the seed backup blank
+                        { transform: [{ translateX: I18nManager.isRTL ? right : RNAnimated.multiply(right, -1) }] },
                     ]}
                 >
-                    <View style={styles.settingView}>
-                        {/* <View style={styles.rowview}>
-                            <Text bold style={styles.text}>Name Your Vault</Text>
-                            <View style={styles.blankspace} />
-                        </View> */}
-                        {/* <View style={styles.line} /> */}
-                        {!vaultTab &&
-                            <>
-                                <TouchableOpacity onPress={backupSeedPhraseClickHandler}>
-                                    <Text bold style={styles.text}>Backup Seed Phrase</Text>
-                                </TouchableOpacity>
-                                <View style={styles.line} />
-                                {/*
-                                  Keychain backup tile. Hidden on cold vault
-                                  (!vaultTab) because cold vaults are typed-in
-                                  watch-only xpubs with no on-device secret to
-                                  back up — the seed lives on the signing device.
-                                */}
-                                <TouchableOpacity
-                                    onPress={
-                                        isKeychainBackedUp
-                                            ? handleKeychainRemove
-                                            : handleKeychainBackup
-                                    }
-                                    disabled={keychainBusy}
-                                >
-                                    <Text bold style={styles.text}>
-                                        {keychainBusy
-                                            ? "Updating Keychain…"
-                                            : isKeychainBackedUp
-                                            ? "Seed saved to Keychain ✓ · Remove"
-                                            : "Back up seed to iPhone Keychain"}
-                                    </Text>
-                                </TouchableOpacity>
-                                <View style={styles.line} />
-                            </>
-                        }
-                        {wallet instanceof AbstractHDElectrumWallet && (
-                            <>
-                                <TouchableOpacity onPress={navigateToAddresses}>
-                                    <Text bold style={styles.text}>Show Addresses</Text>
-                                </TouchableOpacity>
-                                <View style={styles.line} />
-                            </>
-                        )}
-                        {wallet.allowXpub() && (
-                            <>
-                                <TouchableOpacity onPress={navigateToXPub}>
-                                    <Text bold style={styles.text}>Vault’s Public Key (xpub)</Text>
-                                </TouchableOpacity>
-                                <View style={styles.line} />
-                            </>
-                        )}
-                        <TouchableOpacity onPress={rightToLeft}>
-                            <Text bold style={styles.text}>Info</Text>
-                        </TouchableOpacity>
-                        <View style={styles.line} />
-                        {wallet && !vaultTab && wallet.allowCosignPsbt() && (
-                            <TouchableOpacity onPress={() => handlePsbtSign()}>
-                                <Text bold style={styles.text}>{loc.send.psbt_sign}</Text>
+                    {header ? (
+                        <View style={styles.signerRows}>
+                            {header}
+                            {signerButtons.map(button => (
+                                <SignerButton key={button.label} {...button} />
+                            ))}
+                        </View>
+                    ) : (
+                        <View style={styles.settingView}>
+                            {/* <View style={styles.rowview}>
+                                <Text bold style={styles.text}>Name Your Vault</Text>
+                                <View style={styles.blankspace} />
+                            </View> */}
+                            {/* <View style={styles.line} /> */}
+                            {!vaultTab &&
+                                <>
+                                    <TouchableOpacity onPress={backupSeedPhraseClickHandler}>
+                                        <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.backup_seed}</Text>
+                                    </TouchableOpacity>
+                                    <View style={styles.line} />
+                                    {/*
+                                      Keychain backup tile. Hidden on cold vault
+                                      (!vaultTab) because cold vaults are typed-in
+                                      watch-only xpubs with no on-device secret to
+                                      back up — the seed lives on the signing device.
+                                    */}
+                                    <TouchableOpacity
+                                        onPress={
+                                            isKeychainBackedUp
+                                                ? handleKeychainRemove
+                                                : handleKeychainBackup
+                                        }
+                                        disabled={keychainBusy}
+                                    >
+                                        <Text bold style={styles.text}>
+                                            {keychainBusy
+                                                ? keychainText.updating
+                                                : isKeychainBackedUp
+                                                ? keychainText.savedRemove
+                                                : keychainText.backUp}
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <View style={styles.line} />
+                                </>
+                            }
+                            {wallet instanceof AbstractHDElectrumWallet && (
+                                <>
+                                    <TouchableOpacity onPress={navigateToAddresses}>
+                                        <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.show_addresses}</Text>
+                                    </TouchableOpacity>
+                                    <View style={styles.line} />
+                                </>
+                            )}
+                            {wallet.allowXpub() && (
+                                <>
+                                    <TouchableOpacity onPress={navigateToXPub}>
+                                        <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.public_key}</Text>
+                                    </TouchableOpacity>
+                                    <View style={styles.line} />
+                                </>
+                            )}
+                            <TouchableOpacity onPress={rightToLeft}>
+                                <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.info}</Text>
                             </TouchableOpacity>
-                        )}
-                        {/* {wallet && !vaultTab && wallet.allowCosignPsbt() && (
-                            <TouchableOpacity onPress={() => handlePsbtSign(toStrike)}>
-                                <Text bold style={styles.text}>{"Sign a transaction for Strike"}</Text>
-                            </TouchableOpacity>
-                        )} */}
-                        {wallet && vaultTab && wallet.type === WatchOnlyWallet.type && wallet.isHd() && (
-                            <>
-                                <TouchableOpacity onPress={importTransaction}>
-                                    <Text bold style={styles.text}>{loc.send.details_adv_import}</Text>
+                            <View style={styles.line} />
+                            {wallet && !vaultTab && wallet.allowCosignPsbt() && (
+                                <>
+                                    {/* the phrase as a QR to copy by hand: lets a signing phone sign from the backup by scanning */}
+                                    <TouchableOpacity onPress={() => dispatchNavigate('SeedQRBackup', { walletID: wallet.getID() })}>
+                                        <Text bold style={styles.text}>{loc.cypherbox.vault.storage_vault.settings.seedqr_backup}</Text>
+                                    </TouchableOpacity>
+                                    <View style={styles.line} />
+                                </>
+                            )}
+                            {wallet && !vaultTab && wallet.allowCosignPsbt() && (
+                                <TouchableOpacity onPress={() => handlePsbtSign()}>
+                                    <Text bold style={styles.text}>{loc.send.psbt_sign}</Text>
                                 </TouchableOpacity>
-                                <View style={styles.line} />             
-                            </>        
-                        )}
-                        {wallet && wallet.type === WatchOnlyWallet.type && wallet.isHd() && (
-                            <TouchableOpacity onPress={importQrTransaction}>
-                                <Text bold style={styles.text}>{loc.send.details_adv_import_qr}</Text>
-                            </TouchableOpacity>                                                
-                        )}
+                            )}
+                            {/* {wallet && !vaultTab && wallet.allowCosignPsbt() && (
+                                <TouchableOpacity onPress={() => handlePsbtSign(toStrike)}>
+                                    <Text bold style={styles.text}>{"Sign a transaction for Strike"}</Text>
+                                </TouchableOpacity>
+                            )} */}
+                            {wallet && vaultTab && wallet.type === WatchOnlyWallet.type && wallet.isHd() && (
+                                <>
+                                    <TouchableOpacity onPress={importTransaction}>
+                                        <Text bold style={styles.text}>{loc.send.details_adv_import}</Text>
+                                    </TouchableOpacity>
+                                    <View style={styles.line} />             
+                                </>        
+                            )}
+                            {wallet && wallet.type === WatchOnlyWallet.type && wallet.isHd() && (
+                                <TouchableOpacity onPress={importQrTransaction}>
+                                    <Text bold style={styles.text}>{loc.send.details_adv_import_qr}</Text>
+                                </TouchableOpacity>                                                
+                            )}
 
-                        <View style={styles.line} />
-                        <TouchableOpacity onPress={handleDeleteButtonTapped}>
-                            <Text bold style={StyleSheet.flatten([styles.text, { color: colors.red }])}>Delete</Text>
-                        </TouchableOpacity>
-                        <View style={styles.line} />
-                    </View>
+                            <View style={styles.line} />
+                            <TouchableOpacity onPress={handleDeleteButtonTapped}>
+                                <Text bold style={StyleSheet.flatten([styles.text, { color: colors.red }])}>{loc.cypherbox.vault.storage_vault.settings.delete}</Text>
+                            </TouchableOpacity>
+                            <View style={styles.line} />
+                        </View>
+                    )}
                     {viewType == 0 ?
                         <View style={styles.settingView2}>
                             <TouchableOpacity onPress={leftToRight}>
-                                <Image source={Back} style={styles.backbtn} />
+                                <Image source={Back} style={[styles.backbtn, rtl.mirror]} />
                             </TouchableOpacity>
                             <View style={styles.typeView}>
-                                <Text bold style={styles.typeText}>Type</Text>
+                                <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.type}</Text>
                                 <Text h3>{wallet.typeReadable}</Text>
                             </View>
                             <View style={styles.typeView}>
-                                <Text bold style={styles.typeText}>Transaction count</Text>
+                                <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.transaction_count}</Text>
                                 <Text h3>{wallet.getTransactions().length || 0}</Text>
+                            </View>
+                            {/* compared between the two phones when one of them only signs */}
+                            <View style={styles.typeView}>
+                                <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.app_version}</Text>
+                                <Text h3>{`${getVersion()} (build ${getBuildNumber()})`}</Text>
                             </View>
                             {isAdvancedModeEnabledRender && (
                                 <>
                                     <View style={styles.typeView}>
-                                        <Text bold style={styles.typeText}>Master fingerprint</Text>
+                                        <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.master_fingerprint}</Text>
                                         <Text h3>{masterFingerprint ?? <ActivityIndicator />}</Text>
                                     </View>
                                     {derivationPath && (
                                         <View style={styles.typeView}>
-                                            <Text bold style={styles.typeText}>Derivation path</Text>
+                                            <Text bold style={styles.typeText}>{loc.cypherbox.vault.storage_vault.settings.derivation_path}</Text>
                                             <Text h3>{derivationPath}</Text>
                                         </View>
                                     )}
@@ -655,9 +663,9 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
                         <View style={styles.settingView2}>
                             <View style={styles.backupView}>
                                 <TouchableOpacity onPress={leftToRight}>
-                                    <Image source={Back} style={styles.backbtn} />
+                                    <Image source={Back} style={[styles.backbtn, rtl.mirror]} />
                                 </TouchableOpacity>
-                                <Text h4 style={styles.titleBackup}>Write  this backup copy on a piece of paper</Text>
+                                <Text h4 style={styles.titleBackup}>{loc.cypherbox.vault.storage_vault.settings.write_backup}</Text>
                             </View>
                             <PrivateKeyGenerater callNext={nextClickInitiate} />
                             <Tips />
@@ -721,6 +729,6 @@ export default function Settings({wallet, to, matchedRate, toStrike}: any) {
                 </View>
             </Animated.View> */}
 
-        </View>
+        </Container>
     )
 }

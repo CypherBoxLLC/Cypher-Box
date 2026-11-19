@@ -1,9 +1,12 @@
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Image, Keyboard, LayoutAnimation, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import Clipboard from "@react-native-clipboard/clipboard";
 import IdleTimerManager from 'react-native-idle-timer';
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
-import { colors, } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import { requestCameraAuthorization, scanQrHelper } from "../../../helpers/scan-qr";
 import styles from "./styles";
 import { HDSegwitBech32Wallet } from "../../../class";
@@ -22,6 +25,7 @@ import { BlueText } from "BlueComponents";
 import { extractXpub, isValidXpub } from "@Cypher/helpers/bbqrHelper";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 const fs = require('../../../blue_modules/fs');
+const BlueElectrum = require('../../../blue_modules/BlueElectrum');
 const Base43 = require('../../../blue_modules/base43');
 const bitcoin = require('bitcoinjs-lib');
 
@@ -40,6 +44,25 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
     const { addAndSaveWallet } = useContext(BlueStorageContext);
     const task = useRef<any>();
     const importing = useRef(false);
+    // the user's own node, if they saved one instead of the public servers, read again on coming back from the server screen
+    const [node, setNode] = useState<string | null>(null);
+    // without a node, loading the key stays locked until the user accepts a public third-party node
+    const [ignoreNode, setIgnoreNode] = useState(false);
+    const keyLocked = !node && !ignoreNode;
+
+    useFocusEffect(
+        useCallback(() => {
+            let cancelled = false;
+            Promise.all([BlueElectrum.ELECTRUM_HOST, BlueElectrum.ELECTRUM_SSL_PORT, BlueElectrum.ELECTRUM_TCP_PORT].map(key => AsyncStorage.getItem(key)))
+                .then(([host, sslPort, tcpPort]) => {
+                    if (!cancelled) setNode(host && !BlueElectrum.isPublicServer(host) ? `${host}:${sslPort || tcpPort}` : null);
+                })
+                .catch(() => {});
+            return () => {
+                cancelled = true;
+            };
+        }, []),
+    );
 
     console.log('address: ', address)
     const onBarScanned = value => {
@@ -102,7 +125,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
         const isValid = isValidXpub(cleanedText);
         console.log('isValid: ', isValid)
         if (!isValid) {
-            Alert.alert('Invalid Xpub', 'Please scan a valid xpub, ypub, or zpub QR code.');
+            Alert.alert(loc.cypherbox.vault.connect_cold_storage.invalid_xpub_title, loc.cypherbox.vault.connect_cold_storage.invalid_xpub_message);
             return;
         }
 
@@ -150,7 +173,7 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
             })
             .catch((e: { message: string | undefined; }) => {
                 console.warn('import error', e);
-                Alert.alert('Import error', e.message);
+                Alert.alert(loc.cypherbox.vault.connect_cold_storage.import_error, e.message);
             })
             .finally(() => {
 
@@ -325,42 +348,83 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
     };
 
     return (
-        <ScreenLayout disableScroll showToolbar progress={1} color={[colors.cold.gradient1, colors.cold.gradient2]}>
+        <ScreenLayout showToolbar progress={1} color={[colors.cold.gradient1, colors.cold.gradient2]}>
         {/* <ScreenLayout disableScroll showToolbar isBackButton title={"Connect Hardware Device"}> */}
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text style={styles.title}>Connect Hardware Device</Text>
+                    <Text style={styles.title}>{loc.cypherbox.vault.connect_cold_storage.title}</Text>
                     {loading ?
                         <ActivityIndicator style={{marginTop: 30}} color={colors.white} />
                     :
                         <>
-                            <Text h4 style={styles.descption}>Authorize your hardware device to display its Public Key (xpub, ypub, or zpub) then Scan, Paste, OR Import it from your files. Some devices don’t  give you that so you need to take it from their companion app’s settings.</Text>
+                            <Text h4 style={styles.descption}>{loc.cypherbox.vault.connect_cold_storage.description}{'\n\n'}{loc.cypherbox.vault.connect_cold_storage.offline_phone_hint}</Text>
+                            {/* Before the key, not after: the third-party server learns every address of this vault as soon
+                                as it's loaded, and switching to a node later can't undo that */}
+                            <TouchableOpacity
+                                style={[styles.node, node ? styles.nodeConnected : styles.nodeMissing]}
+                                onPress={() => navigation.navigate('ElectrumSettings', { returnAfterSave: true })}
+                                accessibilityRole="button"
+                            >
+                                <MaterialCommunityIcons name={node ? 'check-circle' : 'shield-alert-outline'} size={22} color={node ? colors.green : colors.yellow2} />
+                                {node ?
+                                    <View style={styles.nodeText}>
+                                        <Text h4 style={styles.nodeTitle}>{loc.formatString(loc.cypherbox.vault.connect_cold_storage.node_connected, { node })}</Text>
+                                        <Text style={styles.nodeHint}>{loc.cypherbox.vault.connect_cold_storage.node_hint}</Text>
+                                    </View>
+                                :
+                                    <View style={styles.nodeText}>
+                                        <Text h4 style={styles.nodeWarningTitle}>{loc.cypherbox.vault.connect_cold_storage.node_warning_title}</Text>
+                                        <Text style={styles.nodeWarning}>{loc.cypherbox.vault.connect_cold_storage.node_warning}</Text>
+                                    </View>
+                                }
+                                <MaterialCommunityIcons name="chevron-right" size={22} color={node ? colors.blueText : colors.yellow2} />
+                            </TouchableOpacity>
+                            {!node &&
+                                <TouchableOpacity
+                                    style={styles.ignore}
+                                    onPress={() => setIgnoreNode(ignore => !ignore)}
+                                    accessibilityRole="checkbox"
+                                    accessibilityState={{ checked: ignoreNode }}
+                                >
+                                    <View style={ignoreNode ? [styles.checkbox, styles.checkboxTicked] : styles.checkbox}>
+                                        {ignoreNode && <MaterialCommunityIcons name="check-bold" size={16} color={colors.black.default} />}
+                                    </View>
+                                    <Text style={styles.ignoreText}>
+                                        <Text style={styles.ignoreLabel}>{loc.cypherbox.vault.connect_cold_storage.ignore_label}</Text>
+                                        {loc.cypherbox.vault.connect_cold_storage.ignore_text}
+                                    </Text>
+                                </TouchableOpacity>
+                            }
                             <View style={styles.pasteview}>
                                 <GradientCard
                                     colors_={["#1693EDFA", "#15A7A7"]}
                                     start={{ x: 0, y: 0 }}
-                                    end={{ x: 0, y: 1 }}            
-                                    style={styles.linearGradientInside}
+                                    end={{ x: 0, y: 1 }}
+                                    style={keyLocked ? [styles.linearGradientInside, styles.keyLocked] : styles.linearGradientInside}
                                     linearStyle={styles.linearStyle}
+                                    disabled={keyLocked}
                                     onPress={importScan}>
                                     <View style={styles.insideView}>
                                         <Image source={require("../../../img/scan-new.png")} style={styles.qrimage} resizeMode="contain" />
-                                        <Text h2>Scan</Text>
+                                        <Text h2>{loc.cypherbox.vault.connect_cold_storage.scan} <Text style={styles.keyKinds}>{loc.cypherbox.vault.connect_cold_storage.key_kinds}</Text></Text>
                                     </View>
                                 </GradientCard>
                                 <GradientCard
                                     colors_={["#1693EDFA", "#15A7A7"]}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 0, y: 1 }}            
-                                    style={styles.linearGradientInside}
-                                    linearStyle={styles.linearStyle}
+                                    // A pasted key is shown whole, so the card grows with it instead of keeping its
+                                    // fixed 54, which showed one or two lines of a 111-character key.
+                                    style={[address ? styles.linearGradientInsideGrows : styles.linearGradientInside, ...(keyLocked ? [styles.keyLocked] : [])]}
+                                    linearStyle={address ? styles.linearStyleGrows : styles.linearStyle}
+                                    disabled={keyLocked}
                                     onPress={pasteClickHandler}>
-                                    <View style={styles.insideView}>
+                                    <View style={address ? styles.insideViewGrows : styles.insideView}>
                                         <Image source={require('../../../img/paste-icon.png')} style={styles.qrimage} resizeMode="contain" />
                                         {address ?
-                                            <Text style={{fontSize: 14}}>{shortenAddress(address)}</Text>
+                                            <Text style={[{ fontSize: 14, flexShrink: 1 }, rtl.ltrText]}>{shortenAddress(address)}</Text>
                                         :
-                                            <Text h2>Paste</Text>
+                                            <Text h2>{loc.cypherbox.vault.connect_cold_storage.paste} <Text style={styles.keyKinds}>{loc.cypherbox.vault.connect_cold_storage.key_kinds}</Text></Text>
                                         }
                                     </View>
                                 </GradientCard>
@@ -368,12 +432,13 @@ export default function ConnectColdStorage({ route, navigation }: Props) {
                                     colors_={["#1693EDFA", "#15A7A7"]}
                                     start={{ x: 0, y: 0 }}
                                     end={{ x: 0, y: 1 }}            
-                                    style={styles.linearGradientInside}
+                                    style={keyLocked ? [styles.linearGradientInside, styles.keyLocked] : styles.linearGradientInside}
                                     linearStyle={styles.linearStyle}
+                                    disabled={keyLocked}
                                     onPress={showFilePicker}>
                                     <View style={styles.insideView}>
                                         <Image source={require('../../../img/import.png')} style={styles.qrimage} resizeMode="contain" />
-                                        <Text h2>Import</Text>
+                                        <Text h2>{loc.cypherbox.vault.connect_cold_storage.import} <Text style={styles.keyKinds}>{loc.cypherbox.vault.connect_cold_storage.key_kinds}</Text></Text>
                                     </View>
                                 </GradientCard>
                             </View>

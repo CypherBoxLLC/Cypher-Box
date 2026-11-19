@@ -3,6 +3,7 @@ import { View } from "react-native";
 import styles from "./styles";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { CustomKeyboard, GradientInput } from "@Cypher/components";
+import loc from "../../../loc";
 
 interface Props {
     navigation: any;
@@ -33,7 +34,7 @@ export default function WithdrawThreshold({ navigation, route }: Props) {
         route?.params?.minSats ?? (index == 0 ? 2_000_000 : 100_000);
     const maxSats: number =
         route?.params?.maxSats ?? (index == 0 ? 10_000_000 : 2_000_000);
-    const kindLabel: string = route?.params?.kindLabel ?? 'Lightning Account';
+    const kindLabel: string = route?.params?.kindLabel ?? loc.cypherbox.vault.withdraw_threshold.lightning_account;
     const [isSats, setIsSats] = useState(true);
     const [isError, setIsError] = useState(false);
     const [isLow, setIsLow] = useState(false);
@@ -94,20 +95,20 @@ export default function WithdrawThreshold({ navigation, route }: Props) {
             <View style={styles.container}>
                 <GradientInput walletInfo={route?.params} isSats={isSats} sats={sats} setSats={setSats} usd={usd} colors_={colors_} />
                 {isError && isLow && index == 0 &&
-                    <Text style={styles.error}>Withdrawal threshold is too low, indicating that you would incur a higher network fee if you intend to take self-custody of the funds in the future. We recommend keeping it between {formatRange(minSats)} to {formatRange(maxSats)} sats.</Text>
+                    <Text style={styles.error}>{loc.formatString(loc.cypherbox.vault.withdraw_threshold.withdraw_too_low, { min: formatRange(minSats), max: formatRange(maxSats) })}</Text>
                 }
                 {isError && isLow && index == 1 &&
-                    <Text style={styles.error}>Reserve Amount is too low, indicating that you would incur a higher network fee if you intend to take self-custody of the funds in the future. We recommend keeping it between 100k to 2M sats.</Text>
+                    <Text style={styles.error}>{loc.cypherbox.vault.withdraw_threshold.reserve_too_low}</Text>
                 }
                 {isError && isHigh && index == 0 &&
-                    <Text style={styles.error}>Withdraw Threshold is too high, indicating an unnecessary exposure to counter-party risk since your assets will sit on the {kindLabel} for an extended period. We recommend keeping it between {formatRange(minSats)} to {formatRange(maxSats)} sats.</Text>
+                    <Text style={styles.error}>{loc.formatString(loc.cypherbox.vault.withdraw_threshold.withdraw_too_high, { kind: kindLabel, min: formatRange(minSats), max: formatRange(maxSats) })}</Text>
                 }
                 {isError && isHigh && index == 1 &&
-                    <Text style={styles.error}>Reserve Amount is too high, indicating an unnecessary exposure to counter-party risk since your assets will be under the custody and control of a bitcoin custodian (Coinos) for an extended period. We recommend keeping it between 100K to 2M sats.</Text>
+                    <Text style={styles.error}>{loc.cypherbox.vault.withdraw_threshold.reserve_too_high}</Text>
                 }
             </View>
             <CustomKeyboard
-                title={isError ? 'Set anyways ' : titleBtn}
+                title={isError ? loc.cypherbox.vault.withdraw_threshold.set_anyways : titleBtn}
                 onPress={setClickHandler}
                 disabled={!sats.length}
                 setSATS={setSats}

@@ -53,8 +53,10 @@ import { processArkMovementsForActivity } from '@Cypher/services/ark/movementsAc
 // Imported from the file path directly (not the @Cypher/services/ark
 // barrel) — the barrel doesn't re-export the expiry module.
 import { formatBlocksUntil } from '@Cypher/services/ark/expiry';
+import loc from '../../loc';
 // Also not re-exported through the barrel.
 import { shouldRescheduleExpiryWarning } from '@Cypher/services/ark/chainTipFreshness';
+import { arkStuckRoundThresholdMs } from '@Cypher/services/ark/roundStuck';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import {
@@ -288,7 +290,9 @@ export default function useArkSync(): UseArkSync {
     const setArkChainTipHeight = useAuthStore((s) => s.setArkChainTipHeight);
     const setArkLastSyncedAt = useAuthStore((s) => s.setArkLastSyncedAt);
     const setArkSyncFailStreak = useAuthStore((s) => s.setArkSyncFailStreak);
-    const setArkLastBackupAt = useAuthStore((s) => s.setArkLastBackupAt);
+    // Stamps arkLastBackupAt AND what the write reached outside the app, so a
+    // copy in the app's own folder alone no longer reads "Backed up".
+    const recordArkBackupWrite = useAuthStore((s) => s.recordArkBackupWrite);
     const arkRoundIntervalSecs = useAuthStore((s) => s.arkRoundIntervalSecs);
     const setArkRoundIntervalSecs = useAuthStore((s) => s.setArkRoundIntervalSecs);
     const arkVtxoExitDeltaBlocks = useAuthStore((s) => s.arkVtxoExitDeltaBlocks);
@@ -881,7 +885,7 @@ export default function useArkSync(): UseArkSync {
                     const exitBackupMnemonic = getCachedArkMnemonic();
                     if (exitBackupMnemonic) {
                         writeArkAutoBackup(exitBackupMnemonic)
-                            .then(({ createdAt }) => setArkLastBackupAt(createdAt))
+                            .then(({ createdAt, offDevice }) => recordArkBackupWrite(createdAt, offDevice))
                             .catch((err) => {
                                 if (__DEV__) console.warn('[Ark auto-backup] mid-exit backup failed:', err?.message ?? err);
                             });
@@ -1460,7 +1464,9 @@ export default function useArkSync(): UseArkSync {
             if (mapChanged) setArkPendingRoundFirstSeen(nextFirstSeen);
 
             if (rounds.length > 0) {
-                const stuckThresholdMs = 2 * intervalSecs * 1000;
+                // Shared with RefreshWaitBanner, so the banner never calls a
+                // round stuck that this loop still treats as healthy.
+                const stuckThresholdMs = arkStuckRoundThresholdMs(intervalSecs);
                 const stuck = rounds.filter((r) => {
                     const seen = nextFirstSeen[String(r.id)];
                     return seen != null && now - seen > stuckThresholdMs;
@@ -1716,13 +1722,9 @@ export default function useArkSync(): UseArkSync {
                     'minBlocks=', minBlocksAnySpendable,
                 );
                 Alert.alert(
-                    'Refresh keeps failing',
-                    `Your capsules expire ${formatBlocksUntil(minBlocksAnySpendable)} and your last ` +
-                    `${failStreak} refresh attempts failed. Switch networks (Wi-Fi to cellular, or ` +
-                    'cellular to Wi-Fi) and refresh again. If refresh still fails, use ' +
-                    'Settings → Emergency Exit to move your funds on-chain before they expire. ' +
-                    'Once a capsule expires, recovery is not guaranteed.',
-                    [{ text: 'OK' }],
+                    loc.cypherbox.services.ark_sync.refresh_failing_title,
+                    String(loc.formatString(loc.cypherbox.services.ark_sync.refresh_failing_body, { when: formatBlocksUntil(minBlocksAnySpendable), count: failStreak })),
+                    [{ text: loc._.ok }],
                 );
             }
 
@@ -1757,8 +1759,8 @@ export default function useArkSync(): UseArkSync {
             const mnemonic = getCachedArkMnemonic();
             if (mnemonic) {
                 writeArkAutoBackup(mnemonic)
-                    .then(({ path, iCloudPath, sizeBytes, createdAt }) => {
-                        setArkLastBackupAt(createdAt);
+                    .then(({ path, iCloudPath, sizeBytes, createdAt, offDevice }) => {
+                        recordArkBackupWrite(createdAt, offDevice);
                         if (__DEV__) {
                             // Auto-backup now writes BOTH the local sandbox
                             // and (on iOS w/ iCloud Drive) the iCloud
@@ -1811,7 +1813,7 @@ export default function useArkSync(): UseArkSync {
         setArkChainTipHeight,
         setArkLastSyncedAt,
         setArkSyncFailStreak,
-        setArkLastBackupAt,
+        recordArkBackupWrite,
         arkExitInProgress,
         arkExitDestinationAddress,
         setArkExitInProgress,

@@ -1,7 +1,14 @@
 import { create, GetState, SetState } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { zustandStorage } from "./index";
+import { isSeedSignerLocked, lockSeedSigner } from "@Cypher/services/seedSignerLock";
+import { authPersistStorage, enableAuthWrites } from "./authPersistStorage";
 import type { ArkBalanceSummary, ArkLightningReceiveView, ArkVtxoView } from "@Cypher/services/ark";
+import { legacyArkOffDeviceBackupAt, nextOffDeviceBackupState } from "@Cypher/services/ark/backupCoverage";
+import type { ArkOffDeviceOutcome } from "@Cypher/services/ark/backupCoverage";
+import type { PendingSignature } from "@Cypher/helpers/pendingSignature";
+import type { SignerWallet } from "@Cypher/helpers/multisigPolicy";
+import type { SignerAccount } from "@Cypher/helpers/signerPublicKey";
+import { withoutArkNoticeIgnores } from "@Cypher/services/homeNotices";
 
 /**
  * Stuck-refresh detection state.
@@ -239,6 +246,62 @@ export type AuthStateType = {
      * onto a different wallet.
      */
     vaultDisplayAddress: Record<string, string>;
+    /**
+     * Cold vault spends exported for signing and not broadcast yet, per walletID: one each, so preparing another
+     * replaces it. Lets the user leave the app while they sign and resume from the vault tab; see
+     * helpers/pendingSignature.
+     */
+    pendingSignatures: Record<string, PendingSignature>;
+    /**
+     * Offline Seed-Signer: the multisig wallets this signer holds a key of, per wallet id (helpers/multisigPolicy),
+     * registered from the wallet file a coordinator exports once a SeedQR showed the seed's key is in it. A multisig
+     * transaction is signed only if it spends from one of these. Public keys only, but they reveal every address of
+     * the wallet, so they live here in the encrypted store.
+     */
+    signerWallets: Record<string, SignerWallet>;
+    /**
+     * Offline Seed-Signer: single-key public keys (m/84'/0'/0') remembered per master fingerprint, so "Receive - Check
+     * Address" can check a seed's addresses without its SeedQR. Remembered by default when a seed's key screen is
+     * shown, never for a seed with a passphrase unless asked; forgotten on request.
+     */
+    signerAccounts: Record<string, SignerAccount>;
+    /** "Signing safely" was shown before this phone's first Hot Vault "Sign a transaction"; it isn't forced again. */
+    signingSafetySeen: boolean;
+    /**
+     * Cold vaults whose "your Cold Vault's key is on this phone" warning the user chose to hide, per walletID.
+     * Keyed by wallet so a new cold vault with the same mistake still gets warned.
+     */
+    coldKeyWarningHidden: Record<string, boolean>;
+    /**
+     * Home notices the user tapped Ignore on: notice id → the situation it was ignored in. A notice stays hidden only
+     * while its situation is the same, so it comes back when that changes (services/homeNotices.ts). Bark entries are
+     * dropped with the Bark vault (clearArkAuth).
+     */
+    homeNoticeIgnores: Record<string, string>;
+    /**
+     * Home's balances behind *** (the logo button on the total balance card): the total, the vault cards and the
+     * Bark, Strike and CoinOS cards. False until the user hides them, and saved with the rest of this store, so the
+     * choice survives a relaunch. Read it through useBalancesHidden (stores/balancePrivacy.ts), which also counts
+     * them as hidden until this store has loaded.
+     */
+    balancesHidden: boolean;
+    /**
+     * Offline Seed-Signer mode: this install is a seed-signer for an offline phone, and the signer is its only home
+     * screen. Always the one-way lock in services/seedSignerLock: it can be turned on, never off, and only reinstalling
+     * the app clears it.
+     */
+    signingMode: boolean;
+    /**
+     * A transaction was signed on this phone (with the Hot Vault or a backup). Together with being offline or in signing
+     * mode, it puts "Sign a transaction" on the Hot Vault tab: phones that never sign keep the tab as it was.
+     */
+    signedOnThisPhone: boolean;
+    /**
+     * Offline Seed-Signer mode: a seed's public key was shown on this phone, once the seed was made here and its backup
+     * checked, or loaded to show it. Only that it happened is kept, nothing of the seed or its key. With
+     * signedOnThisPhone, it puts signing first on the signer's home.
+     */
+    signerKeyShown: boolean;
     arkChainTipHeight: number | null;
     // Epoch ms the tip above was read. The tip is PERSISTED, so a cold launch
     // offline rehydrates one that may be days old, and
@@ -259,8 +322,25 @@ export type AuthStateType = {
      * `null` = never backed up. Cleared on reset / disconnect so a stale
      * timestamp from a previous wallet doesn't grant false confidence to
      * the next one.
+     *
+     * Any write counts here, including one to the app's own folder only,
+     * which goes with the app or the phone. Only `arkLastOffDeviceBackupAt`
+     * may show a capsule as "Backed up".
      */
     arkLastBackupAt: number | null;
+    /**
+     * Timestamp (ms) of the last backup that also reached a copy outside the
+     * app: the iCloud Drive container on iOS, Google Drive or the chosen
+     * folder on Android. `null` = there is none being kept current: none was
+     * ever written, none is set up any more, or the set-up one has failed
+     * ARK_OFF_DEVICE_FAIL_LIMIT writes in a row. Drives "Backed up" versus
+     * "On this phone only" on the Capsules tab and the matching reminders on
+     * Home and in Settings. Maintained by `recordArkBackupWrite`; see
+     * services/ark/backupCoverage.ts.
+     */
+    arkLastOffDeviceBackupAt: number | null;
+    /** Failed off-device writes in a row, for `recordArkBackupWrite`. */
+    arkOffDeviceBackupFailStreak: number;
     /**
      * Round-cadence in seconds, from the ASP's static config (wallet.arkInfo()).
      * Mainnet ≈ 3600, signet ≈ 300. Used to surface an upper-bound ETA on
@@ -394,6 +474,21 @@ export type AuthStateType = {
     setArkExpiryNotifsScheduleVersion: (state: number) => void;
     setArkPendingLnReceives: (state: ArkLightningReceiveView[]) => void;
     setVaultDisplayAddress: (walletID: string, address: string | null) => void;
+    setPendingSignature: (walletID: string, pending: PendingSignature | null) => void;
+    addSignerWallet: (wallet: SignerWallet) => void;
+    removeSignerWallet: (id: string) => void;
+    addSignerAccount: (account: SignerAccount) => void;
+    removeSignerAccount: (fingerprint: string) => void;
+    setSigningSafetySeen: (seen: boolean) => void;
+    hideColdKeyWarning: (walletID: string) => void;
+    ignoreHomeNotice: (id: string, situation: string) => void;
+    /** Undoes ignoreHomeNotice: the notice shows on Home again ("Show again" in Activity). */
+    restoreHomeNotice: (id: string) => void;
+    /** The logo button on Home's total balance card: hides Home's balances, or shows them again. */
+    toggleBalancesHidden: () => void;
+    setSigningMode: (on: boolean) => void;
+    setSignedOnThisPhone: (signed: boolean) => void;
+    setSignerKeyShown: (shown: boolean) => void;
     /** `at` is when the tip was READ FROM THE NETWORK. Pass
      *  getChainTipFetchedAt() when the value may have come from the tip cache:
      *  chainTipFreshness derives FRESH/DEGRADED/STALE from this stamp, so
@@ -402,6 +497,13 @@ export type AuthStateType = {
     setArkChainTipHeight: (state: number | null, at?: number | null) => void;
     setArkLastSyncedAt: (state: number | null) => void;
     setArkLastBackupAt: (state: number | null) => void;
+    /**
+     * Record a successful `writeArkAutoBackup`: stamps `arkLastBackupAt` and
+     * folds what the write reached outside the app into
+     * `arkLastOffDeviceBackupAt`. Every caller of the auto-backup goes through
+     * this, so the two can never be stamped by different rules.
+     */
+    recordArkBackupWrite: (createdAt: number, offDevice: ArkOffDeviceOutcome) => void;
     setArkRoundIntervalSecs: (state: number | null) => void;
     setArkExitFeeDeadlineHeight: (state: number | null) => void;
     setArkExitParams: (state: {
@@ -641,6 +743,25 @@ export type AuthStateType = {
     setTwoFAVerified: (state: boolean) => void;
 };
 
+/**
+ * Union of two `arkServerSpentVtxoIds` lists, `newer` last, lowercased and
+ * de-duplicated. Shared by the setter and the hydration merge so both keep
+ * the same cap.
+ *
+ * Bounded so a long-lived wallet cannot grow this without limit in persisted
+ * storage. Oldest entries fall off first; a VTXO that old is long gone from
+ * the local DB anyway.
+ */
+const ARK_SERVER_SPENT_IDS_CAP = 500;
+function mergeArkServerSpentVtxoIds(older: unknown, newer: unknown): string[] {
+    const merged = new Set<string>();
+    for (const list of [older, newer]) {
+        if (!Array.isArray(list)) continue;
+        for (const id of list) if (typeof id === 'string' && id) merged.add(id.toLowerCase());
+    }
+    return Array.from(merged).slice(-ARK_SERVER_SPENT_IDS_CAP);
+}
+
 const createAuthStore = (
     set: SetState<AuthStateType>,
     get: GetState<AuthStateType>
@@ -678,10 +799,22 @@ const createAuthStore = (
     arkExpiryNotifsScheduleVersion: 0,
     arkPendingLnReceives: [],
     vaultDisplayAddress: {},
+    pendingSignatures: {},
+    signerWallets: {},
+    signerAccounts: {},
+    signingSafetySeen: false,
+    coldKeyWarningHidden: {},
+    homeNoticeIgnores: {},
+    balancesHidden: false,
+    signingMode: isSeedSignerLocked(),
+    signedOnThisPhone: false,
+    signerKeyShown: false,
     arkChainTipHeight: null,
     arkChainTipHeightAt: null,
     arkLastSyncedAt: null,
     arkLastBackupAt: null,
+    arkLastOffDeviceBackupAt: null,
+    arkOffDeviceBackupFailStreak: 0,
     arkRoundIntervalSecs: null,
     arkVtxoExitDeltaBlocks: null,
     arkMaxVtxoExitDepth: null,
@@ -758,15 +891,9 @@ const createAuthStore = (
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => set({ arkBalanceDetail: state }),
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
     addArkServerSpentVtxoIds: (ids: string[]) =>
-        set((s) => {
-            const merged = new Set(s.arkServerSpentVtxoIds);
-            for (const id of ids) if (id) merged.add(id.toLowerCase());
-            // Bounded so a long-lived wallet cannot grow this without limit in
-            // persisted storage. Oldest entries fall off first; a VTXO that old
-            // is long gone from the local DB anyway.
-            const capped = Array.from(merged).slice(-500);
-            return { arkServerSpentVtxoIds: capped };
-        }),
+        set((s) => ({
+            arkServerSpentVtxoIds: mergeArkServerSpentVtxoIds(s.arkServerSpentVtxoIds, ids),
+        })),
     setArkRefreshingVtxoIds: (ids: string[]) =>
         set((s) => {
             // Stamp ids we have not seen, keep existing stamps (so a re-set of
@@ -792,6 +919,53 @@ const createAuthStore = (
             else delete next[walletID];
             return { vaultDisplayAddress: next };
         }),
+    setPendingSignature: (walletID: string, pending: PendingSignature | null) =>
+        set((state: any) => {
+            const next = { ...(state.pendingSignatures ?? {}) };
+            // null: broadcast, discarded, or its capsules spent some other way
+            if (pending) next[walletID] = pending;
+            else delete next[walletID];
+            return { pendingSignatures: next };
+        }),
+    addSignerWallet: (wallet: SignerWallet) =>
+        set((state: any) => ({ signerWallets: { ...(state.signerWallets ?? {}), [wallet.id]: wallet } })),
+    removeSignerWallet: (id: string) =>
+        set((state: any) => {
+            const next = { ...(state.signerWallets ?? {}) };
+            delete next[id];
+            return { signerWallets: next };
+        }),
+    // kept from the first time it was remembered
+    addSignerAccount: (account: SignerAccount) =>
+        set((state: any) =>
+            state.signerAccounts?.[account.fingerprint]
+                ? {}
+                : { signerAccounts: { ...(state.signerAccounts ?? {}), [account.fingerprint]: account } }),
+    removeSignerAccount: (fingerprint: string) =>
+        set((state: any) => {
+            const next = { ...(state.signerAccounts ?? {}) };
+            delete next[fingerprint];
+            return { signerAccounts: next };
+        }),
+    setSigningSafetySeen: (seen: boolean) => set({ signingSafetySeen: seen }),
+    // turning it on locks this install for good; turning it off does nothing
+    setSigningMode: (on: boolean) => {
+        if (on) lockSeedSigner();
+        set({ signingMode: isSeedSignerLocked() });
+    },
+    setSignedOnThisPhone: (signed: boolean) => set({ signedOnThisPhone: signed }),
+    setSignerKeyShown: (shown: boolean) => set({ signerKeyShown: shown }),
+    hideColdKeyWarning: (walletID: string) =>
+        set((state: any) => ({ coldKeyWarningHidden: { ...(state.coldKeyWarningHidden ?? {}), [walletID]: true } })),
+    ignoreHomeNotice: (id: string, situation: string) =>
+        set((state: any) => ({ homeNoticeIgnores: { ...(state.homeNoticeIgnores ?? {}), [id]: situation } })),
+    restoreHomeNotice: (id: string) =>
+        set((state: any) => {
+            const rest = { ...(state.homeNoticeIgnores ?? {}) };
+            delete rest[id];
+            return { homeNoticeIgnores: rest };
+        }),
+    toggleBalancesHidden: () => set((state: any) => ({ balancesHidden: !state.balancesHidden })),
     // Stamps the read time with the value, so the two can never drift apart.
     setArkChainTipHeight: (state: number | null, at?: number | null) =>
         set({
@@ -800,6 +974,22 @@ const createAuthStore = (
         }),
     setArkLastSyncedAt: (state: number | null) => set({ arkLastSyncedAt: state }),
     setArkLastBackupAt: (state: number | null) => set({ arkLastBackupAt: state }),
+    recordArkBackupWrite: (createdAt: number, offDevice: ArkOffDeviceOutcome) =>
+        set((s) => {
+            const next = nextOffDeviceBackupState(
+                { at: s.arkLastOffDeviceBackupAt ?? null, failStreak: s.arkOffDeviceBackupFailStreak ?? 0 },
+                offDevice,
+                createdAt,
+            );
+            return {
+                arkLastBackupAt: createdAt,
+                arkLastOffDeviceBackupAt: next.at,
+                arkOffDeviceBackupFailStreak: next.failStreak,
+                // The iOS snapshot reminder waits for a copy that keeps itself
+                // current, which is what a write outside the app just was.
+                ...(offDevice === 'written' ? { arkIosBackupReminderActive: false } : {}),
+            };
+        }),
     setArkRoundIntervalSecs: (state: number | null) => set({ arkRoundIntervalSecs: state }),
     setArkExitFeeDeadlineHeight: (state: number | null) => set({ arkExitFeeDeadlineHeight: state }),
     setArkExitParams: (state) => set({
@@ -840,7 +1030,7 @@ const createAuthStore = (
     setArkArkoorPromptState: (state) => set({ arkArkoorPromptState: state }),
     setArkArkoorPromptEnabled: (state: boolean) => set({ arkArkoorPromptEnabled: state }),
     clearArkAuth: () =>
-        set({
+        set((state: any) => ({
             isArkAuth: false,
             arkWallet: null,
             arkBalance: 0,
@@ -858,6 +1048,8 @@ const createAuthStore = (
             arkChainTipHeightAt: null,
             arkLastSyncedAt: null,
             arkLastBackupAt: null,
+            arkLastOffDeviceBackupAt: null,
+            arkOffDeviceBackupFailStreak: 0,
             arkRoundIntervalSecs: null,
             // arkVtxoExitDeltaBlocks / arkMaxVtxoExitDepth are deliberately NOT
             // reset. They are the server's protocol constants, not wallet
@@ -925,7 +1117,10 @@ const createAuthStore = (
             // arkArkoorPromptEnabled is a user preference, kept across
             // wallet changes (matches the withdrawArkThreshold pattern).
             arkArkoorPromptState: {},
-        }),
+            // Ignored Bark notices belonged to this vault; the next one starts
+            // with all of them showing. CoinOS/Strike/vault notices stay ignored.
+            homeNoticeIgnores: withoutArkNoticeIgnores(state.homeNoticeIgnores),
+        })),
     // 2FA setters
     setTwoFARequired: (state: boolean) => set({ twoFARequired: state }),
     setTwoFAVerified: (state: boolean) => set({ twoFAVerified: state }),
@@ -972,7 +1167,17 @@ const createAuthStore = (
 const useAuthStore = create<AuthStateType>()(
     persist(createAuthStore, {
         name: 'Auth',
-        storage: createJSONStorage(() => zustandStorage),
+        // Hydration-safe storage: getItem throws on a key-read failure so it
+        // cannot be mistaken for an empty store, and writes are held until a
+        // real read succeeds. See authPersistStorage.
+        storage: createJSONStorage(() => authPersistStorage),
+        // Enable persistence writes only once a hydration read has actually
+        // succeeded. On the error path (key unreadable) `error` is set, zustand
+        // leaves the store at its default without writing, and startAuthHydration
+        // retries on the next foreground.
+        onRehydrateStorage: () => (_state, error) => {
+            if (!error) enableAuthWrites();
+        },
         // v1: invalidate the persisted Strike OAuth token + auth slice so
         // any token captured by the prior console.log/Bugsnag-breadcrumb
         // leak is flushed on first launch of the patched build. Users
@@ -980,6 +1185,30 @@ const useAuthStore = create<AuthStateType>()(
         // fields: reserveStrikeAmount, withdrawStrikeThreshold — user
         // preferences, not auth state).
         version: 1,
+        // the lock decides signing mode, whatever was saved before it existed
+        merge: (persistedState, currentState) => {
+            const persisted = (persistedState ?? {}) as Partial<AuthStateType>;
+            return {
+                ...currentState,
+                ...persisted,
+                signingMode: isSeedSignerLocked(),
+                // Both lists, not the saved one alone: a spend or a background
+                // wake can record a server-spent capsule before the store has
+                // loaded, and replacing it would put that capsule back in the
+                // balance.
+                arkServerSpentVtxoIds: mergeArkServerSpentVtxoIds(
+                    persisted.arkServerSpentVtxoIds,
+                    currentState.arkServerSpentVtxoIds,
+                ),
+                // Saved before the off-device backup was tracked (0.1.12 and
+                // earlier): start from what the saved vault says about its
+                // iCloud, Drive or folder copy, until the next backup write
+                // decides it. Only when the key is missing, so this runs once.
+                ...(persisted.arkLastOffDeviceBackupAt === undefined
+                    ? { arkLastOffDeviceBackupAt: legacyArkOffDeviceBackupAt(persisted) }
+                    : {}),
+            };
+        },
         migrate: (persistedState, version) => {
             const state = (persistedState ?? {}) as Record<string, unknown>;
             if (version < 1) {

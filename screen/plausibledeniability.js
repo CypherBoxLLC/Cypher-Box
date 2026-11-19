@@ -92,6 +92,5 @@ const PlausibleDeniability = ({navigation}) => {
 
 export default PlausibleDeniability;
 
-PlausibleDeniability.navigationOptions = navigationStyle({
-  title: loc.plausibledeniability.title,
-});
+// the title is read when the screen is drawn: this file loads before the saved language is applied
+PlausibleDeniability.navigationOptions = navigationStyle({}, opts => ({ ...opts, title: loc.plausibledeniability.title }));

@@ -11,6 +11,8 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useAuthStore from "@Cypher/stores/authStore";
 import { backupHotVaultSeedWithMeta } from "@Cypher/services/hotVaultKeychain";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
+import { hotVaultKeychainText } from "@Cypher/helpers/hotVaultKeychainText";
+import loc from "../../../loc";
 
 /**
  * SavingVault — the second screen of the hot-vault creation flow.
@@ -24,14 +26,17 @@ import { recordEvent } from "@Cypher/stores/eventLogStore";
  *   - saved `walletID = w.getID()` into zustand
  *
  * This screen adds a per-session opt-in: "also save the mnemonic to the OS
- * Keychain (FaceID/passcode-gated)". We defer the actual Keychain write
- * until the user confirms they've written the seed down, so declining the
- * continue button cancels the Keychain save as well.
+ * Keychain (Face ID/passcode-gated on iOS, fingerprint-gated on Android)".
+ * We defer the actual Keychain write until the user confirms they've written
+ * the seed down, so declining the continue button cancels the Keychain save
+ * as well.
  *
- * The Keychain copy is convenience storage for re-install recovery. Primary
- * custody is still BlueWallet's encrypted disk store; losing that while
- * keeping Keychain gives the user a biometric unlock path back into their
- * seed without having to type 12 words.
+ * The Keychain copy is convenience storage. On iOS it also covers a
+ * re-install; on Android it is deleted with the app, so the switch text
+ * differs per platform (helpers/hotVaultKeychainText). Primary custody is
+ * still BlueWallet's encrypted disk store; losing that while keeping the
+ * Keychain copy gives the user a biometric unlock path back into their seed
+ * without having to type 12 words.
  */
 export default function SavingVault() {
     const [isValidate, setIsValidate] = useState(false);
@@ -43,7 +48,11 @@ export default function SavingVault() {
 
     const walletID = useAuthStore(s => s.walletID);
     const setHotVaultKeychainBackup = useAuthStore(s => s.setHotVaultKeychainBackup);
+    // a signing phone keeps no second copy of the seed, so there's no Keychain backup to offer
+    const signingMode = useAuthStore(s => s.signingMode);
     const { wallets } = useContext(BlueStorageContext);
+    // iPhone Keychain or Android Keystore wording, in the current language
+    const keychainText = hotVaultKeychainText().create;
 
     const nextClickInitiate = () => {
         setIsValidate(true);
@@ -53,7 +62,7 @@ export default function SavingVault() {
         if (submitting) return;
         setSubmitting(true);
 
-        if (saveToKeychain) {
+        if (saveToKeychain && !signingMode) {
             // Re-resolve the wallet at tap time rather than caching it across
             // renders — the user might have navigated in from a deep link
             // with a stale storage-context snapshot.
@@ -69,7 +78,7 @@ export default function SavingVault() {
                 );
                 setKeychainStatus("err");
                 SimpleToast.show(
-                    "Keychain save skipped. You can enable it later in vault settings",
+                    keychainText.skippedToast,
                     SimpleToast.LONG,
                 );
             } else {
@@ -95,6 +104,22 @@ export default function SavingVault() {
                 if (result.ok) {
                     setKeychainStatus("ok");
                     setHotVaultKeychainBackup(walletID, true);
+                } else if (result.kind === "no-biometric-gate") {
+                    // Android only: the OS handed back a cipher that is NOT
+                    // bound to a fingerprint, so the helper deleted the
+                    // un-gated entry instead of leaving the seed readable with
+                    // no prompt. Tell the truth, and do NOT flip the backup
+                    // flag, so the UI never claims a protection that is absent.
+                    setKeychainStatus("err");
+                    console.warn(
+                        "[HotVault] Keychain save rejected, no biometric gate (storage=",
+                        result.storage,
+                        ")",
+                    );
+                    SimpleToast.show(
+                        loc.cypherbox.vault.saving_vault.keychain_no_fingerprint,
+                        SimpleToast.LONG,
+                    );
                 } else {
                     setKeychainStatus("err");
                     console.warn(
@@ -102,7 +127,7 @@ export default function SavingVault() {
                         result.error,
                     );
                     SimpleToast.show(
-                        "Keychain save failed. Please back up the 12 words manually",
+                        keychainText.failedToast,
                         SimpleToast.LONG,
                     );
                     // Intentional: we do NOT abort the flow here. The seed
@@ -131,19 +156,19 @@ export default function SavingVault() {
         >
             <View style={styles.container}>
                 <Text style={styles.title} center>
-                    Private Key Generated
+                    {loc.cypherbox.vault.saving_vault.title}
                 </Text>
                 <Text h4 style={styles.descption} center>
-                    Write this backup copy on a piece of paper
+                    {loc.cypherbox.vault.saving_vault.write_backup}
                 </Text>
                 {/* Passphrase vaults: the words alone are NOT the full
                     backup. Remind here, at the moment the paper backup is
                     being written, per the creation-screen guidance
-                    (memorise it and include it on the paper). The
+                    (memorise it, and write it down apart from the words). The
                     passphrase itself is never displayed. */}
                 {!!(wallets.find((w: any) => w.getID() === walletID)?.getPassphrase?.()) && (
                     <Text center style={{ color: '#FFD54F', fontSize: 12, lineHeight: 17, marginTop: 6, marginHorizontal: 16 }}>
-                        ⚠ This vault has a passphrase. Recovery needs these 12 words AND your passphrase. Write both on your paper backup.
+                        {loc.cypherbox.vault.saving_vault.passphrase_reminder}
                     </Text>
                 )}
                 <PrivateKeyGenerater callNext={nextClickInitiate} />
@@ -156,15 +181,13 @@ export default function SavingVault() {
                   button on this; it's additive to the paper backup, not a
                   replacement.
                 */}
-                <View style={styles.keychainRow}>
+                {!signingMode && <View style={styles.keychainRow}>
                     <View style={styles.keychainTextWrap}>
                         <Text bold style={styles.keychainLabel}>
-                            Also save to iPhone Keychain
+                            {keychainText.label}
                         </Text>
                         <Text style={styles.keychainSub}>
-                            Encrypted on this device, unlocked by FaceID /
-                            passcode. Survives app reinstall. Does not sync to
-                            iCloud.
+                            {keychainText.sub}
                         </Text>
                     </View>
                     <Switch
@@ -176,21 +199,21 @@ export default function SavingVault() {
                         }}
                         thumbColor={colors.white}
                     />
-                </View>
+                </View>}
 
                 {keychainStatus === "ok" && (
                     <Text style={styles.keychainStatusOk}>
-                        ✓ Saved to Keychain
+                        {keychainText.saved}
                     </Text>
                 )}
                 {keychainStatus === "err" && (
                     <Text style={styles.keychainStatusErr}>
-                        ✗ Keychain save failed. Paper backup still required
+                        {keychainText.failed}
                     </Text>
                 )}
 
                 <Button
-                    text={submitting ? "Saving…" : "Ok, I wrote it down!"}
+                    text={submitting ? loc.cypherbox.vault.saving_vault.saving : loc.cypherbox.vault.saving_vault.wrote_it_down}
                     onPress={nextClickHandler}
                     style={styles.button}
                     textStyle={styles.btnText}

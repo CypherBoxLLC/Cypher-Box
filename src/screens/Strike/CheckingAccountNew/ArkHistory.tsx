@@ -23,7 +23,7 @@ import {
     type ArkMovementStatus,
     type ArkMovementView,
 } from '@Cypher/services/ark';
-import { colors } from '@Cypher/style-guide';
+import { colors, ltr, rtl } from '@Cypher/style-guide';
 import screenHeight from '@Cypher/style-guide/screenHeight';
 import useAuthStore from '@Cypher/stores/authStore';
 import useEventLogStore, { type AppEvent } from '@Cypher/stores/eventLogStore';
@@ -31,6 +31,7 @@ import useEventLogStore, { type AppEvent } from '@Cypher/stores/eventLogStore';
 import itemStyles from './Items/styles';
 import Header from './Header';
 import styles from './styles';
+import loc from '../../../../loc';
 
 /**
  * ArkHistory — transaction history list for the Ark wallet menu's History tab.
@@ -118,7 +119,7 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
             // null) or an SDK crash. Don't clobber existing rows on error.
             console.warn('[Ark history] load failed:', err);
             SimpleToast.show(
-                `History unavailable: ${err?.message ?? 'unknown error'}`,
+                String(loc.formatString(loc.cypherbox.strike.ark_history.history_unavailable, { error: err?.message ?? loc.cypherbox.strike.ark_history.unknown_error })),
                 SimpleToast.SHORT,
             );
         } finally {
@@ -225,8 +226,8 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
                         >
                             <Text style={refreshToggleStyles.text}>
                                 {showRefreshes
-                                    ? `Hide ${refreshCount} capsule refresh${refreshCount === 1 ? '' : 'es'}`
-                                    : `${refreshCount} capsule refresh${refreshCount === 1 ? '' : 'es'} hidden, tap to show`}
+                                    ? loc.formatString(refreshCount === 1 ? loc.cypherbox.strike.ark_history.hide_refreshes_one : loc.cypherbox.strike.ark_history.hide_refreshes_other, { count: refreshCount })
+                                    : loc.formatString(refreshCount === 1 ? loc.cypherbox.strike.ark_history.refreshes_hidden_one : loc.cypherbox.strike.ark_history.refreshes_hidden_other, { count: refreshCount })}
                             </Text>
                         </TouchableOpacity>
                     ) : null
@@ -273,11 +274,10 @@ export default function ArkHistory({ matchedRate, currency }: ArkHistoryProps) {
                         }}
                     >
                         <Text white h3 bold>
-                            No Ark Transactions
+                            {loc.cypherbox.strike.ark_history.no_ark_transactions}
                         </Text>
                         <Text style={{ color: colors.gray.light, marginTop: 8, paddingHorizontal: 30, textAlign: 'center' }}>
-                            Receive or send Bitcoin via your Ark vault to see
-                            it here.
+                            {loc.cypherbox.strike.ark_history.empty_hint}
                         </Text>
                     </View>
                 )}
@@ -335,12 +335,12 @@ function rowPalette(kind: ArkMovementKind, status: ArkMovementStatus, amountSats
 
 function kindLabel(kind: ArkMovementKind): string {
     switch (kind) {
-        case 'lightning': return 'Lightning';
+        case 'lightning': return loc.cypherbox.strike.ark_history.kind_lightning;
         case 'ark':       return 'Ark';
-        case 'onchain':   return 'On-chain';
-        case 'board':     return 'Board';
-        case 'exit':      return 'Exit';
-        case 'refresh':   return 'Refresh';
+        case 'onchain':   return loc.cypherbox.strike.ark_history.kind_onchain;
+        case 'board':     return loc.cypherbox.strike.ark_history.kind_board;
+        case 'exit':      return loc.cypherbox.strike.ark_history.kind_exit;
+        case 'refresh':   return loc.cypherbox.strike.ark_history.kind_refresh;
         // Was "Movement" — Bam: drop it. Empty string + the pill is
         // hidden below when the label is empty so unknown-kind rows
         // don't render an empty pill outline.
@@ -401,7 +401,7 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
                                     so the row doesn't read as "Received via
                                     Lightning" (i.e. done) when the VTXO is
                                     still being condensed at the ASP. */}
-                                {isClaimingLn ? 'Claiming via round…' : description}
+                                {isClaimingLn ? loc.cypherbox.strike.ark_history.claiming_via_round : description}
                             </Text>
                             <View style={rowStyles.subRow}>
                                 {kindLabel(kind) !== '' && (
@@ -438,18 +438,18 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
                                                 { color: colors.ark.light },
                                             ]}
                                         >
-                                            ~1–3 min
+                                            {loc.cypherbox.strike.ark_history.eta_1_3_min}
                                         </Text>
                                     </View>
                                 )}
                                 {feeSats > 0 && status === 'successful' && !isClaimingLn && (
                                     <Text style={rowStyles.feeText}>
-                                        fee {feeSats} sats
+                                        {loc.formatString(loc.cypherbox.strike.ark_history.fee_sats, { fee: feeSats })}
                                     </Text>
                                 )}
                             </View>
                         </View>
-                        <Text h3 style={{ color: amountColor }}>
+                        <Text h3 style={[{ color: amountColor }, rtl.ltrText]}>
                             {sign}
                             {absSats} sats
                         </Text>
@@ -458,11 +458,10 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
                         style={StyleSheet.flatten([
                             itemStyles.text,
                             { color: amountColor },
+                            rtl.ltrText,
                         ])}
                     >
-                        {getStrikeCurrency(currency)}
-                        {sign}
-                        {fiatAmount.toFixed(2)}
+                        {ltr(`${getStrikeCurrency(currency)}${sign}${fiatAmount.toFixed(2)}`)}
                     </Text>
                     <Shadow inner useArt style={itemStyles.shadowBottom} />
                 </View>
@@ -481,8 +480,8 @@ function ArkHistoryRow({ movement, matchedRate, currency, isClaimingLn }: ArkHis
 function RecoverHistoryRow({ recover }: { recover: RecoverEvent }) {
     const detail =
         recover.dest === 'hot-vault'
-            ? 'Too small to onboard to Ark. Sent back to your Hot Vault.'
-            : 'Too small to onboard to Ark. Sent on-chain to the address you entered.';
+            ? loc.cypherbox.strike.ark_history.recover_detail_hot_vault
+            : loc.cypherbox.strike.ark_history.recover_detail_external;
     const openExplorer = () => {
         const url = `https://mempool.space/tx/${recover.txid}#details`;
         Linking.openURL(url).catch((err) => console.error('[Ark history] explorer open failed', err));
@@ -497,16 +496,16 @@ function RecoverHistoryRow({ recover }: { recover: RecoverEvent }) {
                         </View>
                         <View style={[itemStyles.des, rowStyles.descCol]}>
                             <Text bold h4 numberOfLines={1}>
-                                On-chain recovery
+                                {loc.cypherbox.strike.ark_history.onchain_recovery}
                             </Text>
                             <View style={rowStyles.subRow}>
                                 <View style={[rowStyles.pill, { borderColor: colors.gray.light }]}>
                                     <Text style={[rowStyles.pillText, { color: colors.gray.light }]}>
-                                        On-chain
+                                        {loc.cypherbox.strike.ark_history.kind_onchain}
                                     </Text>
                                 </View>
                                 {recover.feeSats > 0 && (
-                                    <Text style={rowStyles.feeText}>fee {recover.feeSats} sats</Text>
+                                    <Text style={rowStyles.feeText}>{loc.formatString(loc.cypherbox.strike.ark_history.fee_sats, { fee: recover.feeSats })}</Text>
                                 )}
                             </View>
                         </View>
@@ -518,7 +517,7 @@ function RecoverHistoryRow({ recover }: { recover: RecoverEvent }) {
                         {detail}
                     </Text>
                     <Text style={recoverRowStyles.explorerLink}>
-                        View in Bitcoin network explorer
+                        {loc.cypherbox.strike.ark_history.view_in_explorer}
                     </Text>
                     <Shadow inner useArt style={itemStyles.shadowBottom} />
                 </View>

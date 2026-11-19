@@ -6,10 +6,31 @@ import { recordEvent } from '@Cypher/stores/eventLogStore';
 // Connect to our relay instead of directly to CoinOS (Cloudflare blocks direct WS)
 const RELAY_WS_URL = 'wss://notifications.cypherbox.io:3003';
 const { coinosRelayUri } = require('../../blue_modules/constants');
-// RELAY_API_KEY lives in a gitignored secrets module so it never enters
-// repo history. Bootstrap with `cp blue_modules/secrets.example.ts
-// blue_modules/secrets.ts` on a fresh checkout.
-const { RELAY_API_KEY } = require('../../blue_modules/secrets');
+// RELAY_API_KEY lives in a gitignored secrets module (blue_modules/secrets.ts).
+// That file is per-machine: it does NOT travel with git clones, CI checkouts, or
+// git worktrees, so it is routinely absent in a fresh working directory. A bare
+// top-level `require` of the missing module threw at load ("Requiring unknown
+// module undefined") and left RELAY_API_KEY undefined, which then crashed the
+// relay calls below with "Cannot read property 'RELAY_API_KEY' of undefined".
+// That recurring, alarming error was never a real fault: the key only gates
+// CoinOS push registration.
+//
+// So tolerate its absence. A missing key means one thing only: this build will
+// not register for CoinOS payment push notifications. Everything else (WS,
+// sends, balance) is unaffected. To actually enable push, create the file with
+// `cp blue_modules/secrets.example.ts blue_modules/secrets.ts` and paste the
+// real key from a checkout that has it.
+let RELAY_API_KEY: string | undefined;
+try {
+    // The `?.` covers Metro resolving the require to undefined; the catch covers
+    // it throwing. Either way an absent secrets file is a no-op, not a crash.
+    RELAY_API_KEY = require('../../blue_modules/secrets')?.RELAY_API_KEY;
+} catch {
+    RELAY_API_KEY = undefined;
+}
+if (__DEV__ && !RELAY_API_KEY) {
+    console.log('[CoinOS Relay] RELAY_API_KEY absent (blue_modules/secrets.ts missing); push notifications disabled for this build');
+}
 
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -180,6 +201,10 @@ if (__DEV__) console.log('[CoinOS Relay] Missing push token for push registratio
 if (__DEV__) console.log('[CoinOS Relay] Missing relay URI for push registration');
     return;
   }
+  if (!RELAY_API_KEY) {
+if (__DEV__) console.log('[CoinOS Relay] No relay API key; skipping push registration');
+    return;
+  }
 
   try {
     const response = await fetch(`${coinosRelayUri}/register`, {
@@ -200,7 +225,7 @@ if (__DEV__) console.log('[CoinOS Relay] Push registration:', result);
 };
 
 export const unregisterPushToken = async (username: string, pushToken: string) => {
-  if (!username || !pushToken || !coinosRelayUri) return;
+  if (!username || !pushToken || !coinosRelayUri || !RELAY_API_KEY) return;
 
   try {
     await fetch(`${coinosRelayUri}/unregister`, {

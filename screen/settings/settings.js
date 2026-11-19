@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Platform, View, TouchableWithoutFeedback, Alert } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 
 import navigationStyle from '../../components/navigationStyle';
 import { BlueHeaderDefaultSub } from '../../BlueComponents';
@@ -11,11 +12,29 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import useAuthStore from '@Cypher/stores/authStore';
 import { dispatchNavigate } from '@Cypher/helpers';
 import triggerHapticFeedback from '../../blue_modules/hapticFeedback';
+import { colors } from '@Cypher/style-guide';
+import { openSeedSignerGate } from '../../src/screens/SigningHome/seedSigner';
+const BlueElectrum = require('../../blue_modules/BlueElectrum');
 const prompt = require('../../helpers/prompt');
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  networkMark: {
+    marginStart: 8,
+  },
+  ownNode: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginStart: 10,
+    backgroundColor: colors.green,
+  },
+  signerOn: {
+    color: colors.green,
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
 
@@ -27,7 +46,23 @@ const Settings = ({ navigation }) => {
   // By simply having it here, it'll re-render the UI if language is changed
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { language } = useContext(BlueStorageContext);
-  const { isAuth, isStrikeAuth, clearAuth, clearStrikeAuth } = useAuthStore();
+  const { isAuth, isStrikeAuth, clearAuth, clearStrikeAuth, signingMode } = useAuthStore();
+  // the mark next to Network, like the Electrum Server status: 'third-party' on one of the public servers, 'own' on a
+  // node the user typed in, null while not connected
+  const [server, setServer] = useState(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      const read = () =>
+        BlueElectrum.getConfig()
+          .then(config => setServer(config.connected !== 1 ? null : BlueElectrum.isPublicServer(config.host) ? 'third-party' : 'own'))
+          .catch(() => setServer(null));
+      read();
+      // only reads the app's own connection, nothing goes out; again every second as the app may still be connecting
+      const timer = setInterval(read, 1000);
+      return () => clearInterval(timer);
+    }, []),
+  );
 
   const initialState = useCallback(async () => {
     const isStorageEncryptedSwitchEnabled = await isStorageEncrypted();
@@ -127,21 +162,47 @@ const Settings = ({ navigation }) => {
         {Platform.OS === 'android' ? <BlueHeaderDefaultSub leftText={loc.settings.header} /> : <></>}
         {/* <ListItem title={loc.settings.general} onPress={() => navigate('GeneralSettings')} testID="GeneralSettings" chevron /> */}
         {/* <ListItem title={loc.settings.currency} onPress={() => navigate('Currency')} testID="Currency" chevron /> */}
-        {/* <ListItem title={loc.settings.language} onPress={() => navigate('Language')} testID="Language" chevron /> */}
+        <ListItem title={loc.settings.language} onPress={() => navigate('Language')} testID="Language" chevron />
         {/* <ListItem title={loc.settings.encrypt_title} onPress={() => navigate('EncryptStorage')} testID="SecurityButton" chevron /> */}
         <ListItem 
           chevron 
-          title={"Security"} 
+          title={loc.settings.encrypt_title} 
           onPress={() => {
             dispatchNavigate('Security');
           }} 
         />
-        <ListItem title={loc.settings.network} onPress={() => navigate('NetworkSettings')} testID="NetworkSettings" chevron />
-        <ListItem title="Push Notifications" onPress={() => navigate('NotificationSettings')} testID="NotificationSettings" chevron />
-        {isAuth && <ListItem title={"Set Recovery Email (CoinOS)"} onPress={() => navigate('ChangeUsername', { goBack: true })} testID="ChangeUsername" chevron /> }
+        {/* Offline Seed-Signer mode can't be turned off, so it isn't a switch: the row opens its one-way setup, the same
+            gate as the Offline Seed-Signer button on the Add a Lightning Wallet screen, and once the mode is on the row
+            only says so */}
+        {signingMode ? (
+          <ListItem
+            title={loc.cypherbox.seed_signer.mode}
+            rightTitle={loc.cypherbox.seed_signer.mode_on}
+            rightTitleStyle={styles.signerOn}
+            Component={TouchableWithoutFeedback}
+            testID="SeedSignerMode"
+          />
+        ) : (
+          <ListItem title={loc.cypherbox.seed_signer.mode} onPress={openSeedSignerGate} testID="SeedSignerMode" chevron />
+        )}
+        <ListItem
+          title={loc.settings.network}
+          titleIcon={
+            server === 'third-party' ? (
+              <MaterialCommunityIcons name="alert" size={20} color={colors.yellow2} style={styles.networkMark} />
+            ) : server === 'own' ? (
+              <View style={styles.ownNode} />
+            ) : null
+          }
+          onPress={() => navigate('ElectrumSettings')}
+          testID="NetworkSettings"
+          chevron
+        />
+        <ListItem title={loc.settings.push_notifications} onPress={() => navigate('NotificationSettings')} testID="NotificationSettings" chevron />
+        {isAuth && <ListItem title={loc.cypherbox.settings.set_recovery_email} onPress={() => navigate('ChangeUsername', { goBack: true })} testID="ChangeUsername" chevron /> }
         {/* <ListItem title={loc.settings.tools} onPress={() => navigate('Tools')} testID="Tools" chevron /> */}
         {/* <ListItem title={loc.settings.about} onPress={() => navigate('About')} testID="AboutButton" chevron /> */}
-        <ListItem title={"Terms of Service & Privacy Policy"} onPress={() => navigate('TermOfService')} testID="TermOfServiceButton" chevron />
+        <ListItem title={loc.cypherbox.tos.title} onPress={() => navigate('TermOfService')} testID="TermOfServiceButton" chevron />
         {/* <ListItem
           testID="EncyptedAndPasswordProtected"
           hideChevron
@@ -149,16 +210,19 @@ const Settings = ({ navigation }) => {
           Component={TouchableWithoutFeedback}
           switch={{ onValueChange: onEncryptStorageSwitch, value: storageIsEncryptedSwitchEnabled }}
         /> */}
-        {isAuth && <ListItem title={"Log Out from CoinOS"} onPress={handleLogout} testID="LogoutButton" chevron />}
-        {isStrikeAuth && <ListItem title={"Log Out from Strike"} onPress={handleStrikeLogout} testID="StrikeLogoutButton" chevron />}
+        {isAuth && <ListItem title={loc.cypherbox.settings.logout_coinos} onPress={handleLogout} testID="LogoutButton" chevron />}
+        {isStrikeAuth && <ListItem title={loc.cypherbox.settings.logout_strike} onPress={handleStrikeLogout} testID="StrikeLogoutButton" chevron />}
       </ScrollView>
     </SafeAreaView>
   );
 };
 
 export default Settings;
-Settings.navigationOptions = navigationStyle({
-  headerTransparent: true,
-  headerTitle: Platform.select({ ios: loc.settings.header, default: '' }),
-  headerLargeTitle: true,
-});
+// the title is read when the screen is drawn: this file loads before the saved language is applied
+Settings.navigationOptions = navigationStyle(
+  {
+    headerTransparent: true,
+    headerLargeTitle: true,
+  },
+  opts => ({ ...opts, headerTitle: Platform.select({ ios: loc.settings.header, default: '' }) }),
+);

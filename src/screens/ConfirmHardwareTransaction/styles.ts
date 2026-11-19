@@ -27,6 +27,13 @@ interface Style {
     fourth: ViewStyle;
     border: ViewStyle;
     swipeview: ViewStyle;
+    summaryItem: ViewStyle;
+    copyRow: ViewStyle;
+    copyBtn: ViewStyle;
+    verifyRow: ViewStyle;
+    verifyText: TextStyle;
+    helpBtn: ViewStyle;
+    helpText: TextStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -181,5 +188,45 @@ export default StyleSheet.create<Style>({
     swipeview: {
         alignSelf: 'center',
         marginTop: 10,
-    }
+    },
+    summaryItem: {
+        flex: 1,
+    },
+    copyRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 10,
+    },
+    copyBtn: {
+        flex: 1,
+        marginHorizontal: 0,
+        marginTop: 0,
+        borderWidth: 1,
+        borderColor: colors.blueText,
+    },
+    verifyRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 14,
+    },
+    verifyText: {
+        flex: 1,
+        fontSize: 13,
+        lineHeight: 18,
+    },
+    helpBtn: {
+        marginLeft: 12,
+        width: 26,
+        height: 26,
+        borderRadius: 13,
+        borderWidth: 1,
+        borderColor: colors.blueText,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    helpText: {
+        color: colors.blueText,
+        fontSize: 15,
+        lineHeight: 19,
+    },
 })

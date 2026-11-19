@@ -6,6 +6,7 @@ import { Pressable, View } from "react-native";
 
 import { Text } from "@Cypher/component-library";
 import styles from "./styles";
+import loc from "../../../loc";
 
 type Props = {
   onPress: () => void;
@@ -16,7 +17,7 @@ type Props = {
   accentColor?: string;
 };
 
-export default function CreateButton({ onPress, label = "Create", accentColor }: Props) {
+export default function CreateButton({ onPress, label = loc.cypherbox.components.checking_account.create, accentColor }: Props) {
   return (
     <Pressable
       onPress={onPress}

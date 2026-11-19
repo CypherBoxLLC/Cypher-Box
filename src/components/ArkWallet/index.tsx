@@ -2,6 +2,8 @@ import { Text } from "@Cypher/component-library";
 import { Card } from "@Cypher/components";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
+import { generateCheckedArkMnemonic } from "../../../class/seedHealth";
+import safetyErrorText from "../../helpers/safetyErrorText";
 import {
     ARK_VTXO_DUST_SATS,
     areBgNotificationsEnabled,
@@ -14,17 +16,21 @@ import {
     recoverArkOnchainBoard,
 } from "@Cypher/services/ark";
 import { deriveVaultConnectivity } from "@Cypher/services/ark/chainTipFreshness";
+import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
 import { getCapsuleColorBand } from "@Cypher/helpers/arkCapsuleColor";
 import { btc } from "@Cypher/helpers/bitcoinUnits";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors } from "@Cypher/style-guide";
+import { colors, rtl } from "@Cypher/style-guide";
 import SimpleToast from "react-native-simple-toast";
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Alert, AppState, Image, Platform, TouchableOpacity, View } from "react-native";
 
 import RefreshWaitBanner from "@Cypher/components/RefreshWaitBanner";
+import HomeNotices from "@Cypher/components/HomeNotices";
+import { stepSituation, type HomeNotice } from "@Cypher/services/homeNotices";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import styles from "./styles";
+import loc from "../../../loc";
 
 /**
  * Minimum gap between exit-cost estimates kicked off from the home screen.
@@ -43,7 +49,8 @@ interface Props {
     refRBSheet: any;
     refSendRBSheet: any;
     setReceiveType: any;
-    homeMessage?: string | null;
+    /** The CoinOS/Strike tip HomeScreen picks, drawn with the card's notice icons. */
+    homeNotice?: HomeNotice | null;
     hideActionButtons?: boolean;
 }
 
@@ -65,7 +72,7 @@ export default function ArkWallet({
     refRBSheet,
     refSendRBSheet,
     setReceiveType,
-    homeMessage,
+    homeNotice = null,
     hideActionButtons = false,
 }: Props) {
     const {
@@ -137,7 +144,7 @@ export default function ArkWallet({
         [arkChainTipHeightAt, arkLastSyncedAt, arkSyncFailStreak, connTick],
     );
 
-    // OS notification permission state for the bgRefreshStatus pill.
+    // OS notification permission state for the notifications-off notice.
     // Drives the "Notifications off" branch that replaced the v0.1.1-dropped
     // "Auto-refresh off" branch — the 5 capsule-expiry warning notifications
     // are now the only sync-cadence safety net, so an OS-blocked permission
@@ -230,18 +237,18 @@ export default function ArkWallet({
         if (confirmed > 0 && confirmed < minBoardSats) {
             return {
                 sats: confirmed, color: '#FFD54F', stuck: true,
-                label: `Boarding (on-chain): ${confirmed} sats. Too small to board (min ${minBoardSats} sats).`,
+                label: String(loc.formatString(loc.cypherbox.ark.wallet.boarding_too_small, { amount: confirmed, min: minBoardSats })),
             };
         }
         if (confirmed >= minBoardSats) {
             return {
                 sats: confirmed, color: colors.green, stuck: false,
-                label: `Boarding (on-chain): ${confirmed} sats. Joining the next round.`,
+                label: String(loc.formatString(loc.cypherbox.ark.wallet.boarding_joining, { amount: confirmed })),
             };
         }
         return {
             sats: confirming, color: colors.green, stuck: false,
-            label: `Boarding (on-chain): ${confirming} sats. Confirming.`,
+            label: String(loc.formatString(loc.cypherbox.ark.wallet.boarding_confirming, { amount: confirming })),
         };
     }, [arkBalanceDetail, minBoardSats, boardingHiddenAfterRecover, arkExitFeeReserveSats]);
 
@@ -263,7 +270,7 @@ export default function ArkWallet({
             (w: any) => typeof w?.getID === 'function' && w.getID() === walletID,
         );
         if (!hotVault || typeof hotVault._getInternalAddressByIndex !== 'function') {
-            Alert.alert('No Hot Vault found', 'Open or create your Hot Vault first, then try again.');
+            Alert.alert(loc.cypherbox.ark.wallet.no_hot_vault_title, loc.cypherbox.ark.wallet.no_hot_vault_body);
             return;
         }
 
@@ -272,8 +279,8 @@ export default function ArkWallet({
             est = await estimateArkOnchainRecover(arkBalanceDetail?.onchainBoardingSats ?? 0);
         } catch {
             Alert.alert(
-                'Recovery unavailable',
-                'Could not read the on-chain balance right now. Check your connection and try again.',
+                loc.cypherbox.ark.wallet.recovery_unavailable_title,
+                loc.cypherbox.ark.wallet.recovery_unavailable_body,
             );
             return;
         }
@@ -285,8 +292,8 @@ export default function ArkWallet({
         }
         if (!est.economical) {
             Alert.alert(
-                'Too small to recover',
-                'The network fee would be larger than the stuck amount, so recovering it on-chain would cost more than it returns.',
+                loc.cypherbox.ark.wallet.too_small_title,
+                loc.cypherbox.ark.wallet.too_small_body,
             );
             return;
         }
@@ -296,38 +303,38 @@ export default function ArkWallet({
         try {
             destAddress = hotVault._getInternalAddressByIndex(hotVault.getNextFreeChangeAddressIndex());
         } catch {
-            Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to recover to.');
+            Alert.alert(loc.cypherbox.ark.wallet.no_hot_vault_address_title, loc.cypherbox.ark.wallet.no_hot_vault_address_body);
             return;
         }
         if (!destAddress) {
-            Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to recover to.');
+            Alert.alert(loc.cypherbox.ark.wallet.no_hot_vault_address_title, loc.cypherbox.ark.wallet.no_hot_vault_address_body);
             return;
         }
 
         Alert.alert(
-            'Recover stuck funds',
-            `Send ${est.recoverableSats} sats back to your Hot Vault? This is an on-chain transaction. The network fee is about ${est.feeSats} sats.`,
+            loc.cypherbox.ark.wallet.recover_confirm_title,
+            String(loc.formatString(loc.cypherbox.ark.wallet.recover_confirm_body, { amount: est.recoverableSats, fee: est.feeSats })),
             [
-                { text: 'Cancel', style: 'cancel' },
+                { text: loc._.cancel, style: 'cancel' },
                 {
-                    text: 'Recover',
+                    text: loc.cypherbox.ark.wallet.recover,
                     onPress: async () => {
                         setRecovering(true);
                         try {
                             const res = await recoverArkOnchainBoard(destAddress, est.confirmedSats, est.feeRateSatPerVb);
                             setBoardingHiddenAfterRecover(true);
                             if (res.status === 'already-cleared') {
-                                Alert.alert('Nothing to recover', 'These funds already cleared.');
+                                Alert.alert(loc.cypherbox.ark.wallet.nothing_to_recover_title, loc.cypherbox.ark.wallet.nothing_to_recover_body);
                             } else {
                                 Alert.alert(
-                                    'Recovery sent',
-                                    `${res.sentSats} sats are on the way to your Hot Vault. They will appear there as a pending transaction.`,
+                                    loc.cypherbox.ark.wallet.recovery_sent_title,
+                                    String(loc.formatString(loc.cypherbox.ark.wallet.recovery_sent_body, { amount: res.sentSats })),
                                 );
                             }
                         } catch (e: any) {
                             Alert.alert(
-                                'Recovery failed',
-                                String(e?.message || '') || 'The recovery transaction could not be sent. Your funds are unchanged.',
+                                loc.cypherbox.ark.wallet.recovery_failed_title,
+                                String(e?.message || '') || loc.cypherbox.ark.wallet.recovery_failed_body,
                             );
                         } finally {
                             setRecovering(false);
@@ -404,7 +411,7 @@ export default function ArkWallet({
     }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
     const expiryWarning = soonestDaysLeft !== null && soonestDaysLeft < 7
-        ? `Oldest capsule expires in ${Math.round(soonestDaysLeft)}d, refresh soon`
+        ? String(loc.formatString(loc.cypherbox.ark.wallet.expiry_warning, { days: Math.round(soonestDaysLeft) }))
         : null;
 
     /**
@@ -433,6 +440,10 @@ export default function ArkWallet({
                 };
             })
             .sort((a, b) => a.daysLeft - b.daysLeft)
+            // The Home card shows the 7 most urgent. The Card's row still has
+            // room for 10, so the slots keep their size and the last three stay
+            // empty, which leaves the connection line its spot at the row's end.
+            .slice(0, 7)
             .map(({ color, refreshing }) => ({ color, refreshing }));
     }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
@@ -448,9 +459,10 @@ export default function ArkWallet({
      * them. Independent from `expiryWarning` because dust capsules need
      * the batch action regardless of how soon they expire.
      */
-    const dustCapsuleCount = useMemo(() => {
-        if (!arkVtxos || arkChainTipHeight == null) return 0;
+    const dustCapsules = useMemo(() => {
+        if (!arkVtxos || arkChainTipHeight == null) return { count: 0, ids: '' };
         let count = 0;
+        const ids: string[] = [];
         for (const v of arkVtxos) {
             if (v.sats > ARK_VTXO_DUST_SATS) continue;
             if (v.state.toLowerCase() !== 'spendable') continue;
@@ -461,8 +473,10 @@ export default function ArkWallet({
             const blocks = v.expiryHeight - arkChainTipHeight;
             if (blocks <= 0) continue; // already expired — different kind of problem
             count++;
+            ids.push(v.id);
         }
-        return count;
+        // Which capsules, so an ignored dust notice comes back for new dust.
+        return { count, ids: ids.sort().join(',') };
     }, [arkVtxos, arkChainTipHeight, refreshingIds]);
 
     /**
@@ -536,133 +550,154 @@ export default function ArkWallet({
         return () => { cancelled = true; sub.remove(); };
     }, [isArkAuth, setArkExitRecommendedReserveSats]);
 
-    const bgRefreshStatus = useMemo(() => {
-        // 0. OFFLINE, ahead of everything below.
+    // Where the Bark backup lives, for branch 7 of the chain below.
+    const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
+    const arkLastOffDeviceBackupAt = useAuthStore((s) => s.arkLastOffDeviceBackupAt);
+    const arkBackupThisPhoneOnly = arkBackupCoverage(arkLastBackupAt, arkLastOffDeviceBackupAt) === 'this-phone';
+
+    /**
+     * The Bark status notices under the card, drawn as coloured icons
+     * (components/HomeNotices). Same branches and copy as WalletsView's list
+     * for the shared-button layouts, in the order the single status line used
+     * to rank them. That line showed only the first that applied; each now
+     * gets its own icon. Red ones cannot be ignored; the others come back
+     * when their `situation` changes (services/homeNotices.ts). Built on each
+     * render: the taps call arkMenuClickHandler, declared further down.
+     */
+    const arkStatusNotices: HomeNotice[] = (() => {
+        const notices: HomeNotice[] = [];
+
+        // OFFLINE, ahead of everything below.
         //
         // Same branch and same copy as the shared-row version in WalletsView.
         // It is here as well as there because the two layouts show different
         // status rows, and a warning that exists in only one of them is
-        // invisible to whichever users are in the other. That is not
-        // hypothetical: the exit-fee reserve nudge lived in this file alone and
-        // no one in the default layout ever saw it.
+        // invisible to whichever users are in the other.
         //
         // Everything below this point is derived from the cached chain tip, so
         // when the vault is unreachable those numbers are projections rather
         // than reads, and they keep counting down as if nothing were wrong.
+        // Back after Ignore when the vault goes offline again after a sync.
         if (vaultConnectivity.level === 'red') {
-            // COPY: Bam finalizes. Kept identical to WalletsView on purpose.
-            return {
-                text: 'Bark vault is offline. Capsule times shown are estimates until it reconnects.',
-                error: true,
-                tapTab: 0,
-            };
+            notices.push({
+                id: 'ark-offline',
+                severity: 'yellow',
+                icon: 'cloud-offline-outline',
+                situation: String(arkLastSyncedAt ?? 0),
+                // COPY: Bam finalizes. Kept identical to WalletsView on purpose.
+                text: loc.cypherbox.ark.wallet.offline,
+                onPress: () => arkMenuClickHandler(0),
+            });
         }
 
-        // 1. Refresh / send / board in flight. Short-circuits the rest of
-        //    the chain because the Card itself now renders a prominent
-        //    pulsing "Refreshing N capsules · X sats" line inside the
-        //    balance area (see Card's `refreshingInfo` prop), so duplicating
-        //    it in the pill below would be redundant. We ALSO want to
-        //    suppress the failure-record branch in this state: `finalize`
-        //    only writes `outcome: 'success'` after the round commits
-        //    server-side (up to 1h on mainnet), so a stale "failed at
-        //    HH:MM" from a prior attempt would otherwise linger underneath
-        //    the in-card live status for an hour. Returning all-clear here
-        //    means the pill confirms the system is healthy while the card
-        //    shows the active operation.
+        // Refresh / send / board in flight: nothing more. The Card itself
+        // renders a pulsing "Refreshing N capsules · X sats" line inside the
+        // balance area (see Card's `refreshingInfo` prop), and the capsule
+        // numbers the notices below read are in motion until the round lands.
         if (pendingRoundCount > 0) {
-            return null;
+            return notices;
         }
 
-        // (Removed v0.1.1) Auto-refresh failure branch. The FGS_DATA_SYNC
-        // worker was dropped in favour of 5 local-notification reminders
-        // (4d / 2d / 24h / 12h / 6h before expiry). There's no longer an
-        // "auto-refresh" subsystem that can fail asynchronously, so this
-        // pill could only fire from stale `arkBgRefreshLastAttempt` state
-        // and would tell the user about a system that no longer exists.
-
-        // 2. Dust capsules present — can't be refreshed individually
-        //    (refresh fee > value). Needs batch refresh on the Capsules
-        //    tab. Render "here" as an underlined link to invite the tap.
-        if (dustCapsuleCount > 0) {
-            return {
-                text: 'Attention: you have dust ark capsules that might expire. Batch refresh or spend them here.',
-                linkText: 'here',
-                tapTab: 0, // Capsules tab (Ark's first tab, post-reorder)
-                error: true,
-            };
+        // Dust capsules present: can't be refreshed individually (refresh
+        // fee > value). Needs batch refresh on the Capsules tab. Back after
+        // Ignore when the set of dust capsules changes.
+        if (dustCapsules.count > 0) {
+            notices.push({
+                id: 'ark-dust',
+                severity: 'yellow',
+                icon: 'sparkles-outline',
+                situation: dustCapsules.ids,
+                text: String(loc.formatString(loc.cypherbox.ark.wallet.dust_warning, { link: loc.cypherbox.ark.wallet.dust_warning_link })),
+                linkText: loc.cypherbox.ark.wallet.dust_warning_link,
+                onPress: () => arkMenuClickHandler(0), // Capsules tab
+            });
         }
 
-        // 3. Non-dust capsule near expiry (oldest spendable VTXO < 7d)
+        // Red: a non-dust capsule expires within the week. Never ignorable.
         if (expiryWarning) {
-            return { text: expiryWarning, error: true };
+            notices.push({
+                id: 'ark-expiry',
+                severity: 'red',
+                icon: 'time',
+                situation: '',
+                text: expiryWarning,
+                onPress: () => arkMenuClickHandler(),
+            });
         }
 
-        // 4. OS notifications blocked. The 5 expiry-warning notifications
-        //    are the only sync-cadence safety net post-FGS removal, so a
-        //    revoked OS permission means the user could miss the expiry
-        //    window entirely. Replaces the v0.1.1-dropped "Auto-refresh:
-        //    off" branch. Probe is initialised to null and only flips to
-        //    false after a real `checkPermissions` callback, so this never
-        //    fires until we actually know the answer.
+        // OS notifications blocked. The expiry-warning notifications are the
+        // only sync-cadence safety net post-FGS removal, so a revoked OS
+        // permission means the user could miss the expiry window entirely.
+        // The probe starts as null and only turns false after a real
+        // `checkPermissions` answer, so this never fires on a guess.
         if (notificationsEnabled === false) {
-            return {
-                text: 'Notifications off. Capsules can expire without warning. Enable in Settings.',
-                error: true,
-            };
+            notices.push({
+                id: 'ark-notifications-off',
+                severity: 'yellow',
+                icon: 'notifications-off-outline',
+                situation: 'off',
+                text: loc.cypherbox.ark.wallet.notifications_off,
+                onPress: () => arkMenuClickHandler(),
+            });
         }
 
-        // 5. Capsules are worth exiting but the exit fee wallet is empty.
-        //    Emergency Exit pays miner fees from a SEPARATE on-chain wallet,
-        //    not from the Ark balance, so at zero it cannot broadcast at all.
-        //    That makes the trustless escape hatch unavailable at exactly the
-        //    moment it is needed, which is when the server is the thing that
-        //    failed, and nothing else on the home screen says so.
-        //
-        //    `arkExitRecommendedReserveSats > 0` is triage's own answer to
-        //    "is anything worth exiting": computeExitFeeReserveSats returns 0
-        //    when every capsule is priced out of an exit, so this never nags a
-        //    wallet that could not usefully exit anyway. Null means the
-        //    estimate has not run yet, which reads as 0 and stays quiet.
+        // Capsules are worth exiting but the exit fee wallet is empty.
+        // Emergency Exit pays miner fees from a SEPARATE on-chain wallet, not
+        // from the Ark balance, so at zero it cannot broadcast at all, at
+        // exactly the moment it is needed. `arkExitRecommendedReserveSats > 0`
+        // is triage's own answer to "is anything worth exiting"; null means
+        // the estimate has not run yet and stays quiet. Back after Ignore when
+        // the reserve it asks for grows by another 10k sats.
         if ((arkExitRecommendedReserveSats ?? 0) > 0
             && (arkBalanceDetail?.onchainBoardingSats ?? 0) <= 0) {
-            return {
+            notices.push({
+                id: 'ark-exit-fees',
+                severity: 'yellow',
+                icon: 'exit-outline',
+                situation: stepSituation(arkExitRecommendedReserveSats ?? 0, 10_000),
                 // COPY: Bam finalizes.
-                text: 'Emergency Exit has no fees reserved. Fund it in the Vault tab so you can exit without the server.',
-                linkText: 'Vault tab',
-                tapTab: 1, // Vault tab: where the exit fee reserve card lives
-                error: true,
-            };
+                text: String(loc.formatString(loc.cypherbox.ark.wallet.exit_fees_missing, { link: loc.cypherbox.ark.wallet.exit_fees_missing_link })),
+                linkText: loc.cypherbox.ark.wallet.exit_fees_missing_link,
+                onPress: () => arkMenuClickHandler(1), // Vault tab: the exit fee reserve card
+            });
         }
 
-        // 6. iOS backup not synced (iCloud Drive off for Cypher Box, or
-        //    user created via the manual share+confirm path without yet
-        //    enabling iCloud Drive). Android never sets this flag.
+        // iOS backup not synced (iCloud Drive off for Cypher Box, or created
+        // via the manual share+confirm path without enabling iCloud Drive).
+        // Android never sets this flag. Back after Ignore with the next
+        // backup, which follows a receive.
         if (Platform.OS === 'ios' && arkIosBackupReminderActive) {
-            return {
-                text: 'Backup not synced. Enable iCloud Drive in iOS Settings',
-                error: true,
-            };
+            notices.push({
+                id: 'ark-backup-sync',
+                severity: 'yellow',
+                icon: 'cloud-upload-outline',
+                situation: String(arkLastBackupAt ?? 0),
+                text: loc.cypherbox.ark.wallet.backup_not_synced,
+                onPress: () => arkMenuClickHandler(),
+            });
         }
 
-        // 7. All clear — no pill. Bam's call: the homescreen stays quiet
-        //    when there's nothing the user needs to act on. The Card's
-        //    own balance line + the in-card refreshing animation (when
-        //    a round is in flight) are signal enough.
-        return null;
-    }, [
-        expiryWarning,
-        dustCapsuleCount,
-        notificationsEnabled,
-        arkIosBackupReminderActive,
-        arkExitRecommendedReserveSats,
-        arkBalanceDetail,
-        pendingRoundCount,
-        pendingRoundSats,
-        // Or the offline branch never re-evaluates and the pill keeps showing
-        // whatever it said while the vault was last reachable.
-        vaultConnectivity,
-    ]);
+        // Backups are written, but only inside the app, which a lost phone or
+        // a deleted app takes with it. Stays until a copy reaches iCloud
+        // Drive, Google Drive or the chosen folder (see backupCoverage.ts).
+        // Back after Ignore with the next backup.
+        if (arkBackupThisPhoneOnly) {
+            notices.push({
+                id: 'ark-backup-phone-only',
+                severity: 'yellow',
+                icon: 'save-outline',
+                situation: String(arkLastBackupAt ?? 0),
+                text: Platform.OS === 'ios'
+                    ? loc.cypherbox.ark.wallet.backup_this_phone_ios
+                    : loc.cypherbox.ark.wallet.backup_this_phone_android,
+                onPress: () => arkMenuClickHandler(3), // Settings tab: the Bark backup file rows
+            });
+        }
+
+        // Nothing else: the homescreen stays quiet when there's nothing the
+        // user needs to act on (Bam's call).
+        return notices;
+    })();
 
     // IMPORTANT: the parent's `convertedRate` prop is globally computed from
     // the CoinOS balance (HomeScreen/index.tsx:683 — `setConvertedRate(
@@ -728,17 +763,104 @@ export default function ArkWallet({
 
     const createArkWalletClickHandler = () => {
         // Skip the CreateArkScreen intro and go straight to the seed reveal.
-        const mnemonic = barkGenerateMnemonic();
+        let mnemonic: string;
+        try {
+            mnemonic = generateCheckedArkMnemonic(barkGenerateMnemonic);
+        } catch (e: any) {
+            Alert.alert(loc.cypherbox.safety_checks.create_failed_title, safetyErrorText(e, loc.cypherbox.safety_checks.seed_unsafe));
+            return;
+        }
         dispatchNavigate("ArkSeedPhraseScreen", { mnemonic });
     };
+
+    // On-chain funds boarding into the vault. Too small to board: yellow, with
+    // Recover (sweeps them to a Hot Vault address) and the opt-in alternative
+    // of keeping them as the exit-fee reserve, which arms arkExitFeeReserveSats
+    // and tells sync.ts to hold them on-chain for a future unilateral exit
+    // (that also hides this notice, here and on the Capsules card). Joining or
+    // confirming: a green progress note. Back after Ignore when the amount
+    // changes.
+    const recoverLabel = recovering ? loc.cypherbox.ark.wallet.recovering : loc.cypherbox.ark.wallet.recover;
+    const boardingNotice: HomeNotice | null = !boardingView
+        ? null
+        : boardingView.stuck
+            ? {
+                id: 'ark-boarding',
+                severity: 'yellow',
+                icon: 'boat-outline',
+                situation: String(boardingView.sats),
+                text: `${boardingView.label} ${recoverLabel}`,
+                linkText: recoverLabel,
+                onPress: recovering ? undefined : handleRecoverBoard,
+                actions: [{
+                    label: loc.cypherbox.ark.wallet.leave_as_exit_fees,
+                    onPress: () => {
+                        setArkExitFeeReserveSats(boardingView.sats);
+                        SimpleToast.show(loc.cypherbox.ark.wallet.kept_for_exit_fees, SimpleToast.SHORT);
+                    },
+                }],
+            }
+            : {
+                id: 'ark-boarding',
+                severity: 'green',
+                icon: 'boat-outline',
+                situation: String(boardingView.sats),
+                text: boardingView.label,
+            };
+
+    // Everything under the card in the Bark-alone layout, drawn as notice
+    // icons (components/HomeNotices). Nothing while the wallets load, as
+    // before. The stuck round outranks the wait banner (stuck is its
+    // escalation, never a peer) and, as before, hides the status notices.
+    const cardNotices: HomeNotice[] = isLoading ? [] : [
+        // The same banner WalletsView shows for the shared-button layouts;
+        // here its Cancel cancels the rounds in place. Back after Ignore with
+        // the next round.
+        !arkRefreshStuck && pendingRoundCount > 0 ? {
+            id: 'ark-refresh-wait',
+            severity: 'yellow' as const,
+            icon: 'hourglass-outline',
+            situation: String(arkRoundStarts.length > 0 ? Math.min(...arkRoundStarts) : 0),
+            accessibilityLabel: loc.cypherbox.ark?.refresh_banner?.come_back,
+            content: (
+                <RefreshWaitBanner
+                    roundStarts={arkRoundStarts}
+                    cancelling={false}
+                    onCancel={handleStuckRecovery}
+                />
+            ),
+        } : null,
+        // The CoinOS/Strike tip HomeScreen picks (getHomeNotice).
+        homeNotice,
+        // Red, never ignorable: "your funds are at risk of a stuck round".
+        // Detection happens in useArkSync: any Locked VTXO with expiryHeight
+        // <= tip + at least one round still ongoing. Near expiry, refreshing
+        // is stuck AND the funds are running out, so it routes to the "move
+        // your funds out" screen instead of the in-place cancel-and-retry.
+        arkRefreshStuck ? {
+            id: 'ark-refresh-stuck',
+            severity: 'red' as const,
+            icon: 'alert-circle',
+            situation: '',
+            text: String(arkRefreshStuck.nearExpiry
+                ? loc.formatString(loc.cypherbox.ark.wallet.stuck_near_expiry, { amount: arkRefreshStuck.stuckSats.toLocaleString() })
+                : loc.formatString(loc.cypherbox.ark.wallet.stuck_refresh, { amount: arkRefreshStuck.stuckSats.toLocaleString() })),
+            onPress: arkRefreshStuck.nearExpiry
+                ? () => dispatchNavigate('ArkStuckCapsuleScreen', {})
+                : handleStuckRecovery,
+        } : null,
+        boardingNotice,
+        ...(arkRefreshStuck ? [] : arkStatusNotices),
+    ].filter((n): n is HomeNotice => !!n);
 
     return (
         <>
             {isArkAuth && (
                 <View style={allThreeLightning ? { transform: [{ translateY: 10 }] } : undefined}>
                     <Card
+                        hideWithBalances
                         wallet="ARK"
-                        title="Bark Vault"
+                        title={loc.cypherbox.ark.common.bark_vault}
                         balance={arkBalance}
                         // See `arkConvertedRate` above — the parent's
                         // `convertedRate` prop is the CoinOS figure, not ours.
@@ -773,182 +895,17 @@ export default function ArkWallet({
                         shared-mode — Bam can surface them elsewhere later. */}
                     {!hideActionButtons && (
                         <View style={{ minHeight: 40, justifyContent: "center" }}>
-                            {/* Refresh-in-flight wait banner, for the Bark
-                                Vault ALONE layout.
-                                WalletsView renders the same component for the
-                                shared-button layouts (Ark with Strike, Ark with
-                                CoinOS), where the row is absolutely positioned
-                                and the banner has to be placed against that
-                                geometry. Here the card owns its own buttons, so
-                                the banner sits in the normal flow beneath them.
-                                Two call sites, one component; the alternative
-                                was one call site that is correctly positioned in
-                                only one of the three combinations.
-                                Below the stuck banner in priority for the same
-                                reason as on WalletsView: stuck is the
-                                escalation of this condition, never a peer. */}
-                            {!isLoading && !arkRefreshStuck && pendingRoundCount > 0 && (
-                                <RefreshWaitBanner
-                                    roundStarts={arkRoundStarts}
-                                    cancelling={false}
-                                    onCancel={handleStuckRecovery}
-                                />
-                            )}
-                            {!isLoading && homeMessage && (
-                                <Text h4 style={styles.alert}>
-                                    {homeMessage}
-                                </Text>
-                            )}
-                            {/* Stuck-refresh banner — renders ABOVE the
-                                bgRefreshStatus pill and takes visual
-                                priority because "your funds are at risk
-                                of a stuck round" outweighs the auto-
-                                refresh / backup nudges that pill carries.
-                                Detection happens in useArkSync: any Locked
-                                VTXO with expiryHeight <= tip + at least
-                                one round still ongoing=true. Tap fires
-                                cancelPendingRound per round; the next
-                                sync re-detects from on-chain truth, so a
-                                still-stuck condition pops the banner back. */}
-                            {!isLoading && arkRefreshStuck && (
-                                <TouchableOpacity
-                                    // Near expiry: refreshing is stuck AND the
-                                    // funds are running out, so route to the
-                                    // "move your funds out" screen instead of
-                                    // the in-place cancel-and-retry (which only
-                                    // helps when there's still time to retry).
-                                    onPress={arkRefreshStuck.nearExpiry
-                                        ? () => dispatchNavigate('ArkStuckCapsuleScreen', {})
-                                        : handleStuckRecovery}
-                                    activeOpacity={0.7}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={arkRefreshStuck.nearExpiry
-                                        ? 'Move your stuck funds out'
-                                        : 'Recover stuck refresh'}
-                                >
-                                    <Text
-                                        h4
-                                        style={[
-                                            styles.alert,
-                                            { color: colors.redLight, textDecorationLine: 'underline' },
-                                        ]}
-                                    >
-                                        {arkRefreshStuck.nearExpiry
-                                            ? `Warning: Refresh stuck near expiry · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to move funds out`
-                                            : `Refresh stuck · ${arkRefreshStuck.stuckSats.toLocaleString()} sats. Tap to recover`}
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-                            {!isLoading && boardingView && (
-                                boardingView.stuck ? (
-                                    <>
-                                    <TouchableOpacity
-                                        onPress={handleRecoverBoard}
-                                        disabled={recovering}
-                                        activeOpacity={0.7}
-                                        accessibilityRole="button"
-                                        accessibilityLabel="Recover stuck on-chain funds to your Hot Vault"
-                                    >
-                                        <Text h4 style={[styles.alert, { color: boardingView.color }]}>
-                                            {boardingView.label}{' '}
-                                            <Text
-                                                bold
-                                                style={{ color: boardingView.color, textDecorationLine: 'underline' }}
-                                            >
-                                                {recovering ? 'Recovering…' : 'Recover'}
-                                            </Text>
-                                        </Text>
-                                    </TouchableOpacity>
-                                    {/* Opt-in alternative to recovering: mark these
-                                        funds as the exit-fee reserve. Arms
-                                        arkExitFeeReserveSats, which suppresses this
-                                        banner (here + the capsules card) and tells
-                                        sync.ts to hold them on-chain for a future
-                                        unilateral exit. */}
-                                    <TouchableOpacity
-                                        onPress={() => {
-                                            setArkExitFeeReserveSats(boardingView.sats);
-                                            SimpleToast.show('Kept on-chain for exit fees.', SimpleToast.SHORT);
-                                        }}
-                                        activeOpacity={0.7}
-                                        accessibilityRole="button"
-                                        accessibilityLabel="Leave on-chain funds as exit fees"
-                                    >
-                                        <Text h4 style={[styles.alert, { color: colors.gray.light, textDecorationLine: 'underline' }]}>
-                                            Leave on-chain funds as exit fees
-                                        </Text>
-                                    </TouchableOpacity>
-                                    </>
-                                ) : (
-                                    <Text h4 style={[styles.alert, { color: boardingView.color }]}>
-                                        {boardingView.label}
-                                    </Text>
-                                )
-                            )}
-                            {!isLoading && !arkRefreshStuck && bgRefreshStatus && (() => {
-                                const statusColor = bgRefreshStatus.error ? colors.redLight : colors.green;
-                                // Build the rendered text. When the status
-                                // declares a `linkText` substring (e.g. "here"
-                                // for the dust-batch nudge), split the message
-                                // and render that substring with underline so
-                                // the user reads it as a tap target. The whole
-                                // pill is tappable either way.
-                                const linkText = (bgRefreshStatus as any).linkText as string | undefined;
-                                const tapTab = (bgRefreshStatus as any).tapTab as number | undefined;
-                                let body: React.ReactNode = bgRefreshStatus.text;
-                                if (linkText) {
-                                    const idx = bgRefreshStatus.text.indexOf(linkText);
-                                    if (idx >= 0) {
-                                        const before = bgRefreshStatus.text.slice(0, idx);
-                                        const after = bgRefreshStatus.text.slice(idx + linkText.length);
-                                        body = (
-                                            <>
-                                                {before}
-                                                <Text
-                                                    bold
-                                                    style={{ color: statusColor, textDecorationLine: 'underline' }}
-                                                >
-                                                    {linkText}
-                                                </Text>
-                                                {after}
-                                            </>
-                                        );
-                                    }
-                                }
-                                return (
-                                    <TouchableOpacity onPress={() => arkMenuClickHandler(tapTab)} activeOpacity={0.7}>
-                                        <Text
-                                            h4
-                                            style={[
-                                                styles.alert,
-                                                { color: statusColor },
-                                            ]}
-                                        >
-                                            {body}
-                                        </Text>
-                                    </TouchableOpacity>
-                                );
-                            })()}
-                            {/* Standalone expiryWarning render removed —
-                                bgRefreshStatus above now folds capsule-
-                                expiry into the same priority chain that
-                                handles auto-refresh / backup status, so
-                                only one status line ever renders here. */}
-                            {/* Standalone "refreshing - in flight" line
-                                removed — bgRefreshStatus above now folds
-                                pending-round count + sats into the same
-                                priority chain so the user sees a single
-                                clear status. The headline balance still
-                                excludes locked VTXOs; the status line now
-                                explains why ("Refreshing N capsules · X
-                                sats" in green). */}
+                            {/* Every notice under the card as a coloured icon
+                                (cardNotices above); tapping one shows its
+                                message here. */}
+                            <HomeNotices notices={cardNotices} />
                         </View>
                     )}
                     {/*
                       When `hideActionButtons` is true (HomeScreen with shared
-                      Receive/Send row), the bg-refresh banner is rendered by
-                      WalletsView instead — positioned BELOW the absolutely-
-                      anchored shared row instead of behind it.
+                      Receive/Send row), the Bark notices are drawn by
+                      WalletsView instead, below the absolutely-anchored shared
+                      row rather than behind it.
                     */}
                 </View>
             )}
@@ -968,22 +925,22 @@ export default function ArkWallet({
                     >
                         <View style={styles.middle}>
                             <Image
-                                style={styles.arrow}
+                                style={[styles.arrow, rtl.mirror]}
                                 resizeMode="contain"
                                 source={require("../../../img/arrow-right.png")}
                             />
                             <Text h2 style={styles.shadow} center>
-                                Create an Ark Wallet
+                                {loc.cypherbox.ark.wallet.create_wallet}
                             </Text>
                         </View>
                     </TouchableOpacity>
                     <View style={styles.createAccount}>
                         <Text bold style={styles.text}>
-                            Non-custodial Lightning via Ark
+                            {loc.cypherbox.ark.wallet.non_custodial}
                         </Text>
                         <TouchableOpacity onPress={createArkWalletClickHandler}>
                             <Text bold style={styles.login}>
-                                ⚠ Experimental · tap to learn more
+                                {loc.cypherbox.ark.wallet.experimental}
                             </Text>
                         </TouchableOpacity>
                     </View>

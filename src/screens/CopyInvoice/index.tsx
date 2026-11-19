@@ -7,15 +7,20 @@ import QRCode from 'react-native-qrcode-svg';
 import Share from 'react-native-share';
 
 import styles from "./styles";
+import loc from "../../../loc";
 import { Copy, QrCode, Second, Share2 } from "@Cypher/assets/images";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { GradientButton, ImageTextVertical } from "@Cypher/components";
 import { dispatchReset } from "@Cypher/helpers/navigation";
-import { colors } from "@Cypher/style-guide";
+import { colors, ltr, rtl } from "@Cypher/style-guide";
+import { displayDestination } from "@Cypher/helpers/addressDisplay";
 
 interface Props {
     route: any;
 }
+
+// Arabic or Hebrew letters: text in a right-to-left language, which has to keep its own direction
+const RTL_LETTERS = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
 
 export default function CopyInvoice({ route }: Props) {
     const { value, converted, hash } = route?.params
@@ -42,18 +47,9 @@ export default function CopyInvoice({ route }: Props) {
 
     const copyToClipboard = (text: string) => {
         Clipboard.setString(text);
-        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.payments.common.copied_to_clipboard, SimpleToast.SHORT);
     };
     
-    const shortenAddress = (address: string) => {
-        // Take the first 6 characters
-        const start = address.substring(0, 6);
-        // Take the last 6 characters
-        const end = address.substring(address.length - 6);
-        // Combine with three dots in the middle
-        return `${start}...${end}`;
-    };
-
     const shareQRCode = async () => {
         try {
             // const qrData = 'Bitcoin-lightning invoice QR code data'; // Replace this with your QR code data
@@ -63,7 +59,7 @@ export default function CopyInvoice({ route }: Props) {
             // console.log('qrCodeImage: ', qrCodeImage)
         
             const shareOptions = {
-                message: `QR image: ${hash}`,
+                message: String(loc.formatString(loc.cypherbox.payments.common.qr_image_share, { value: hash })),
                 url: `data:image/jpeg;base64,${base64QrCodeRef?.current}`,
             };
         
@@ -75,7 +71,7 @@ export default function CopyInvoice({ route }: Props) {
     };
 
     return (
-        <ScreenLayout showToolbar title='Copy Invoice'>
+        <ScreenLayout showToolbar title={loc.cypherbox.payments.copy_invoice.title}>
             <View style={styles.container}>
                 <View style={styles.innerView}>
                     {showArkoorNotice && (
@@ -86,19 +82,19 @@ export default function CopyInvoice({ route }: Props) {
                            COPY: Bam finalizes. */
                         <View style={styles.arkoorBanner}>
                             <Text bold style={styles.arkoorBannerTitle}>
-                                Custodial until refreshed
+                                {loc.cypherbox.payments.copy_invoice.arkoor_title}
                             </Text>
                             <Text style={styles.arkoorBannerBody}>
-                                A Lightning payment into your Bark vault should become
-                                spendable when it arrives, but it has no unilateral exit to
-                                Bitcoin until it finishes refreshing, which takes about 60
-                                minutes. Until then the Ark server could sweep it. Keep the
-                                app open.
+                                {loc.cypherbox.payments.copy_invoice.arkoor_body}
                             </Text>
                         </View>
                     )}
-                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1}>{route?.params?.value}</Text>
-                    <Text bold style={styles.usd}>{route?.params?.converted}</Text>
+                    {/* `value` is a translated line ("Receive 5 USD") and follows the language: forced left-to-right,
+                        iOS put the number first in Arabic. `converted` is one too on the on-chain address; otherwise
+                        it's an amount ("$ 0.01"), which has no letter to set its direction, so it's marked
+                        left-to-right. */}
+                    <Text bold h1 adjustsFontSizeToFit numberOfLines={1}>{value}</Text>
+                    <Text bold style={styles.usd}>{converted && !RTL_LETTERS.test(converted) ? ltr(converted) : converted}</Text>
                     {/* <Image source={QrCode} resizeMode="contain" style={styles.image} /> */}
                     <View style={{ margin: 20, padding: 30, backgroundColor: 'white', borderRadius: 30 }}>
                         <QRCode
@@ -109,15 +105,15 @@ export default function CopyInvoice({ route }: Props) {
                         />
                     </View>
 
-                    <Text semibold style={styles.code}>{shortenAddress(hash)}</Text>
+                    <Text semibold style={[styles.code, rtl.ltrText]}>{displayDestination(hash)}</Text>
                     <View style={styles.imageView}>
-                        <ImageTextVertical text="Copy" source={Copy} onPress={() => copyToClipboard(hash)} />
-                        <ImageTextVertical text="Share" source={Share2} onPress={shareQRCode} />
+                        <ImageTextVertical text={loc.cypherbox.payments.common.copy} source={Copy} onPress={() => copyToClipboard(hash)} />
+                        <ImageTextVertical text={loc.cypherbox.payments.common.share} source={Share2} onPress={shareQRCode} />
                     </View>
-                    <Text bold h3 style={styles.maintitle}>Copy this invoice code or share the QR with the sender to receive bitcoin</Text>
+                    <Text bold h3 style={styles.maintitle}>{loc.cypherbox.payments.copy_invoice.instructions}</Text>
                     <GradientButton
                         style={styles.homeButton}
-                        title="Home"
+                        title={loc.cypherbox.payments.common.home}
                         onPress={() => dispatchReset('HomeScreen')}
                         {...(isArk
                             ? {
@@ -133,7 +129,7 @@ export default function CopyInvoice({ route }: Props) {
                            all of them. */
                         <View style={styles.aspAttribution}>
                             <Text style={styles.aspAttributionText}>
-                                Ark capsules coordinated by
+                                {loc.cypherbox.payments.copy_invoice.asp_attribution}
                             </Text>
                             <Image
                                 source={Second}

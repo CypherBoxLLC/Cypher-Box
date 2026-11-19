@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Dimensions, Image, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { Input, ScreenLayout, Text } from "@Cypher/component-library";
 import { CustomKeyboardNew, GradientInput, GradientInputNew } from "@Cypher/components";
-import { colors, widths } from "@Cypher/style-guide";
+import { colors, widths, ltr, rtl } from "@Cypher/style-guide";
 import { dispatchNavigate } from "@Cypher/helpers";
 import VaultCapsules from "../../components/VaultCapsules";
 import Capsule from "../HotStorageVault/Capsule";
@@ -20,7 +21,7 @@ interface Props {
 }
 
 export default function SendScreen({ route, navigation }: Props) {
-    const { isEdit, vaultTab, currency, wallet, utxo, ids, maxUSD, inUSD, total, toStrike, toArk = null, matchedRate, setSatsEdit, capsulesData = null, to = null, vaultSend, isBatch, capsuleTotal, title } = route?.params;
+    const { isEdit, vaultTab, currency, wallet, utxo, ids, maxUSD, inUSD, total, toStrike, toArk = null, matchedRate, setSatsEdit, capsulesData = null, to = null, vaultSend, isBatch, capsuleTotal, title, autoSelected } = route?.params;
     const [isSats, setIsSats] = useState(true);
     const [sats, setSats] = useState('0');
     const [usd, setUSD] = useState('0');
@@ -55,20 +56,21 @@ export default function SendScreen({ route, navigation }: Props) {
 
     const nextClickHandler = () => {
         if (isArkDest && currentSatsAmount < minBoardSats) {
-            SimpleToast.show(`Ark needs at least ${minBoardSats} sats to board. This top-up is ${currentSatsAmount} sats.`, SimpleToast.LONG);
+            SimpleToast.show(String(loc.formatString(loc.cypherbox.payments.edit_amount.ark_min_board_topup, { min: minBoardSats, amount: currentSatsAmount })), SimpleToast.LONG);
             return;
         }
         setSatsEdit && setSatsEdit();
-        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, toStrike, toArk, to, title, isBatch, capsuleTotal });
+        // ColdStorage gets exactly these params: autoSelected keeps a pre-selection the app made from being spent whole
+        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: isSats ? usd : sats, total: isSats ? sats : usd, matchedRate, capsulesData, vaultSend, toStrike, toArk, to, title, isBatch, capsuleTotal, autoSelected });
     }
 
     const maxSendClickHandler = () => {
         if (isArkDest && totalSelectedSats < minBoardSats) {
-            SimpleToast.show(`Ark needs at least ${minBoardSats} sats to board. Your selected total is ${totalSelectedSats} sats.`, SimpleToast.LONG);
+            SimpleToast.show(String(loc.formatString(loc.cypherbox.payments.edit_amount.ark_min_board_selected, { min: minBoardSats, amount: totalSelectedSats })), SimpleToast.LONG);
             return;
         }
         setSatsEdit && setSatsEdit();
-        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, isMaxEdit: true, matchedRate, capsulesData, vaultSend, to, toStrike, toArk, title, isBatch, capsuleTotal });
+        dispatchNavigate('ColdStorage', { wallet, currency, vaultTab, utxo, ids, maxUSD, inUSD: inUSD, total: total, isMaxEdit: true, matchedRate, capsulesData, vaultSend, to, toStrike, toArk, title, isBatch, capsuleTotal, autoSelected });
     }
 
     // Convert current typed amount to sats for the dynamic capsule
@@ -82,6 +84,11 @@ export default function SendScreen({ route, navigation }: Props) {
             return Math.round(btcVal * SATS);
         }
     }, [sats, usd, isSats, matchedRate]);
+
+    // The typed amount in BTC (the fiat field keeps its BTC figure in `usd`) over
+    // the most this can send, `maxUSD`, which callers pass in BTC. Compared as
+    // numbers, so a maximum passed as text still compares by value.
+    const overMax = Number(isSats ? sats : usd) > Number(maxUSD);
 
     // Total of selected capsules in BTC and USD
     const totalSelectedSats = useMemo(() => {
@@ -116,7 +123,7 @@ export default function SendScreen({ route, navigation }: Props) {
     return (
         <ScreenLayout disableScroll showToolbar isBackButton >
             <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-                <GradientInputNew isSats={isSats} sats={sats} setSats={setSats} usd={usd} title={'Specify  Amount'}
+                <GradientInputNew isSats={isSats} sats={sats} setSats={setSats} usd={usd} title={loc.cypherbox.payments.edit_amount.specify_amount}
                     _colors={vaultTab ? [colors.cold.gradient1, colors.cold.gradient2] : [colors.green, colors.green]}
                 />
 
@@ -125,7 +132,7 @@ export default function SendScreen({ route, navigation }: Props) {
                         {/* Selected capsules — horizontal scroll, no containers */}
                         <View style={{ marginTop: 14, marginBottom: 6 }}>
                             <Text bold style={{ fontSize: 12, color: '#888', textAlign: 'center', marginBottom: 6 }}>
-                                Selected capsules ({capsulesData.length})
+                                {loc.formatString(loc.cypherbox.payments.edit_amount.selected_capsules, { count: capsulesData.length })}
                             </Text>
                             <ScrollView
                                 horizontal
@@ -152,7 +159,7 @@ export default function SendScreen({ route, navigation }: Props) {
                                                 fontStyle: memo ? 'normal' : 'italic',
                                                 marginTop: 4,
                                             }}>
-                                                {memo || '(not labeled)'}
+                                                {memo || loc.cypherbox.payments.edit_amount.not_labeled}
                                             </Text>
                                         </View>
                                     );
@@ -175,9 +182,9 @@ export default function SendScreen({ route, navigation }: Props) {
                                 }}
                             >
                                 <Text bold style={{ fontSize: 13, color: '#000' }}>
-                                    Max: {totalBTC} BTC
+                                    {loc.formatString(loc.cypherbox.payments.edit_amount.max_btc, { amount: totalBTC })}
                                 </Text>
-                                <Text style={{ fontSize: 11, color: '#000', marginLeft: 6 }}>~${totalUSD}</Text>
+                                <Text style={[{ fontSize: 11, color: '#000', marginLeft: 6 }, rtl.ltrText]}>{ltr(`~$${totalUSD}`)}</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -186,7 +193,7 @@ export default function SendScreen({ route, navigation }: Props) {
                             {/* Sending capsule */}
                             <View style={{ alignItems: 'center', width: 140 }}>
                                 <Text style={{ fontSize: 10, color: '#fff', marginBottom: 6 }}>
-                                    Outgoing capsule
+                                    {loc.cypherbox.payments.edit_amount.outgoing_capsule}
                                 </Text>
                                 <View style={{
                                     width: 140,
@@ -216,7 +223,7 @@ export default function SendScreen({ route, navigation }: Props) {
                             {changeSatsAmount > 0 && (
                                 <View style={{ alignItems: 'center', width: 140, marginLeft: 20 }}>
                                     <Text style={{ fontSize: 10, color: '#fff', marginBottom: 6 }}>
-                                        Change capsule
+                                        {loc.cypherbox.payments.edit_amount.change_capsule}
                                     </Text>
                                     <View style={{
                                         width: 140,
@@ -231,24 +238,24 @@ export default function SendScreen({ route, navigation }: Props) {
                             )}
                         </View>
                         <Text style={{ fontSize: 11, color: '#fff', marginTop: 6, textAlign: 'center', paddingHorizontal: 24 }}>
-                            How much of your selected capsules do you want to spend?
+                            {loc.cypherbox.payments.edit_amount.how_much_to_spend}
                         </Text>
                     </>
                 ) : (
                     <>
-                        <Text bold h2 center style={{ marginTop: 30, marginBottom: 25 }}>Total size of selected bars:{'\n'}{maxUSD} BTC</Text>
+                        <Text bold h2 center style={{ marginTop: 30, marginBottom: 25 }}>{loc.formatString(loc.cypherbox.payments.edit_amount.total_selected_bars, { amount: maxUSD })}</Text>
                         <TouchableOpacity onPress={maxSendClickHandler} style={[styles.btn, vaultTab && { backgroundColor: colors.coldGreen }]}>
-                            <Text bold style={{ fontSize: 13 }}>Send Max: {maxUSD} BTC</Text>
+                            <Text bold style={{ fontSize: 13 }}>{loc.formatString(loc.cypherbox.payments.common.send_max_btc, { amount: maxUSD })}</Text>
                         </TouchableOpacity>
                     </>
                 )}
             </ScrollView>
             <CustomKeyboardNew
-                title="Next"
+                title={loc.cypherbox.payments.common.next}
                 onPress={nextClickHandler}
                 prevSats={sats}
                 isEdit={isEdit}
-                disabled={!sats.length || Number(sats) == 0 || (isSats ? sats > maxUSD : usd > maxUSD)}
+                disabled={!sats.length || Number(sats) == 0 || overMax}
                 setSATS={setSats}
                 setUSD={setUSD}
                 setIsSATS={setIsSats}

@@ -1,4 +1,5 @@
 import { getArkWalletHandle } from './walletHandle';
+import loc from '../../../loc';
 
 /**
  * Plain-JS view of one Ark movement, suitable for the history list UI.
@@ -148,15 +149,15 @@ function describe(
     kind: ArkMovementKind,
     status: ArkMovementStatus,
 ): string {
-    const direction = amountSats >= 0 ? 'Received' : 'Sent';
+    const direction = amountSats >= 0 ? loc.cypherbox.services.ark_history.received : loc.cypherbox.services.ark_history.sent;
     const via = ((): string => {
         switch (kind) {
-            case 'lightning': return 'via Lightning';
-            case 'ark':       return 'via Ark';
-            case 'onchain':   return 'on-chain';
-            case 'board':     return 'boarded to Ark';
-            case 'exit':      return 'exit to on-chain';
-            case 'refresh':   return 'Ark refresh';
+            case 'lightning': return loc.cypherbox.services.ark_history.via_lightning;
+            case 'ark':       return loc.cypherbox.services.ark_history.via_ark;
+            case 'onchain':   return loc.cypherbox.services.ark_history.onchain;
+            case 'board':     return loc.cypherbox.services.ark_history.boarded_to_ark;
+            case 'exit':      return loc.cypherbox.services.ark_history.exit_to_onchain;
+            case 'refresh':   return loc.cypherbox.services.ark_history.ark_refresh;
             default:          return '';
         }
     })();
@@ -167,15 +168,15 @@ function describe(
     // refresh", which is technically true but reads weirdly.
     const body =
         kind === 'refresh'
-            ? 'Capsule refresh'
+            ? loc.cypherbox.services.ark_history.capsule_refresh
             : via
                 ? `${direction} ${via}`
                 : direction;
 
     switch (status) {
-        case 'pending':   return `Pending: ${body.toLowerCase()}`;
-        case 'failed':    return `Failed: ${body.toLowerCase()}`;
-        case 'canceled':  return `Canceled: ${body.toLowerCase()}`;
+        case 'pending':   return String(loc.formatString(loc.cypherbox.services.ark_history.pending_prefix, { body: body.toLowerCase() }));
+        case 'failed':    return String(loc.formatString(loc.cypherbox.services.ark_history.failed_prefix, { body: body.toLowerCase() }));
+        case 'canceled':  return String(loc.formatString(loc.cypherbox.services.ark_history.canceled_prefix, { body: body.toLowerCase() }));
         default:          return body;
     }
 }

@@ -1,6 +1,6 @@
-import React, { useCallback, useContext, useRef, useState } from "react";
+import React, { useCallback, useContext, useMemo, useRef, useState } from "react";
 import { LoadingSpinner, Text } from "@Cypher/component-library";
-import { Image, InteractionManager, RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
+import { Alert, Image, InteractionManager, RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import SimpleToast from "react-native-simple-toast";
 import Share from 'react-native-share';
@@ -11,15 +11,21 @@ import Clipboard from "@react-native-clipboard/clipboard";
 import { GradientView, SavingVault } from "@Cypher/components";
 import styles from "./styles";
 
-import { colors, heights, widths } from "@Cypher/style-guide";
+import { colors, heights, rtl, widths } from "@Cypher/style-guide";
 import RBSheet from "react-native-raw-bottom-sheet";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import LinearGradient from "react-native-linear-gradient";
 import ReceivedList from "../HomeScreen/ReceivedList";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { Copy, InformationNew, QrCode, Share as Share2, ShareNew } from "@Cypher/assets/images";
 import { btc } from "@Cypher/helpers/coinosHelper";
-import { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
-import { dispatchNavigate } from "@Cypher/helpers";
+import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
+import { describePending, dispatchNavigate, formatAge, formatSats, pendingInputsSpent, resumeParams, sameAccountKey } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
+import { WatchOnlyWallet } from "../../../class";
+import useImportTransaction from "./useImportTransaction";
+import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
+import SignButton from "./SignButton";
 
 const shortenAddress = (address: string) => {
     // Show full address for security
@@ -28,12 +34,82 @@ const shortenAddress = (address: string) => {
 
 export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet: any, matchedRate: string, setSelectedTab: (tab: number) => void }) {
     const currency = btc(1);
-    const { vaultTab, setVaultDisplayAddress } = useAuthStore();
+    const { vaultTab, setVaultDisplayAddress, pendingSignatures, setPendingSignature, walletID: hotVaultID, coldKeyWarningHidden, hideColdKeyWarning, signingMode, signedOnThisPhone } = useAuthStore();
     const balance = !wallet?.hideBalance && formatBalance(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const balanceWithoutSuffix = !wallet?.hideBalance && formatBalanceWithoutSuffix(Number(wallet?.getBalance()), wallet?.getPreferredBalanceUnit(), true);
     const { wallets, saveToDisk, sleep, isElectrumDisabled } = useContext(BlueStorageContext);
     const [address, setAddress] = useState<string | undefined>();
     const [refreshing, setRefreshing] = useState(false);
+    const { importFromFile, importFromQr } = useImportTransaction(wallet);
+    // same items as Settings > Import Transaction, brought up here because finishing a send from a hardware
+    // wallet is the other thing people open the cold vault for
+    const canImport = vaultTab && wallet?.type === WatchOnlyWallet.type && wallet?.isHd?.();
+    // The Hot Vault as a signing wallet for a watch & broadcast only one (a Cypher Box Cold Vault, Sparrow…). Most Hot
+    // Vaults are everyday wallets on an online phone, so the button only shows where signing is likely: no answer
+    // from the server, signing mode, or a transaction signed here before. Settings and the home scanner offer it always.
+    const canSignHere = !vaultTab && typeof wallet?.cosignPsbt === 'function' && !!wallet?.allowCosignPsbt?.();
+    const connection = useElectrumConnection(canSignHere, !!isElectrumDisabled);
+    const showSign = canSignHere && (signingMode || signedOnThisPhone || connection === 'no-answer');
+    // a spend exported for signing and not broadcast yet: the user may have closed the app while signing
+    const pending = canImport ? pendingSignatures?.[wallet?.getID?.()] : undefined;
+    const pendingView = useMemo(() => {
+        if (!pending) return null;
+        try {
+            const done = describePending(pending, (a: string) => !!wallet?.weOwnAddress?.(a));
+            const hotVault = wallets?.find((w: any) => w.getID() === hotVaultID);
+            const to = done.kind === 'send' && done.address
+                ? (hotVault?.weOwnAddress?.(done.address) ? loc.cypherbox.vault.storage_vault.vault.to_hot_vault : `${done.address.slice(0, 8)}…${done.address.slice(-6)}`)
+                : loc.cypherbox.vault.storage_vault.vault.unknown_script;
+            return {
+                what: done.kind === 'consolidate'
+                    ? String(loc.formatString(done.capsules === 1 ? loc.cypherbox.vault.storage_vault.vault.pending_consolidate_one : loc.cypherbox.vault.storage_vault.vault.pending_consolidate_many, { count: done.capsules }))
+                    : String(loc.formatString(loc.cypherbox.vault.storage_vault.vault.pending_send, { amount: formatSats(done.sats), to })),
+                // getUtxo(true) includes frozen capsules, which it can still spend
+                spent: pendingInputsSpent(pending, wallet?.getUtxo?.(true) ?? []),
+            };
+        } catch (_) {
+            return { what: loc.cypherbox.vault.storage_vault.vault.pending_unknown, spent: false };
+        }
+    }, [pending, wallet, wallets, hotVaultID]);
+
+    // A "Cold Vault" watching a key whose seed sits in a wallet on this same phone isn't cold storage; easy to set up
+    // by importing the Hot Vault's own public key. The comparison ignores xpub/zpub prefixes.
+    const keyOnThisPhone = useMemo(() => {
+        if (!canImport || coldKeyWarningHidden?.[wallet?.getID?.()]) return null;
+        const coldKey = wallet?.getSecret?.();
+        const holder = (wallets ?? []).find((w: any) => {
+            if (w.type === WatchOnlyWallet.type || typeof w.getXpub !== 'function') return false;
+            try {
+                return sameAccountKey(w.getXpub(), coldKey);
+            } catch (_) {
+                return false;
+            }
+        });
+        if (!holder) return null;
+        return holder.getID() === hotVaultID ? loc.cypherbox.vault.storage_vault.vault.key_in_hot_vault : loc.cypherbox.vault.storage_vault.vault.key_in_other_wallet;
+    }, [canImport, wallet, wallets, coldKeyWarningHidden, hotVaultID]);
+
+    const hideKeyWarning = () =>
+        Alert.alert(loc.cypherbox.vault.storage_vault.vault.hide_warning_title, loc.cypherbox.vault.storage_vault.vault.hide_warning_body, [
+            { text: loc.cypherbox.vault.storage_vault.vault.keep, style: 'cancel' },
+            { text: loc.cypherbox.vault.storage_vault.vault.hide, style: 'destructive', onPress: () => hideColdKeyWarning(wallet.getID()) },
+        ]);
+
+    const resumePending = () => {
+        if (pending) dispatchNavigate('HardwareWalletTransactionContinue', resumeParams(pending, wallet));
+    };
+
+    const discardPending = () => {
+        const discard = () => setPendingSignature(wallet.getID(), null);
+        if (pendingView?.spent) {
+            discard();
+            return;
+        }
+        Alert.alert(loc.cypherbox.vault.storage_vault.vault.discard_title, loc.cypherbox.vault.storage_vault.vault.discard_body, [
+            { text: loc.cypherbox.vault.storage_vault.vault.keep, style: 'cancel' },
+            { text: loc.cypherbox.vault.storage_vault.vault.discard, style: 'destructive', onPress: discard },
+        ]);
+    };
     // const base64QrCodeRef = useRef(''); // disabled: toDataURL broken under Fabric/New Arch
 
     const obtainWalletAddress = async () => {
@@ -98,7 +174,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
 
     const copyToClipboard = (text: string) => {
         Clipboard.setString(text);
-        SimpleToast.show('Copied to clipboard', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.vault.storage_vault.vault.copied, SimpleToast.SHORT);
     };
 
     // The "Vault Addresses" button on this tab. Same picker as
@@ -148,6 +224,7 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
     return (
         <ScrollView
             style={styles.container}
+            contentContainerStyle={styles.scrollContent}
             refreshControl={
                 <RefreshControl
                     refreshing={refreshing}
@@ -162,16 +239,85 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                 innerContainer={styles.savingVault}
                 shadowTopBottom={styles.savingVault}
                 shadowBottomBottom={styles.savingVault}
-                bitcoinText={styles.bitcoinText}
-                imageStyle={styles.bitcoinImage}
                 titleStyle={styles.title}
-                title={vaultTab ? "Cold Savings" : "Hot Savings"}
+                title={vaultTab ? loc.cypherbox.vault.storage_vault.vault.cold_savings : loc.cypherbox.vault.storage_vault.vault.hot_savings}
+                showNetwork={false}
                 bitcoinValue={balance}
                 inDollars={`$${(Number(balanceWithoutSuffix) * Number(matchedRate || 0)).toFixed(2)}`}
             />
             
             <View style={styles.base}>
             
+                {keyOnThisPhone &&
+                    <View style={styles.keyWarning}>
+                        <Text h4 style={styles.keyWarningText}>
+                            {loc.formatString(loc.cypherbox.vault.storage_vault.vault.cold_key_on_phone, { place: keyOnThisPhone })}
+                        </Text>
+                        <TouchableOpacity onPress={hideKeyWarning} accessibilityRole="button" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <Text h4 style={styles.keyWarningHide}>{loc.cypherbox.vault.storage_vault.vault.hide}</Text>
+                        </TouchableOpacity>
+                    </View>
+                }
+                {pending && pendingView &&
+                    <View style={styles.pendingCard}>
+                        <View style={styles.pendingHeader}>
+                            <MaterialCommunityIcons name="timer-sand" size={18} color={colors.coldGreen} />
+                            <Text semibold style={styles.pendingTitle}>{loc.cypherbox.vault.storage_vault.vault.waiting_for_signature}</Text>
+                            <Text style={styles.pendingAge}>{formatAge(Date.now() - pending.createdAt)}</Text>
+                        </View>
+                        <Text style={styles.pendingWhat}>{pendingView.what}</Text>
+                        {pendingView.spent &&
+                            <Text style={styles.pendingNote}>{loc.cypherbox.vault.storage_vault.vault.capsules_spent}</Text>
+                        }
+                        <View style={styles.pendingActions}>
+                            {!pendingView.spent &&
+                                <TouchableOpacity style={styles.pendingResume} onPress={resumePending} accessibilityRole="button">
+                                    <Text semibold style={styles.pendingResumeText}>{loc.cypherbox.vault.storage_vault.vault.resume_signing}</Text>
+                                </TouchableOpacity>
+                            }
+                            <TouchableOpacity style={styles.pendingDiscard} onPress={discardPending} accessibilityRole="button">
+                                <Text style={styles.pendingDiscardText}>{loc.cypherbox.vault.storage_vault.vault.discard}</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                }
+                {/* One pill, same look as Vault Addresses, with two tap areas: the wide one opens a signed
+                    transaction file, the QR section past the grey divider scans one */}
+                {canImport &&
+                    <View style={[styles.linearGradientStyle, styles.broadcastShadow]}>
+                        <View style={styles.mainShadowStyle}>
+                            <LinearGradient
+                                start={{ x: 1, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                colors={[colors.black.gradientTop, colors.black.gradientBottom]}
+                                style={styles.broadcastButton}
+                            >
+                                <TouchableOpacity
+                                    style={styles.broadcastImport}
+                                    onPress={importFromFile}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={loc.cypherbox.vault.storage_vault.vault.broadcast_file_a11y}
+                                >
+                                    <MaterialCommunityIcons name="satellite-uplink" size={20} color={colors.coldGreen} />
+                                    {/* one line: a phone narrower than an XR shrinks it a little rather than wrapping */}
+                                    <Text h4 numberOfLines={1} adjustsFontSizeToFit style={styles.broadcastLabel}>
+                                        {loc.cypherbox.vault.storage_vault.vault.broadcast_button}
+                                    </Text>
+                                </TouchableOpacity>
+                                <View style={styles.broadcastDivider} />
+                                <TouchableOpacity
+                                    style={styles.broadcastScan}
+                                    onPress={importFromQr}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={loc.cypherbox.vault.storage_vault.vault.broadcast_scan_a11y}
+                                >
+                                    <MaterialCommunityIcons name="qrcode-scan" size={20} color={colors.white} />
+                                </TouchableOpacity>
+                            </LinearGradient>
+                        </View>
+                    </View>
+                }
+                {showSign && <SignButton wallet={wallet} connection={connection} />}
                 <GradientView
                     onPress={addressHandler}
                     style={styles.linearGradientStyle}
@@ -180,11 +326,11 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     bottomShadowStyle={[styles.innerShadowStyle, vaultTab && { shadowColor: colors.coldGreen }]}
                     linearGradientStyleMain={styles.linearGradientStyleMain}
                 >
-                    <Text h3 center>Vault Addresses</Text>
+                    <Text h3 center>{loc.cypherbox.vault.storage_vault.vault.addresses}</Text>
                 </GradientView>
                 {vaultTab &&
-                    <Text style={{paddingRight: 20, paddingLeft:30, paddingTop: 20, fontSize: 15}}>
-                        ⚠️ DO NOT use these addresses to receive funds without verifying their authenticity from your hardware device! 
+                    <Text style={{paddingRight: 20, paddingLeft:30, paddingTop: 14, fontSize: 15}}>
+                        {loc.cypherbox.vault.storage_vault.vault.verify_warning}
                     </Text>
                 }
                 {/* <GradientView
@@ -211,9 +357,6 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
             } */}
             {address ?
                 <>
-                    {!vaultTab &&
-                        <Text h4 style={styles.infoText}>You can use this vault address to receive sizable coins from another vault on the Bitcoin Network</Text>
-                    }
                     {/* Solid borderColor (no LinearGradient wrapper) — the
                         previous Cold Vault path stacked greenShadow from
                         styles.qrcode UNDER a blue→teal gradient ring, which
@@ -235,14 +378,18 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                     </View>
                     <View style={styles.codeViewMain}>
                         {vaultTab ? (
-                            <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15, height: 44, width: widths - 80 }}>
+                            // minHeight, not height: a fixed 44 left a second line of the address below the row, past
+                            // the end of the scroll, where it could not be seen.
+                            <TouchableOpacity onPress={() => copyToClipboard(address)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 15, paddingVertical: 6, minHeight: 44, width: widths - 80 }}>
                                 <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
-                                <Text semibold style={{ fontSize: 15, color: colors.white, marginStart: 10 }}>{address || 'Loading...'}</Text>
+                                {/* The whole address, always: a usual one (42 characters) on one line, a little smaller on a
+                                    narrow phone; a longer one (multisig or Taproot, 62) on two. */}
+                                <Text semibold numberOfLines={address.length > 45 ? 2 : 1} adjustsFontSizeToFit style={[{ fontSize: 15, color: colors.white, marginStart: 10, flexShrink: 1 }, address ? rtl.ltrText : {}]}>{address || loc.cypherbox.vault.storage_vault.vault.address_loading}</Text>
                             </TouchableOpacity>
                         ) : (
                             <TouchableOpacity style={styles.codeView} onPress={() => copyToClipboard(address)}>
                                 <Image source={Copy} style={styles.copyImage} resizeMode="contain" />
-                                <Text semibold style={styles.address}>{shortenAddress(address)}</Text>
+                                <Text semibold style={[styles.address, rtl.ltrText]}>{shortenAddress(address)}</Text>
                             </TouchableOpacity>
                         )}
                         {/* <TouchableOpacity onPress={shareQRCode}>
@@ -258,12 +405,12 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
                         <TouchableOpacity
                             onPress={() => {
                                 setVaultDisplayAddress(wallet?.getID?.(), null);
-                                SimpleToast.show('Back to a fresh address', SimpleToast.SHORT);
+                                SimpleToast.show(loc.cypherbox.vault.storage_vault.vault.fresh_address, SimpleToast.SHORT);
                             }}
                             style={{ paddingHorizontal: 30, paddingTop: 10 }}
                         >
                             <Text style={{ fontSize: 13, color: colors.green, textAlign: 'center' }}>
-                                You chose this address. Tap to go back to a fresh one.
+                                {loc.cypherbox.vault.storage_vault.vault.chosen_address}
                             </Text>
                         </TouchableOpacity>
                     ) : null}

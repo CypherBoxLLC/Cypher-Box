@@ -1,12 +1,16 @@
 import { Text } from "@Cypher/component-library";
+import loc from "../../../../loc";
 import { dispatchNavigate } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
 import { colors, shadow, widths } from "@Cypher/style-guide";
 import React from "react";
-import { Pressable, StyleSheet, TouchableOpacity, View } from "react-native";
+import { I18nManager, Pressable, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Icon } from "react-native-elements";
 import styles from "../styles";
 import { GradientView } from "@Cypher/components";
+import BalancePrivacyButton from "@Cypher/components/BalancePrivacyButton";
+import { maskAmount } from "@Cypher/helpers/hiddenAmount";
+import { useBalancesHidden } from "@Cypher/stores/balancePrivacy";
 
 type CarouselKind = 'fiat' | 'lightning' | 'ark';
 
@@ -32,17 +36,25 @@ const DOT_COLOR: Record<CarouselKind, string> = {
 };
 
 export default React.memo(function BalanceView({ balance, convertedRate, onAddAccount, showAddAccount, carouselPage = 0, carouselTotal = 0, carouselKinds = [], onDotPress }: Props) {
+    // Shown until the logo button hides them, and then hidden until it is tapped again, across relaunches
+    // (see useBalancesHidden).
+    const balancesHidden = useBalancesHidden();
+    const toggleBalancesHidden = useAuthStore(s => s.toggleBalancesHidden);
     return (
         <View style={[styles.innerContainer]} >
             <View
                 style={StyleSheet.flatten([styles.shadowTopBottom2])}
             >
-                <Text subHeader bold style={styles.price}>
-                    {balance}
+                <Text subHeader bold amount style={styles.price} testID="home-total-balance">
+                    {balancesHidden ? maskAmount(balance) : balance}
                 </Text>
-                <Text bold style={styles.priceusd} >
-                    {convertedRate}
+                <Text bold style={styles.priceusd} testID="home-total-fiat">
+                    {balancesHidden ? maskAmount(convertedRate) : convertedRate}
                 </Text>
+
+                <View style={privacyStyles.slot}>
+                    <BalancePrivacyButton hidden={balancesHidden} onPress={toggleBalancesHidden} />
+                </View>
 
                 {showAddAccount && onAddAccount && (
                     // White pill (was pink) with a real pressed state —
@@ -50,7 +62,7 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
                     // button visibly depresses (slight scale-down + dim
                     // bg + shrunk shadow) while the user's thumb is on
                     // it, then springs back on release. Tactile feel.
-                    <View style={{ alignItems: 'flex-end', paddingRight: 15, paddingTop: 6, zIndex: 10 }}>
+                    <View style={I18nManager.isRTL ? addWalletStyles.rowRtl : addWalletStyles.row}>
                         <Pressable
                             onPress={onAddAccount}
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -85,7 +97,7 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
                                         containerStyle={{ marginRight: 4 }}
                                     />
                                     <Text bold style={{ color: pressed ? '#FFFFFF' : '#000000', fontSize: 12, letterSpacing: 0.3 }}>
-                                        Add wallet
+                                        {loc.cypherbox.home.add_wallet}
                                     </Text>
                                 </>
                             )}
@@ -134,3 +146,29 @@ export default React.memo(function BalanceView({ balance, convertedRate, onAddAc
         </View>
     )
 })
+
+const privacyStyles = StyleSheet.create({
+    // Top corner across from the total: right in English, left in Arabic.
+    slot: {
+        position: 'absolute',
+        top: 12,
+        end: 12,
+        zIndex: 11,
+    },
+});
+
+const addWalletStyles = StyleSheet.create({
+    row: {
+        alignItems: 'flex-end',
+        paddingRight: 15,
+        paddingTop: 6,
+        zIndex: 10,
+    },
+    // on the right in Arabic too, under the balance, which starts on the right there (flex-end would be the left)
+    rowRtl: {
+        alignItems: 'flex-start',
+        paddingStart: 15,
+        paddingTop: 6,
+        zIndex: 10,
+    },
+});

@@ -101,6 +101,7 @@ interface Style {
     shadowTop2: ViewStyle;
     shadowBottom2: ViewStyle;
     circularView: ViewStyle;
+    regionNotice: ViewStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -766,5 +767,9 @@ export default StyleSheet.create<Style>({
         marginTop:20,
         flexDirection: 'row',
         justifyContent: 'space-between',
+    },
+    regionNotice: {
+        paddingHorizontal: 16,
+        paddingTop: 10,
     },
 });

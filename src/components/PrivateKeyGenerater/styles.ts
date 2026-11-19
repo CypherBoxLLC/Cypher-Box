@@ -12,10 +12,21 @@ interface Style {
     detail: TextStyle;
     viewBtn: TextStyle;
     centerView: ViewStyle;
+    tabs: ViewStyle;
+    tab: ViewStyle;
+    tabOn: ViewStyle;
+    tabText: TextStyle;
+    seedQR: ViewStyle;
+    seedQRWarning: TextStyle;
+    seedQRNote: TextStyle;
+    checkBtn: ViewStyle;
 }
 
 export default StyleSheet.create<Style>({
     container: {
+        // the words read left to right in every language: right-to-left put word 1 top right, so copying the rows
+        // from left to right wrote 2, 1, 4, 3
+        direction: 'ltr',
         flexDirection: 'row',
         flexWrap: 'wrap',
         justifyContent: 'center',
@@ -87,5 +98,52 @@ export default StyleSheet.create<Style>({
     },
     centerView: {
         justifyContent: 'center',
+    },
+    // Words / SeedQR: two views of the same backup
+    tabs: {
+        flexDirection: 'row',
+        alignSelf: 'center',
+        marginBottom: 14,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: colors.gray.disable,
+        padding: 3,
+    },
+    tab: {
+        paddingHorizontal: 22,
+        paddingVertical: 7,
+        borderRadius: 17,
+    },
+    tabOn: {
+        backgroundColor: colors.green,
+    },
+    tabText: {
+        fontSize: 14,
+        lineHeight: 18,
+    },
+    seedQR: {
+        alignSelf: 'center',
+        width: 300,
+    },
+    seedQRWarning: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.redLight,
+        marginBottom: 10,
+    },
+    seedQRNote: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: colors.gray.light,
+        marginTop: 12,
+    },
+    checkBtn: {
+        height: 44,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.blueText,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 12,
     },
 })

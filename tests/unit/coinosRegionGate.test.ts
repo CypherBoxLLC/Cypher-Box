@@ -6,7 +6,12 @@
  * the two that changed in 0.1.12: the EFTA members of the EEA (Norway,
  * Iceland, Liechtenstein) are now blocked, where the previous EU-only
  * list let them through, and an unreadable region now fails CLOSED,
- * where the previous code defaulted to 'US' and let it through.
+ * where the previous code defaulted to 'US' and let it through. 0.1.13
+ * added the United Kingdom.
+ *
+ * These cases run without the CypherStorefront native module, so on iOS
+ * the device region decides. The storefront path is covered in
+ * strikeRegionGate.test.ts.
  */
 
 const DEV_BEFORE = (global as any).__DEV__;
@@ -53,9 +58,15 @@ describe('isCoinosAllowed', () => {
         }
     });
 
-    it('allows non-EEA regions', () => {
+    it('blocks the United Kingdom, added in 0.1.13', () => {
         (global as any).__DEV__ = false;
-        for (const country of ['US', 'GB', 'CH', 'CA', 'SV', 'NG']) {
+        expect(loadGate('GB').isCoinosAllowed()).toBe(false);
+        expect(loadGate('gb').isCoinosAllowed()).toBe(false);
+    });
+
+    it('allows regions outside the EEA and the UK', () => {
+        (global as any).__DEV__ = false;
+        for (const country of ['US', 'CH', 'CA', 'SV', 'NG', 'SA', 'EG']) {
             expect(loadGate(country).isCoinosAllowed()).toBe(true);
         }
     });

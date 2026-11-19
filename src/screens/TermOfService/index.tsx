@@ -3,22 +3,36 @@ import { GradientText } from '@Cypher/components';
 import { colors } from '@Cypher/style-guide';
 import React from 'react';
 import { View, StyleSheet, ScrollView, Linking } from 'react-native';
+import loc from '../../../loc';
+import TermsArabic from './TermsArabic';
 
 const ASP_TERMS_URL = 'https://second.tech/terms';
 
 const TermsOfService = () => {
+    // Arabic shows its translation first, then the English text below it.
+    const isArabic = loc.getLanguage() === 'ar';
+
     const openAspTerms = () => {
         Linking.openURL(ASP_TERMS_URL);
     };
 
     return (
         <ScreenLayout showToolbar disableScroll>
-            <GradientText style={styles.title} center>Terms of Service & Privacy Policy</GradientText>
-            <Text style={styles.lastUpdated} center>Last Updated: September 2026</Text>
+            <GradientText style={styles.title} center>{loc.cypherbox.tos.title}</GradientText>
+            <Text style={styles.lastUpdated} center>{loc.cypherbox.tos.last_updated}</Text>
             <View style={styles.divider} />
-            <ScrollView style={styles.container} showsVerticalScrollIndicator={true}
+            {/* the padding goes on the content: on the scroll view itself, right-to-left layout shifted the text by it */}
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.container} showsVerticalScrollIndicator={true}
                 indicatorStyle='white'
             >
+                {isArabic && (
+                    <>
+                        <TermsArabic styles={styles} aspTermsUrl={ASP_TERMS_URL} onAspTermsPress={openAspTerms} />
+                        <View style={styles.divider} />
+                        <Text style={styles.sectionTitle}>{loc.cypherbox.tos.english_version}</Text>
+                    </>
+                )}
+                <View style={isArabic ? styles.ltr : undefined}>
                 {/* ===== TERMS OF SERVICE ===== */}
                 <Text style={styles.sectionTitle}>TERMS OF SERVICE</Text>
 
@@ -83,6 +97,21 @@ const TermsOfService = () => {
                     </Text>
                     <Text style={styles.paragraph}>
                         These Vaults are intended for use by persons who are knowledgeable about cryptocurrency generally and HD non-custodial wallets in particular. If you read our instructions and warnings carefully and understand the risks associated with self-custody, you represent that you qualify as such a person.
+                    </Text>
+                    <Text style={[styles.paragraph, styles.bold]}>
+                        Watch-only Cold Vault.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        A Cold Vault can be watch-only: Cypher Box then holds only its public key, never its private keys or seedphrase. Cypher Box shows its addresses and balance and prepares its transactions, but cannot sign them. Each transaction is signed on a separate device or app that holds the seedphrase, such as a hardware wallet or the Offline Seed-Signer described below, and then brought back to Cypher Box to be broadcast. You are responsible for that device or app and its seedphrase, and for checking on it, before you sign, that the recipient, amount, change and fee are what you intend. Cypher Box LLC does not make, and is not responsible for, signing devices or apps from other makers.
+                    </Text>
+                    <Text style={[styles.paragraph, styles.bold]}>
+                        Offline Seed-Signer.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        You can set up Cypher Box on a separate phone as an Offline Seed-Signer: a signing device for a watch-only wallet, such as a Cypher Box Cold Vault. Once it is turned on, that installation is a signer and nothing else; to use it as a normal wallet again, you must delete the app and install it fresh. When the signer creates a seedphrase, it shows it once, for you to back up on paper and as a SeedQR, and it does not save it on the phone. To sign, you scan the SeedQR or type the words each time. If you add a passphrase, you must enter it each time you sign. If you lose your seedphrase backup or your passphrase, your funds are lost, and Cypher Box LLC cannot recover them.
+                    </Text>
+                    <Text style={styles.paragraph}>
+                        The signer is designed for a phone that stays offline, with Airplane Mode on and Wi-Fi and Bluetooth off, and it never sends crash reports. Its protection depends on that phone: Cypher Box LLC cannot check that your phone stays offline, has not been tampered with, or runs an unmodified copy of the app. Install Cypher Box only from its official source, and check every transaction on the signer before you sign it. The signer is software on a general-purpose phone; it is not a hardware wallet.
                     </Text>
                 </View>
 
@@ -221,7 +250,7 @@ const TermsOfService = () => {
                         If you permanently forget or lose your backup seedphrase, you will NEVER be able to recover any cryptocurrency in your Vault, and you will suffer a complete, irrecoverable, and catastrophic loss of all Digital Assets in your Vault. It is your responsibility to safeguard and retain your backup seedphrase. Cypher Box has no responsibility and will not be liable for any loss or damage you suffer from the loss or misappropriation of your seedphrases.
                     </Text>
                     <Text style={styles.paragraph}>
-                        You may also optionally protect a hot storage Vault with a BIP39 passphrase (sometimes called a "25th word"). A passphrase is applied on top of your 12-word seedphrase and is NEVER stored, transmitted, displayed after creation, or backed up anywhere by the App, by Cypher Box LLC, or by any third party. It is something that only you know. Recovering a passphrase-protected Vault requires BOTH the exact 12-word seedphrase AND the exact passphrase, which is case-sensitive and space-sensitive. If you permanently forget or lose your passphrase, you will NEVER be able to recover any cryptocurrency in that Vault EVEN IF you still possess the correct 12-word seedphrase, and you will suffer a complete, irrecoverable, and catastrophic loss of all Digital Assets in that Vault. It is your responsibility to memorize your passphrase and to record it, together with your seedphrase, on your physical backup. Cypher Box LLC does not store, have access to, or have any means of recovering your passphrase, and has no responsibility and will not be liable for any loss or damage you suffer from the loss or misappropriation of your passphrase.
+                        You may also optionally protect a hot storage Vault with a BIP39 passphrase (sometimes called a "25th word"). A passphrase is applied on top of your 12-word seedphrase. The App keeps the passphrase on your device, with the Vault, so that the Vault can work. The App NEVER sends it to Cypher Box LLC or to any third party, NEVER displays it after creation, and NEVER includes it in the copy of your seedphrase that the App saves in the Keychain or Keystore. If you back up an iPhone with iCloud Backup or an encrypted computer backup, that backup includes the Vault and its passphrase. Because the passphrase is kept on your device, it protects your written backup of the seedphrase, not the device itself or its backups. Recovering a passphrase-protected Vault requires BOTH the exact 12-word seedphrase AND the exact passphrase, which is case-sensitive and space-sensitive. If you permanently forget or lose your passphrase, you will NEVER be able to recover any cryptocurrency in that Vault EVEN IF you still possess the correct 12-word seedphrase, and you will suffer a complete, irrecoverable, and catastrophic loss of all Digital Assets in that Vault. It is your responsibility to memorize your passphrase, to write it down, and to keep that record in a different place from your seedphrase backup. Cypher Box LLC does not store, have access to, or have any means of recovering your passphrase, and has no responsibility and will not be liable for any loss or damage you suffer from the loss or misappropriation of your passphrase.
                     </Text>
                     <Text style={styles.paragraph}>
                         The same risks and responsibilities apply to the seedphrase of any Bark Vault you create under Section 5. The Bark Vault seedphrase is generated and stored separately from your other Vault seedphrases. The optional encrypted cloud backup described in Section 5 is provided for your convenience and does not change the foregoing: Cypher Box LLC does not have access to the backup file or the encryption key, and is not liable for any loss arising from the loss of access to your cloud storage account, the loss of the encryption material protecting the backup, or any failure of the cloud storage service.
@@ -385,6 +414,7 @@ const TermsOfService = () => {
                         <Text style={styles.listItem}>• Your Lightning Account passwords (these are stored locally on your device)</Text>
                         <Text style={styles.listItem}>• Your transaction history or wallet balances</Text>
                         <Text style={styles.listItem}>• Your personal identity information</Text>
+                        <Text style={styles.listItem}>• Crash reports or usage analytics: the app sends neither</Text>
                     </View>
                 </View>
 
@@ -397,6 +427,7 @@ const TermsOfService = () => {
                         <Text style={styles.listItem}>• CoinOS credentials (username and password): stored in the iOS Keychain / Android Keystore</Text>
                         <Text style={styles.listItem}>• Authentication tokens for CoinOS and Strike: stored in encrypted local storage</Text>
                         <Text style={styles.listItem}>• Vault private keys and seedphrases: stored in encrypted local storage</Text>
+                        <Text style={styles.listItem}>• A backup copy of your Hot Vault seedphrases: stored in the iOS Keychain / Android Keystore. Reading it needs Face ID, Touch ID, a fingerprint or your device passcode. It is never synced to iCloud. On iOS it stays on the device after you delete the vault or the app, so you can recover the vault from it, until you delete it in the app or turn off your device passcode. On Android it is removed when you uninstall the app.</Text>
                         <Text style={styles.listItem}>• Bark Vault private keys and seedphrase: stored in the iOS Keychain / Android Keystore</Text>
                         <Text style={styles.listItem}>• Bark Vault wallet state (signed VTXOs, refresh history, ASP coordination data needed by the ASP's SDK to operate): stored in encrypted local storage</Text>
                         <Text style={styles.listItem}>• App preferences and settings: such as withdrawal thresholds, reserve amounts, and UI state</Text>
@@ -482,6 +513,9 @@ const TermsOfService = () => {
                     <Text style={styles.paragraph}>
                         Reading the Bitcoin Network also requires querying it. To display balances and construct transactions, your device queries public block explorer services that Cypher Box LLC does not operate, currently a service operated by Blockstream. Those queries reveal to the provider, and to anyone able to observe the connection, that a device at your IP address is interested in specific Bitcoin addresses and transactions. The same is true of the Bark Vault, which queries a block explorer on every open and on a recurring basis while the app is in use. We do not control what those providers log or how long they retain it. Using a VPN or Tor changes what your IP address reveals but does not change which addresses are queried.
                     </Text>
+                    <Text style={styles.paragraph}>
+                        Your Hot Vault and Cold Vault addresses, balances and transactions are read through an Electrum server, and the transactions you send are broadcast through it. Unless you connect your own server in the app's settings, the app uses one picked at random from a built-in list of public servers that Cypher Box LLC does not operate, currently: electrum1.bluewallet.io, mainnet.foundationdevices.com, electrum.acinq.co, electrum.bitaroo.net, bitcoin.lukechilds.co and electrum.jochen-hoenicke.de. That server learns every address in your Vaults, can link them to each other and to your IP address, and sees the transactions you send. We do not control what those servers log or how long they keep it. To avoid this, connect your own Electrum server or node.
+                    </Text>
                 </View>
 
                 <View style={styles.section}>
@@ -494,7 +528,7 @@ const TermsOfService = () => {
                 <View style={styles.section}>
                     <Text style={styles.subHeader}>7. Data Retention</Text>
                     <Text style={styles.paragraph}>
-                        Locally stored data remains on your device until you uninstall the app or manually clear app data. Data transmitted to our push notification or OAuth servers is not persistently stored beyond the duration of the active session or notification delivery.
+                        Locally stored data remains on your device until you uninstall the app or clear its data. The exception is data in the iOS Keychain, such as the Hot Vault seedphrase copy, which iOS keeps after the app is deleted until you delete it in the app. Our notification relay server keeps your device push token and the Bitcoin addresses, script hashes and transaction identifiers it watches for as long as it needs them to send your notifications; deleting a Hot Vault in the app removes its addresses. Data sent to our OAuth server is not kept beyond the active session.
                     </Text>
                 </View>
 
@@ -521,8 +555,9 @@ const TermsOfService = () => {
 
                 <View style={styles.section}>
                     <Text style={[styles.paragraph, { fontStyle: 'italic' }]}>
-                        This Agreement and Privacy Policy were last updated in August 2026.
+                        This Agreement and Privacy Policy were last updated in November 2026.
                     </Text>
+                </View>
                 </View>
 
                 <View style={{ height: 40 }} />
@@ -532,8 +567,10 @@ const TermsOfService = () => {
 };
 
 const styles = StyleSheet.create({
-    container: {
+    scroll: {
         flex: 1,
+    },
+    container: {
         padding: 20,
         paddingHorizontal: 40
     },
@@ -549,8 +586,10 @@ const styles = StyleSheet.create({
         color: '#888',
         marginBottom: 12,
     },
+    // headings set their own line height: the shared 18pt one cut off the dots above Arabic letters at this size
     sectionTitle: {
         fontSize: 20,
+        lineHeight: 30,
         fontWeight: 'bold',
         color: '#fff',
         marginTop: 16,
@@ -562,6 +601,7 @@ const styles = StyleSheet.create({
     },
     subHeader: {
         fontSize: 18,
+        lineHeight: 27,
         fontWeight: 'bold',
         marginBottom: 8,
         color: '#fff',
@@ -595,6 +635,9 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#A3A3A3',
         marginVertical: 8,
+    },
+    ltr: {
+        direction: 'ltr',
     },
 });
 

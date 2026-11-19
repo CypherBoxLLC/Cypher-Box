@@ -5,6 +5,8 @@ interface PrivacyComponent extends React.FC {
   disableBlur: () => void;
   enableBlurAllowingScreenshots: () => void;
   disableBlurAllowingScreenshots: () => void;
+  protectSecret: () => void;
+  releaseSecret: () => void;
 }
 
 const Privacy: PrivacyComponent = () => {
@@ -25,6 +27,14 @@ Privacy.enableBlurAllowingScreenshots = () => {
 };
 
 Privacy.disableBlurAllowingScreenshots = () => {
+  // no-op on unsupported platforms
+};
+
+Privacy.protectSecret = () => {
+  // no-op on unsupported platforms
+};
+
+Privacy.releaseSecret = () => {
   // no-op on unsupported platforms
 };
 

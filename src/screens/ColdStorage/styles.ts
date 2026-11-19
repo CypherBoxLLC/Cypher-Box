@@ -14,11 +14,16 @@ interface Style {
     priceView: ViewStyle;
     value: TextStyle;
     fees: TextStyle;
+    capsulesNotNeeded: TextStyle;
+    showAllCapsules: ViewStyle;
+    showAllCapsulesText: TextStyle;
+    spendError: TextStyle;
     recipientView: ViewStyle;
     recipientTitle: TextStyle;
     nextBtn: ViewStyle;
     noteInput: TextStyle;
     button: ViewStyle;
+    destinationAddress: TextStyle;
     qrcode: ImageStyle;
     feesDropDown: ViewStyle;
     middleText: ViewStyle;
@@ -100,6 +105,25 @@ export default StyleSheet.create<Style>({
         fontSize: 18,
         marginTop: 5,
     },
+    capsulesNotNeeded: {
+        fontSize: 12,
+        color: '#AAAAAA',
+        marginTop: 4,
+    },
+    showAllCapsules: {
+        alignSelf: 'flex-start',
+        paddingVertical: 6,
+    },
+    showAllCapsulesText: {
+        fontSize: 13,
+        color: colors.white,
+        textDecorationLine: 'underline',
+    },
+    spendError: {
+        fontSize: 14,
+        color: colors.redLight,
+        marginTop: 6,
+    },
     tabs: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -130,7 +154,11 @@ export default StyleSheet.create<Style>({
         borderWidth: 3,
         borderColor: '#B6B6B6',
         width: '50%',
-        height: 35,
+        // at least 35 tall, not exactly: Android's default text padding in a fixed 35 cut the placeholder in half
+        minHeight: 35,
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        textAlignVertical: 'center',
         borderRadius: 15,
         color: '#FFFFFF',
         textAlign: 'center',
@@ -152,13 +180,22 @@ export default StyleSheet.create<Style>({
     button: {
         backgroundColor: colors.gray.dark,
         borderRadius: 15,
-        height: 38,
+        // grows with the destination: a fixed 38 showed the first 30 or so characters of an address and cut off the
+        // rest, the part the user checks
+        minHeight: 38,
+        paddingVertical: 6,
+        paddingHorizontal: 12,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 3,
         borderColor: '#B6B6B6',
         flex: 1,
         marginEnd: 10,
+    },
+    destinationAddress: {
+        fontSize: 16,
+        lineHeight: 22,
+        textAlign: 'center',
     },
     qrcode: {
         width: 40,

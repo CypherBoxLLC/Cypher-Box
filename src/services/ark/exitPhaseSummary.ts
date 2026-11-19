@@ -51,6 +51,8 @@
  * standing up the SDK or the sync loop.
  */
 
+import loc from '../../../loc';
+
 export type ExitPhase = 'publishing' | 'waiting' | 'ready' | 'settling';
 
 export type ExitPhaseInput = {
@@ -101,11 +103,11 @@ export type ExitPhaseSummary = {
  */
 export function approxDuration(blocks: number, blockMinutes: number): string {
     const mins = Math.max(0, Math.round(blocks * blockMinutes));
-    if (mins < 1) return 'under a minute';
-    if (mins < 120) return `about ${mins} min`;
+    if (mins < 1) return loc.cypherbox.services.exit_phase.under_a_minute;
+    if (mins < 120) return String(loc.formatString(loc.cypherbox.services.exit_phase.about_min, { mins }));
     const hours = Math.round(mins / 60);
-    if (hours < 48) return `about ${hours} hours`;
-    return `about ${Math.round(hours / 24)} days`;
+    if (hours < 48) return String(loc.formatString(loc.cypherbox.services.exit_phase.about_hours, { hours }));
+    return String(loc.formatString(loc.cypherbox.services.exit_phase.about_days, { days: Math.round(hours / 24) }));
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -136,12 +138,12 @@ export function summariseExitPhase(input: ExitPhaseInput): ExitPhaseSummary {
         const alsoWaiting = heights.length + processing;
         return {
             phase: 'ready',
-            headline: `Ready to collect. ${claimable} ${plural(claimable, 'capsule is', 'capsules are')} past the timelock.`,
+            headline: String(loc.formatString(plural(claimable, loc.cypherbox.services.exit_phase.ready_headline_one, loc.cypherbox.services.exit_phase.ready_headline_other), { count: claimable })),
             detail: alsoWaiting > 0
                 // Says why nothing may appear to happen yet. The batch holds
                 // for the stragglers so the whole exit lands as one payment.
-                ? `Collecting together with ${alsoWaiting} still finishing, so it arrives as one payment. Keep the app open.`
-                : 'Keep the app open while it sends.',
+                ? String(loc.formatString(loc.cypherbox.services.exit_phase.ready_detail_together, { count: alsoWaiting }))
+                : loc.cypherbox.services.exit_phase.ready_detail,
             blocksRemaining,
             targetHeight,
         };
@@ -174,15 +176,15 @@ export function summariseExitPhase(input: ExitPhaseInput): ExitPhaseSummary {
         // more levels as they confirm, so this is deliberately not a total and
         // not a percentage.
         const progress = totalTx > 0
-            ? `${inFlight} of ${totalTx} published, waiting on a confirmation. `
+            ? `${String(loc.formatString(loc.cypherbox.services.exit_phase.publishing_progress, { inFlight, total: totalTx }))} `
             : '';
         const alsoWaiting = heights.length > 0
-            ? `${heights.length} ${plural(heights.length, 'capsule is', 'capsules are')} already through and waiting out the timelock. `
+            ? `${String(loc.formatString(plural(heights.length, loc.cypherbox.services.exit_phase.publishing_also_waiting_one, loc.cypherbox.services.exit_phase.publishing_also_waiting_other), { count: heights.length }))} `
             : '';
         return {
             phase: 'publishing',
-            headline: `Publishing exit transactions for ${processing} ${plural(processing, 'capsule', 'capsules')}.`,
-            detail: `${progress}${alsoWaiting}Each step needs a confirmation before the next can go, so this is slow. Keep the app open.`,
+            headline: String(loc.formatString(plural(processing, loc.cypherbox.services.exit_phase.publishing_headline_one, loc.cypherbox.services.exit_phase.publishing_headline_other), { count: processing })),
+            detail: `${progress}${alsoWaiting}${loc.cypherbox.services.exit_phase.publishing_detail_tail}`,
             // A capsule with no ripening height yet can push the finish line
             // out once its leaf confirms, so any figure here would be a floor
             // presented as an answer. Withheld rather than guessed.
@@ -193,7 +195,7 @@ export function summariseExitPhase(input: ExitPhaseInput): ExitPhaseSummary {
 
     if (heights.length > 0) {
         const n = heights.length;
-        const published = `${n} ${plural(n, 'capsule is', 'capsules are')} published and waiting out the timelock.`;
+        const published = String(loc.formatString(plural(n, loc.cypherbox.services.exit_phase.waiting_published_one, loc.cypherbox.services.exit_phase.waiting_published_other), { count: n }));
         if (blocksRemaining == null) {
             return {
                 phase: 'waiting',
@@ -201,7 +203,7 @@ export function summariseExitPhase(input: ExitPhaseInput): ExitPhaseSummary {
                 // No tip means no chain source answered. Saying nothing about
                 // timing is better than inventing one, and the remedy belongs
                 // here because the user can act on it.
-                detail: 'Cannot reach a chain source to check the countdown. Try cellular if you are on wifi.',
+                detail: loc.cypherbox.services.exit_phase.waiting_no_chain,
                 blocksRemaining: null,
                 targetHeight,
             };
@@ -210,7 +212,7 @@ export function summariseExitPhase(input: ExitPhaseInput): ExitPhaseSummary {
             return {
                 phase: 'waiting',
                 headline: published,
-                detail: 'The timelock has passed. Collecting on the next check.',
+                detail: loc.cypherbox.services.exit_phase.waiting_timelock_passed,
                 blocksRemaining: 0,
                 targetHeight,
             };
@@ -222,8 +224,8 @@ export function summariseExitPhase(input: ExitPhaseInput): ExitPhaseSummary {
             // it is not. Closes on what the app will do rather than implying
             // the funds arrive on their own.
             detail:
-                `${blocksRemaining} ${plural(blocksRemaining, 'block', 'blocks')} to go, ${approxDuration(blocksRemaining, input.blockMinutes)}. ` +
-                'You can close the app. We will tell you when it is ready to collect.',
+                `${String(loc.formatString(plural(blocksRemaining, loc.cypherbox.services.exit_phase.waiting_blocks_to_go_one, loc.cypherbox.services.exit_phase.waiting_blocks_to_go_other), { count: blocksRemaining, duration: approxDuration(blocksRemaining, input.blockMinutes) }))} ` +
+                loc.cypherbox.services.exit_phase.waiting_close_app,
             blocksRemaining,
             targetHeight,
         };
@@ -235,7 +237,7 @@ export function summariseExitPhase(input: ExitPhaseInput): ExitPhaseSummary {
     // "checking" rather than asserting either one.
     return {
         phase: 'settling',
-        headline: 'Checking the exit status.',
+        headline: loc.cypherbox.services.exit_phase.settling_headline,
         detail: null,
         blocksRemaining: null,
         targetHeight: null,

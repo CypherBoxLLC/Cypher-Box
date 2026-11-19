@@ -1,10 +1,12 @@
 import React from "react";
 import { Image, View } from "react-native";
 import styles from "./styles";
+import loc from "../../../loc";
 import { LeftArrow } from "@Cypher/assets/images";
 import { GradientCard, GradientCardWithShadow } from "@Cypher/components";
 import { ScreenLayout, Text } from "@Cypher/component-library";
 import { dispatchNavigate } from "@Cypher/helpers";
+import { rtl } from "@Cypher/style-guide";
 
 export default function ReceivedMethodScreen() {
 
@@ -22,16 +24,16 @@ export default function ReceivedMethodScreen() {
         <ScreenLayout showToolbar isBackButton>
             <View style={styles.container}>
                 <View style={styles.innerView}>
-                    <Text subHeader bold>Receive Bitcoin</Text>
+                    <Text subHeader bold>{loc.cypherbox.payments.received_method.receive_bitcoin}</Text>
                     <View style={styles.extra} />
                     <GradientCard style={styles.height} linearStyle={styles.height} onPress={handleCreateInvoice}>
                         <View style={styles.background}>
                             <View style={styles.view}>
                                 <View style={styles.container2}>
-                                    <Text subHeader bold style={styles.title}>Bitcoin-Lightning invoice</Text>
-                                    <Text h4 bold style={styles.desc}>Highly compatible with exchanges and wallets that support the Lightning Network</Text>
+                                    <Text subHeader bold style={styles.title}>{loc.cypherbox.payments.received_method.lightning_invoice}</Text>
+                                    <Text h4 bold style={styles.desc}>{loc.cypherbox.payments.received_method.lightning_invoice_desc}</Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>
@@ -40,10 +42,10 @@ export default function ReceivedMethodScreen() {
                         <View style={styles.background}>
                             <View style={styles.view}>
                                 <View style={styles.container2}>
-                                    <Text subHeader bold style={styles.title}>Bitcoin Network Address</Text>
-                                    <Text h4 bold style={styles.desc}>Deposit sizable amounts of bitcoin into your Lightning Account </Text>
+                                    <Text subHeader bold style={styles.title}>{loc.cypherbox.payments.received_method.network_address}</Text>
+                                    <Text h4 bold style={styles.desc}>{loc.cypherbox.payments.received_method.network_address_desc}</Text>
                                 </View>
-                                <Image source={LeftArrow} style={styles.image} resizeMode="contain" />
+                                <Image source={LeftArrow} style={[styles.image, rtl.mirror]} resizeMode="contain" />
                             </View>
                         </View>
                     </GradientCard>

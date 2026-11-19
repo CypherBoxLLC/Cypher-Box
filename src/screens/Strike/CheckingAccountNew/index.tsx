@@ -11,6 +11,7 @@ import History from "./History";
 import Settings from "./Settings";
 import styles from "./styles";
 import Threshold from "./Threshold";
+import loc from "../../../../loc";
 
 export default function CheckingAccountNew({ navigation, route }: any) {
     const { wallet, matchedRate, receiveType, accountType, balance, converted, currency, reserveAmount, withdrawThreshold, initialTab } = useRoute().params as {
@@ -93,7 +94,7 @@ export default function CheckingAccountNew({ navigation, route }: any) {
     }, [selectedTab, vaultTab, wallet, effMatchedRate, receiveType, effCurrency, isArk]);
 
     return (
-        <ScreenLayout showToolbar disableScroll title={isArk ? 'Bark Vault' : 'Lightning Account'}>
+        <ScreenLayout showToolbar disableScroll title={isArk ? loc.cypherbox.strike.checking_account.bark_vault : loc.cypherbox.strike.checking_account.lightning_account}>
             <View style={styles.container}>
                 <Tabs onChangeSelectedTab={onChangeSelectedTab} selectedTab={selectedTab} vaultTab={vaultTab} accountType={accountType} />
                 {renderView()}

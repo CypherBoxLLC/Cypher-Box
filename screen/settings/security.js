@@ -105,7 +105,7 @@ const Security = ({ navigation }) => {
     <SafeAreaView style={styles.root}>
       <ScrollView style={styles.root} contentInsetAdjustmentBehavior="automatic" automaticallyAdjustContentInsets>
         <View style={{ height: 45 }} />
-        {Platform.OS === 'android' ? <BlueHeaderDefaultSub leftText={'Security'} /> : <></>}
+        {Platform.OS === 'android' ? <BlueHeaderDefaultSub leftText={loc.settings.encrypt_title} /> : <></>}
         {/* <ListItem title={loc.settings.general} onPress={() => navigate('GeneralSettings')} testID="GeneralSettings" chevron /> */}
         {/* <ListItem title={loc.settings.currency} onPress={() => navigate('Currency')} testID="Currency" chevron /> */}
         {/* <ListItem title={loc.settings.language} onPress={() => navigate('Language')} testID="Language" chevron /> */}
@@ -119,7 +119,7 @@ const Security = ({ navigation }) => {
         {storageIsEncryptedSwitchEnabled &&
           <ListItem 
             chevron 
-            title={"Plausible Deniability"} 
+            title={loc.plausibledeniability.title} 
             onPress={() => {
               dispatchNavigate('PlausibleDeniability');
             }} 
@@ -131,8 +131,11 @@ const Security = ({ navigation }) => {
 };
 
 export default Security;
-Security.navigationOptions = navigationStyle({
-  headerTransparent: true,
-  headerTitle: Platform.select({ ios: loc.settings.header, default: '' }),
-  headerLargeTitle: true,
-});
+// the title is read when the screen is drawn: this file loads before the saved language is applied
+Security.navigationOptions = navigationStyle(
+  {
+    headerTransparent: true,
+    headerLargeTitle: true,
+  },
+  opts => ({ ...opts, headerTitle: Platform.select({ ios: loc.settings.header, default: '' }) }),
+);

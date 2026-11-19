@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import loc from '../../../../loc';
 
 type Fee = keyof Fees;
 
@@ -20,10 +21,10 @@ type FeeSelectionProps = {
 
 export const FeeSelection: React.FC<FeeSelectionProps> = ({ disabled = false, selectedName, fees, onFeeSelect, onSelectFeeName }) => {
   const feeNames: Record<Fee, string> = {
-    fastestFee: "Fastest",
-    halfHourFee: "Fast",
-    hourFee: "Medium",
-    economyFee: "Slow",
+    fastestFee: loc.cypherbox.payments.common.fee_fastest,
+    halfHourFee: loc.cypherbox.payments.common.fee_fast,
+    hourFee: loc.cypherbox.payments.common.fee_medium,
+    economyFee: loc.cypherbox.payments.common.fee_slow,
   };
   const handleFeeSelection = (fee: Fee) => {
     console.log('fee: ', fee)

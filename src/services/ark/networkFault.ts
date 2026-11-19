@@ -26,6 +26,8 @@
  * switch networks when the server is down) costs more than no suggestion.
  */
 
+import loc from '../../../loc';
+
 export type ArkNetworkFault =
     | 'chain-source'
     | 'chain-source-rate-limited'
@@ -148,15 +150,15 @@ export function classifyArkNetworkFault(
 export function arkNetworkFaultMessage(fault: ArkNetworkFault): string | null {
     switch (fault) {
         case 'chain-source':
-            return "Can't reach the Bitcoin network data provider. If you're on Wi-Fi, try mobile data, then try again.";
+            return loc.cypherbox.services.network_fault.chain_source;
         case 'chain-source-rate-limited':
             // Says "not your wallet" explicitly: the raw symptom claims the
             // opposite, and that is the whole reason this case exists.
-            return 'The Bitcoin network data provider is limiting how many requests this connection can make. Nothing is wrong with your wallet. It clears within the hour, or switch networks to get a different address.';
+            return loc.cypherbox.services.network_fault.chain_source_rate_limited;
         case 'ark-server':
             // No network advice: if the server is down, switching networks
             // achieves nothing and wastes the user's time.
-            return 'The Ark server is not responding right now. Your funds are safe, and an emergency exit does not need this server.';
+            return loc.cypherbox.services.network_fault.ark_server;
         default:
             return null;
     }
@@ -192,7 +194,7 @@ export function describeArkFailure(
     const fault = arkNetworkFaultMessage(classifyArkNetworkFault(err, endpoints));
     if (fault) return `${context}. ${fault}`;
     const raw = arkErrorText(err);
-    return raw ? `${context}: ${raw}` : `${context}: unknown error`;
+    return raw ? `${context}: ${raw}` : `${context}: ${loc.cypherbox.services.network_fault.unknown_error}`;
 }
 
 /**

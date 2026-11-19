@@ -5,7 +5,8 @@ import { Copy, StrikeFull } from "@Cypher/assets/images";
 import { GradientSwitch, Text } from "@Cypher/component-library";
 import { ExitFundingSourceList, GradientView } from "@Cypher/components";
 import useAuthStore from "@Cypher/stores/authStore";
-import { colors, widths } from "@Cypher/style-guide";
+import { isCoinosAllowed, isStrikeAllowed } from "@Cypher/services/featureFlags";
+import { colors, widths, rtl } from "@Cypher/style-guide";
 import React, { useContext, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,6 +20,7 @@ import {
   Animated as RNAnimated,
   Text as RNText,
   ScrollView,
+  StyleSheet,
   Switch,
   TextInput,
   TouchableOpacity,
@@ -64,6 +66,7 @@ import {
   isActiveExit,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
+  loadArkBackupInstanceId,
   probeAspReachable,
   readArkSeedPhrase,
   resetArkWalletState,
@@ -74,11 +77,16 @@ import {
   buildExitFundingSources,
 } from "@Cypher/services/ark";
 import type { ExitEconomicPolicy, ExitFeeConvertEstimate, ExitTriageResult, ExitPhaseSummary } from "@Cypher/services/ark";
+import { arkBackupCoverage } from "@Cypher/services/ark/backupCoverage";
+import { buildArkBackupFilename } from "@Cypher/services/ark/backupInstance";
+import { recordAndDescribeNotSpendable } from "@Cypher/services/ark/vtxos";
 import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
 import { setArkExitCorrelationId } from "@Cypher/services/activityCursors";
+import loc from "../../../../loc";
+import { arkSeedKeychainText } from "@Cypher/helpers/arkSeedKeychainText";
 
 interface Props {
   receiveType: boolean;
@@ -86,6 +94,16 @@ interface Props {
   /** True when the parent tab navigated here as the Ark Vault settings. */
   isArk?: boolean;
 }
+
+// The backup service writes its local-save notes in English; they're shown here in the app's language.
+const LOCAL_SAVE_FAILED = 'Local save failed: ';
+const localBackupNoteText = (note: string): string => {
+  if (note.startsWith(LOCAL_SAVE_FAILED)) {
+    return String(loc.formatString(loc.cypherbox.strike.ark_settings.local_save_failed, { error: note.slice(LOCAL_SAVE_FAILED.length) }));
+  }
+  if (note.startsWith('Saved via direct write')) return loc.cypherbox.strike.ark_settings.local_save_direct;
+  return note;
+};
 
 export default function Settings({ receiveType, currency, isArk }: Props) {
   const { strikeMe, clearStrikeAuth, clearAuth } = useAuthStore();
@@ -186,8 +204,8 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
     return (
       <ScrollView style={styles.flex}>
         <RNAnimated.View style={[styles.main, { paddingHorizontal: 24 }]}>
-          {renderSection('Account', <>
-            {renderRow('Lightning Address', strikeMe?.handle ? `${strikeMe.handle}@coinos.io` : 'N/A')}
+          {renderSection(loc.cypherbox.strike.settings.account, <>
+            {renderRow(loc.cypherbox.strike.settings.lightning_address, strikeMe?.handle ? `${strikeMe.handle}@coinos.io` : loc.cypherbox.strike.settings.not_available)}
           </>)}
           <GradientView
             style={{ marginTop: 40, alignSelf: 'center', height: 38, width: widths * 0.26, shadowColor: '#040404', shadowOffset: { width: 8, height: 8 }, shadowOpacity: 0.8, shadowRadius: 16, elevation: 8 }}
@@ -197,7 +215,7 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
             linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', alignItems: 'center' }}
             onPress={handleCoinosLogout}
           >
-            <Text h3 bold center>Logout</Text>
+            <Text h3 bold center>{loc.cypherbox.strike.settings.logout}</Text>
           </GradientView>
         </RNAnimated.View>
       </ScrollView>
@@ -212,58 +230,58 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
         ) : (
           <>
             {/* Account Info */}
-            {renderSection('Account', <>
-              {renderRow('Username', strikeMe?.handle || strikeMe?.username || 'N/A')}
-              {renderRow('Lightning Address', strikeMe?.handle ? `${strikeMe.handle}@strike.me` : 'N/A')}
-              {profile?.email && renderRow('Email', profile.email)}
-              {profile?.country && renderRow('Country', profile.country)}
-              {renderRow('Currency', currency || 'USD')}
+            {renderSection(loc.cypherbox.strike.settings.account, <>
+              {renderRow(loc.cypherbox.strike.settings.username, strikeMe?.handle || strikeMe?.username || loc.cypherbox.strike.settings.not_available)}
+              {renderRow(loc.cypherbox.strike.settings.lightning_address, strikeMe?.handle ? `${strikeMe.handle}@strike.me` : loc.cypherbox.strike.settings.not_available)}
+              {profile?.email && renderRow(loc.cypherbox.strike.settings.email, profile.email)}
+              {profile?.country && renderRow(loc.cypherbox.strike.settings.country, profile.country)}
+              {renderRow(loc.cypherbox.strike.settings.currency, currency || 'USD')}
             </>)}
 
             {/* Limits */}
-            {limits && renderSection('Limits', <>
+            {limits && renderSection(loc.cypherbox.strike.settings.limits, <>
               {limits?.deposit && renderRow(
-                'Deposit Limit',
+                loc.cypherbox.strike.settings.deposit_limit,
                 `$${Number(limits.deposit?.remaining || limits.deposit?.limit || 0).toLocaleString()} / $${Number(limits.deposit?.limit || 0).toLocaleString()}`,
               )}
               {limits?.withdrawal && renderRow(
-                'Withdrawal Limit',
+                loc.cypherbox.strike.settings.withdrawal_limit,
                 `$${Number(limits.withdrawal?.remaining || limits.withdrawal?.limit || 0).toLocaleString()} / $${Number(limits.withdrawal?.limit || 0).toLocaleString()}`,
               )}
               {limits?.send && renderRow(
-                'Send Limit',
+                loc.cypherbox.strike.settings.send_limit,
                 `$${Number(limits.send?.remaining || limits.send?.limit || 0).toLocaleString()} / $${Number(limits.send?.limit || 0).toLocaleString()}`,
               )}
               {limits?.buy && renderRow(
-                'Buy Limit',
+                loc.cypherbox.strike.settings.buy_limit,
                 `$${Number(limits.buy?.remaining || limits.buy?.limit || 0).toLocaleString()} / $${Number(limits.buy?.limit || 0).toLocaleString()}`,
               )}
               {/* If limits is an array, render each */}
               {Array.isArray(limits) && limits.map((item: any, idx: number) => (
                 <View key={idx}>
                   {renderRow(
-                    item?.description || item?.type || `Limit ${idx + 1}`,
-                    `$${Number(item?.remaining || item?.limit || 0).toLocaleString()} remaining`,
+                    item?.description || item?.type || String(loc.formatString(loc.cypherbox.strike.settings.limit_n, { n: idx + 1 })),
+                    String(loc.formatString(loc.cypherbox.strike.settings.amount_remaining, { amount: `$${Number(item?.remaining || item?.limit || 0).toLocaleString()}` })),
                   )}
                 </View>
               ))}
             </>)}
 
             {/* Connected Bank Accounts */}
-            {renderSection('Connected Banks', <>
+            {renderSection(loc.cypherbox.strike.settings.connected_banks, <>
               {bankMethods.length === 0 ? (
                 <View style={{ paddingVertical: 14 }}>
                   <Text style={{ color: '#666', fontSize: 14, textAlign: 'center' }}>
-                    No bank accounts connected.{'\n'}Link a bank account in the Strike app.
+                    {loc.cypherbox.strike.settings.no_banks}
                   </Text>
                 </View>
               ) : (
                 bankMethods.map((bank: any, idx: number) => (
                   <View key={bank?.id || idx} style={{ paddingVertical: 10, borderBottomWidth: idx < bankMethods.length - 1 ? 0.5 : 0, borderBottomColor: '#333' }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                      <Text bold style={{ fontSize: 15 }}>{bank?.bankName || 'Bank Account'}</Text>
+                      <Text bold style={{ fontSize: 15 }}>{bank?.bankName || loc.cypherbox.strike.settings.bank_account}</Text>
                       <Text style={{ fontSize: 13, color: bank?.state === 'READY' ? colors.green : '#FF9500' }}>
-                        {bank?.state || 'Unknown'}
+                        {bank?.state || loc.cypherbox.strike.settings.unknown}
                       </Text>
                     </View>
                     {bank?.accountNumber && (
@@ -277,19 +295,19 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
             </>)}
 
             {/* Support */}
-            {renderSection('Support', <>
+            {renderSection(loc.cypherbox.strike.settings.support, <>
               <View style={{ paddingVertical: 10 }}>
                 <Text style={{ fontSize: 14, color: '#AAA' }}>
-                  Experiencing issues with your Strike account?
+                  {loc.cypherbox.strike.settings.support_issues}
                 </Text>
                 <Text style={{ fontSize: 14, color: '#AAA', marginTop: 6 }}>
-                  1. Troubleshoot from the Strike app
+                  {loc.cypherbox.strike.settings.support_troubleshoot}
                 </Text>
                 <Text style={{ fontSize: 14, color: '#AAA', marginTop: 4 }}>
-                  2. Contact <Text style={{ color: colors.pink.default }}>Strike support</Text>
+                  {loc.formatString(loc.cypherbox.strike.settings.support_contact, { link: <Text style={{ color: colors.pink.default }}>{loc.cypherbox.strike.settings.support_contact_link}</Text> })}
                 </Text>
                 <Text style={{ fontSize: 14, color: '#AAA', marginTop: 4 }}>
-                  API issue? <Text style={{ color: colors.pink.default }}>Report here</Text>
+                  {loc.formatString(loc.cypherbox.strike.settings.support_api_issue, { link: <Text style={{ color: colors.pink.default }}>{loc.cypherbox.strike.settings.support_report_link}</Text> })}
                 </Text>
               </View>
             </>)}
@@ -303,7 +321,7 @@ export default function Settings({ receiveType, currency, isArk }: Props) {
               linearGradientStyleMain={{ borderRadius: 24, height: 38, width: widths * 0.26, justifyContent: 'center', alignItems: 'center' }}
               onPress={handleLogout}
             >
-              <Text h3 bold center>Logout</Text>
+              <Text h3 bold center>{loc.cypherbox.strike.settings.logout}</Text>
             </GradientView>
 
             <Image
@@ -376,34 +394,48 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   } = useAuthStore() as any;
   const arkIosBackupReminderActive = useAuthStore((s) => s.arkIosBackupReminderActive);
   const setArkIosBackupReminderActive = useAuthStore((s) => s.setArkIosBackupReminderActive);
+  // Backups are written, but none reached iCloud Drive, Google Drive or the
+  // chosen folder: the only copy is inside the app. Drives the reminder card
+  // in the backup section (see backupCoverage.ts).
+  const arkLastBackupAt = useAuthStore((s) => s.arkLastBackupAt);
+  const arkLastOffDeviceBackupAt = useAuthStore((s) => s.arkLastOffDeviceBackupAt);
+  const backupThisPhoneOnly = arkBackupCoverage(arkLastBackupAt, arkLastOffDeviceBackupAt) === 'this-phone';
   const { wallets } = useContext(BlueStorageContext) as any;
   const navigation = useNavigation();
 
-  // Find the most recent `ark-backup-*.cbark` in a directory. Used as a
-  // fallback after the per-fingerprint stat probe to (a) survive RN 0.77
-  // Fabric / RNFS interop quirks where exists() can return false for a
-  // present file, and (b) display ANY existing backup even when the
-  // fingerprint cache is cold or mismatched (legacy v1 backup, recovered-
-  // with-new-seed flow). The user's safety perception depends on the UI
-  // truthfully reflecting "a backup exists at this rail" — surfacing the
-  // wrong "Not yet" while a real backup sits next to it in Files is the
-  // bug this fixes.
-  const findLatestArkBackup = async (dirPath: string) => {
+  // Find THIS wallet's backup in a directory by listing it. Used as a
+  // fallback after the per-device stat probe, to survive RN 0.77 Fabric /
+  // RNFS interop quirks where exists() can return false for a present file.
+  // The user's safety perception depends on the UI truthfully reflecting "a
+  // backup exists at this rail", so surfacing the wrong "Not yet" while the
+  // file sits next to it in Files is one bug this guards against.
+  //
+  // Showing another wallet's or another phone's file as this one's is the
+  // other. Two iPhones on one Apple ID share the iCloud folder, so "the
+  // newest ark-backup-*.cbark" there can be the other phone's, and read as
+  // "backed up 1 min ago" for a phone that has no copy at all. So only the
+  // name this phone writes counts (`ark-backup-<fingerprint>-<instance>`),
+  // and failing that the same fingerprint's name from before per-device
+  // names. With the fingerprint cache cold there is no name to look for yet;
+  // the panel polls until it warms.
+  const findOwnArkBackup = async (dirPath: string, fp: string | null, instance: string | null) => {
+    if (!fp) return null;
+    const names = [buildArkBackupFilename(fp, instance), buildArkBackupFilename(fp)];
     try {
       const entries = await RNFS.readDir(dirPath);
-      const matches = entries
-        .filter((e: any) => e.isFile() && /^ark-backup-.*\.cbark$/.test(e.name))
-        .map((e: any) => ({
-          name: e.name,
-          mtime: e.mtime ? new Date(e.mtime as any).getTime() : 0,
-          size: Number(e.size) || 0,
-        }))
-        .sort((a: any, b: any) => b.mtime - a.mtime);
-      if (matches.length === 0) return null;
-      const top = matches[0];
-      return { modifiedAt: top.mtime, sizeBytes: top.size, filename: top.name };
+      for (const name of names) {
+        const e: any = entries.find((x: any) => x.isFile() && x.name === name);
+        if (e) {
+          return {
+            modifiedAt: e.mtime ? new Date(e.mtime as any).getTime() : 0,
+            sizeBytes: Number(e.size) || 0,
+            filename: e.name as string,
+          };
+        }
+      }
+      return null;
     } catch (e: any) {
-      if (__DEV__) console.log('[Ark settings] findLatestArkBackup failed:', e?.message ?? e);
+      if (__DEV__) console.log('[Ark settings] findOwnArkBackup failed:', e?.message ?? e);
       return null;
     }
   };
@@ -535,19 +567,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     }
     const remindersAlsoOff = !remindersEffectivelyOn;
     Alert.alert(
-      "Turn off automatic refresh?",
-      "Cypher Box will stop refreshing your capsules for you, so you will need "
-      + "to open the app and refresh them yourself. Leave at least two days "
-      + "before a capsule expires. An emergency exit has to confirm on the "
-      + "Bitcoin network before expiry, so acting in the final hours can leave "
-      + "you with no way out."
+      loc.cypherbox.strike.ark_settings.auto_refresh_off_title,
+      loc.cypherbox.strike.ark_settings.auto_refresh_off_message
+      + " "
       + (remindersAlsoOff
-        ? " Reminders are off as well, so nothing will warn you."
-        : " Reminders stay on and will still warn you at 2 days, 24 hours, 12 hours and 6 hours."),
+        ? loc.cypherbox.strike.ark_settings.auto_refresh_off_reminders_off
+        : loc.cypherbox.strike.ark_settings.auto_refresh_off_reminders_on),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: loc._.cancel, style: "cancel" },
         {
-          text: "Turn off",
+          text: loc.cypherbox.strike.ark_settings.turn_off,
           style: "destructive",
           onPress: () => setArkAutoRefreshEnabled(false),
         },
@@ -574,24 +603,24 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         setOsNotifPermission(granted);
         if (!granted) {
           Alert.alert(
-            "Reminders need notification permission",
-            "Cypher Box cannot warn you before a capsule expires until notifications are allowed for it in system settings.",
+            loc.cypherbox.strike.ark_settings.notif_permission_title,
+            loc.cypherbox.strike.ark_settings.notif_permission_message,
             [
-              { text: "Not now", style: "cancel" },
-              { text: "Open Settings", onPress: () => void Linking.openSettings() },
+              { text: loc.cypherbox.strike.ark_settings.not_now, style: "cancel" },
+              { text: loc.cypherbox.strike.ark_settings.open_settings, onPress: () => void Linking.openSettings() },
             ],
           );
           return;
         }
-        SimpleToast.show("Reminders enabled", SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.strike.ark_settings.reminders_enabled, SimpleToast.SHORT);
       } else {
         await setArkBackgroundRefreshEnabled(false);
-        SimpleToast.show("Reminders disabled", SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.strike.ark_settings.reminders_disabled, SimpleToast.SHORT);
       }
     } catch (err: any) {
       console.warn("[Ark bg refresh toggle] failed:", err);
       SimpleToast.show(
-        `Toggle failed: ${err?.message ?? "unknown error"}`,
+        String(loc.formatString(loc.cypherbox.strike.ark_settings.toggle_failed, { error: err?.message ?? loc.cypherbox.strike.ark_settings.unknown_error })),
         SimpleToast.LONG,
       );
     } finally {
@@ -620,7 +649,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       // something, and the polling loop below keeps trying until the
       // first auto-backup tick fires (~30s after wallet open).
       const fp = getCachedArkBackupFingerprint();
-      const localPath = fp ? getAutoBackupPath(fp) : AUTO_BACKUP_PATH;
+      // This device writes `ark-backup-{fp}-{instance}.cbark`. The
+      // fingerprint-only name is a file from before per-device names that
+      // nothing writes any more, so probing it would show a date that
+      // never moves on every upgraded device.
+      const instance = fp ? await loadArkBackupInstanceId() : null;
+      if (cancelled) return { cacheWarm: !!fp };
+      const localPath = fp ? getAutoBackupPath(fp, instance) : AUTO_BACKUP_PATH;
 
       // Local — RNFS.stat throws if the file doesn't exist; treat as
       // "no backup yet" rather than an error.
@@ -636,15 +671,17 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             filename: localPath.split('/').pop(),
           });
         } else {
-          // Fallback: enumerate Documents and pick the latest
-          // `ark-backup-*.cbark`. Under RN 0.77 Fabric, RNFS.exists has
-          // occasionally returned false for an actually-present file
-          // (interop quirk + iCloud-evicted local copies). Without this
-          // fallback the UI says "Not yet" while the user can see the
-          // file in Files app, which scares them about funds safety.
-          const found = await findLatestArkBackup(RNFS.DocumentDirectoryPath);
+          // Fallback: list Documents for this wallet's own file. Under RN
+          // 0.77 Fabric, RNFS.exists has occasionally returned false for an
+          // actually-present file (interop quirk + iCloud-evicted local
+          // copies). Without this fallback the UI says "Not yet" while the
+          // user can see the file in Files app, which scares them about
+          // funds safety.
+          const found = await findOwnArkBackup(RNFS.DocumentDirectoryPath, fp, instance);
           if (cancelled) return { cacheWarm: !!fp };
-          setLocalBackup(found ?? undefined);
+          // A cold cache means no name to look for yet, not "no backup":
+          // leave the spinner up while the poll below waits for it.
+          if (fp) setLocalBackup(found ?? undefined);
         }
       } catch (e: any) {
         if (__DEV__) console.log('[Ark settings] local stat failed:', e?.message ?? e);
@@ -669,7 +706,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             setICloudBackup(undefined);
           } else {
             const iCloudPath = fp
-              ? await getICloudBackupPathForFingerprint(fp)
+              ? await getICloudBackupPathForFingerprint(fp, instance)
               : await getICloudBackupPath();
             if (cancelled) return { cacheWarm: !!fp };
             if (!iCloudPath) {
@@ -692,16 +729,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   filename: iCloudPath.split('/').pop(),
                 });
               } else {
-                // Same fallback rationale as the local probe — enumerate
-                // the iCloud Documents directory and pick the latest
-                // ark-backup-*.cbark. This catches both the
-                // wrong-fingerprint case (cache cold or wallet recovered
-                // with a new seed) and the RNFS.exists-returns-false-on-
-                // iCloud-evicted-files case.
+                // Same fallback rationale as the local probe: list the
+                // iCloud Documents directory for this wallet's own file,
+                // which catches the RNFS.exists-returns-false-on-iCloud-
+                // evicted-files case. Never another phone's file: this
+                // folder is shared by every device on the Apple ID.
                 const iCloudDir = iCloudPath.substring(0, iCloudPath.lastIndexOf('/'));
-                const found = await findLatestArkBackup(iCloudDir);
+                const found = await findOwnArkBackup(iCloudDir, fp, instance);
                 if (cancelled) return { cacheWarm: !!fp };
-                setICloudBackup(found ?? undefined);
+                if (fp) setICloudBackup(found ?? undefined);
               }
             }
           }
@@ -728,7 +764,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         if (cancelled) return { cacheWarm: !!fp };
         setDriveConnected(connected);
         if (connected) {
-          const info = await getDriveBackupInfo(fp);
+          const info = await getDriveBackupInfo(fp, instance);
           if (cancelled) return { cacheWarm: !!fp };
           setDriveBackup(info ?? undefined);
         } else {
@@ -737,7 +773,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       } catch (e: any) {
         if (!cancelled) {
           setDriveConnected(false);
-          setDriveError(e?.message || 'Drive unreachable');
+          setDriveError(e?.message || loc.cypherbox.strike.ark_settings.drive_unreachable);
         }
       }
 
@@ -767,6 +803,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             clearInterval(intervalHandle);
             intervalHandle = null;
           }
+          // Gave up waiting for the cache: settle any row still spinning for
+          // the lack of a name to "Not yet", the cold-cache display.
+          if (!cancelled && !r.cacheWarm) {
+            setLocalBackup((prev) => (prev === null ? undefined : prev));
+            setICloudBackup((prev) => (prev === null ? undefined : prev));
+          }
         }
       }, 3000);
     })();
@@ -782,14 +824,14 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const formatAgo = (ms: number): string => {
     if (!ms) return '—';
     const diff = Date.now() - ms;
-    if (diff < 0) return 'just now';
+    if (diff < 0) return loc.cypherbox.strike.ark_settings.just_now;
     const mins = Math.floor(diff / 60_000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return `${mins} min ago`;
+    if (mins < 1) return loc.cypherbox.strike.ark_settings.just_now;
+    if (mins < 60) return String(loc.formatString(loc.cypherbox.strike.ark_settings.mins_ago, { mins }));
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs} hr ago`;
+    if (hrs < 24) return String(loc.formatString(loc.cypherbox.strike.ark_settings.hrs_ago, { hrs }));
     const days = Math.floor(hrs / 24);
-    if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
+    if (days < 30) return String(loc.formatString((days === 1 ? loc.cypherbox.strike.ark_settings.days_ago_one : loc.cypherbox.strike.ark_settings.days_ago_other), { days }));
     return new Date(ms).toLocaleDateString();
   };
 
@@ -812,14 +854,20 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       const connected = await isGoogleDriveConnected();
       setDriveConnected(connected);
       if (connected) {
-        const info = await getDriveBackupInfo();
+        // The same file the panel's own probe asks for: this device's
+        // per-device upload. With no arguments this asked Drive for the
+        // pre-per-wallet name, which nothing writes, so the row read "No
+        // copy yet" after every Connect until the screen was reopened.
+        const fp = getCachedArkBackupFingerprint();
+        const instance = fp ? await loadArkBackupInstanceId() : null;
+        const info = await getDriveBackupInfo(fp, instance);
         setDriveBackup(info ?? undefined);
       } else {
         setDriveBackup(undefined);
       }
     } catch (e: any) {
       setDriveConnected(false);
-      setDriveError(e?.message || 'Drive unreachable');
+      setDriveError(e?.message || loc.cypherbox.strike.ark_settings.drive_unreachable);
     }
   };
 
@@ -830,9 +878,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     try {
       const ok = await connectGoogleDrive();
       if (!ok) {
-        SimpleToast.show('Drive sign-in cancelled.', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.strike.ark_settings.drive_signin_cancelled, SimpleToast.SHORT);
       } else {
-        SimpleToast.show('Google Drive connected.', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.strike.ark_settings.drive_connected, SimpleToast.SHORT);
       }
     } catch (e: any) {
       // Surface the real Google Sign-In error code so a misconfigured
@@ -842,9 +890,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       //   PLAY_SERVICES_NOT_AVAILABLE — emulator without GMS
       //   SIGN_IN_REQUIRED — user signed out mid-flow
       const code = e?.code ? ` [${e.code}]` : '';
-      const msg = e?.message || 'Drive connect failed';
+      const msg = e?.message || loc.cypherbox.strike.ark_settings.drive_connect_failed;
       setDriveError(`${msg}${code}`);
-      SimpleToast.show(`Drive connect failed${code}: ${msg}`, SimpleToast.LONG);
+      SimpleToast.show(String(loc.formatString(loc.cypherbox.strike.ark_settings.drive_connect_failed_detail, { code, msg })), SimpleToast.LONG);
     } finally {
       setDriveBusy(false);
       await refreshDriveStatus();
@@ -854,19 +902,19 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const handleDriveDisconnect = async () => {
     if (driveBusy) return;
     Alert.alert(
-      'Disconnect Google Drive?',
-      'Your existing backup file will stay in Drive. Disconnecting only stops future uploads. You can reconnect any time.',
+      loc.cypherbox.strike.ark_settings.drive_disconnect_title,
+      loc.cypherbox.strike.ark_settings.drive_disconnect_message,
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: loc._.cancel, style: 'cancel' },
         {
-          text: 'Disconnect',
+          text: loc.cypherbox.strike.ark_settings.disconnect,
           style: 'destructive',
           onPress: async () => {
             setDriveBusy(true);
             try {
               await disconnectGoogleDrive();
             } catch (e: any) {
-              SimpleToast.show(`Disconnect failed: ${e?.message || 'unknown error'}`, SimpleToast.SHORT);
+              SimpleToast.show(String(loc.formatString(loc.cypherbox.strike.ark_settings.disconnect_failed, { error: e?.message || loc.cypherbox.strike.ark_settings.unknown_error })), SimpleToast.SHORT);
             } finally {
               setDriveBusy(false);
               await refreshDriveStatus();
@@ -882,11 +930,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // Documents file IS the iCloud-synced copy when Drive sync is on.
   const handleICloudHint = () => {
     Alert.alert(
-      'Enable iCloud Drive',
-      'Cypher Box stores its backup in your Documents folder. To sync it to iCloud, open iOS Settings → [your name] → iCloud → iCloud Drive, then enable Cypher Box in the app list.',
+      loc.cypherbox.strike.ark_settings.icloud_enable_title,
+      loc.cypherbox.strike.ark_settings.icloud_enable_message,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
+        { text: loc._.cancel, style: 'cancel' },
+        { text: loc.cypherbox.strike.ark_settings.open_settings, onPress: () => Linking.openSettings().catch(() => {}) },
       ],
     );
   };
@@ -904,15 +952,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     const available = await isICloudBackupAvailable();
     if (available) {
       setArkIosBackupReminderActive(false);
-      SimpleToast.show('iCloud Drive verified. Reminder dismissed.', SimpleToast.LONG);
+      SimpleToast.show(loc.cypherbox.strike.ark_settings.icloud_verified, SimpleToast.LONG);
       return;
     }
     Alert.alert(
-      "iCloud Drive isn't on for Cypher Box",
-      "Open iOS Settings → [your name] → iCloud → iCloud Drive → scroll the app list and switch Cypher Box ON. Then come back here and tap 'iCloud Drive is on, dismiss' again.",
+      loc.cypherbox.strike.ark_settings.icloud_not_on_title,
+      loc.cypherbox.strike.ark_settings.icloud_not_on_message,
       [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Open Settings', onPress: () => Linking.openSettings().catch(() => {}) },
+        { text: loc._.cancel, style: 'cancel' },
+        { text: loc.cypherbox.strike.ark_settings.open_settings, onPress: () => Linking.openSettings().catch(() => {}) },
       ],
     );
   };
@@ -942,7 +990,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     try {
       const mnemonic = await readArkSeedPhrase();
       if (!mnemonic) {
-        SimpleToast.show('No seed available, or authentication declined.', SimpleToast.SHORT);
+        SimpleToast.show(loc.cypherbox.strike.ark_settings.no_seed_or_auth_declined, SimpleToast.SHORT);
         return;
       }
       const file = await writeArkBackupToTempFile(mnemonic);
@@ -960,7 +1008,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       }
     } catch (err: any) {
       console.warn('[Ark/manual-export] failed:', err);
-      SimpleToast.show(`Couldn't prepare backup file: ${err?.message ?? 'unknown error'}.`, SimpleToast.LONG);
+      SimpleToast.show(String(loc.formatString(loc.cypherbox.strike.ark_settings.backup_prepare_failed, { error: err?.message ?? loc.cypherbox.strike.ark_settings.unknown_error })), SimpleToast.LONG);
     } finally {
       setManualExportBusy(false);
     }
@@ -976,7 +1024,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // cancelled the biometric prompt. We can't distinguish them
         // from the helper's null return, so the toast is generic.
         SimpleToast.show(
-          'No seed available, or authentication declined.',
+          loc.cypherbox.strike.ark_settings.no_seed_or_auth_declined,
           SimpleToast.SHORT,
         );
         return;
@@ -1372,56 +1420,56 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       (w: any) => typeof w?.getID === 'function' && w.getID() === walletID,
     );
     if (!hotVault || typeof hotVault._getInternalAddressByIndex !== 'function') {
-      Alert.alert('No Hot Vault found', 'Open or create your Hot Vault first, then try again.');
+      Alert.alert(loc.cypherbox.strike.ark_exit.no_hot_vault_title, loc.cypherbox.strike.ark_exit.no_hot_vault_message);
       return;
     }
     let est;
     try {
       est = await estimateArkOnchainRecover(onchainReserveSats);
     } catch {
-      Alert.alert('Release unavailable', 'Could not read the on-chain balance right now. Check your connection and try again.');
+      Alert.alert(loc.cypherbox.strike.ark_exit.release_unavailable_title, loc.cypherbox.strike.ark_exit.release_unavailable_message);
       return;
     }
     if (est.confirmedSats <= 0) {
-      SimpleToast.show('Nothing to release right now.', SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.nothing_to_release_now, SimpleToast.SHORT);
       return;
     }
     if (!est.economical) {
-      Alert.alert('Too small to release', 'The network fee would be larger than the amount, so recovering it on-chain would cost more than it returns.');
+      Alert.alert(loc.cypherbox.strike.ark_exit.too_small_to_release_title, loc.cypherbox.strike.ark_exit.too_small_to_release_message);
       return;
     }
     let destAddress: string;
     try {
       destAddress = hotVault._getInternalAddressByIndex(hotVault.getNextFreeChangeAddressIndex());
     } catch {
-      Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to release to.');
+      Alert.alert(loc.cypherbox.strike.ark_exit.no_hot_vault_address_title, loc.cypherbox.strike.ark_exit.no_hot_vault_address_message);
       return;
     }
     if (!destAddress) {
-      Alert.alert('No Hot Vault address', 'Could not derive a Hot Vault address to release to.');
+      Alert.alert(loc.cypherbox.strike.ark_exit.no_hot_vault_address_title, loc.cypherbox.strike.ark_exit.no_hot_vault_address_message);
       return;
     }
     Alert.alert(
-      'Release on-chain funds',
-      `Send ${est.recoverableSats.toLocaleString()} sats back to your Hot Vault? This is an on-chain transaction; the network fee is about ${est.feeSats.toLocaleString()} sats.`,
+      loc.cypherbox.strike.ark_exit.release_title,
+      String(loc.formatString(loc.cypherbox.strike.ark_exit.release_message, { sats: est.recoverableSats.toLocaleString(), fee: est.feeSats.toLocaleString() })),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: loc._.cancel, style: 'cancel' },
         {
-          text: 'Release',
+          text: loc.cypherbox.strike.ark_exit.release_button,
           onPress: async () => {
             try {
               const res = await recoverArkOnchainBoard(destAddress, est.confirmedSats, est.feeRateSatPerVb);
               setArkExitFeeReserveSats(0);
               if (res.status === 'already-cleared') {
-                Alert.alert('Nothing to release', 'These funds already cleared.');
+                Alert.alert(loc.cypherbox.strike.ark_exit.nothing_to_release_title, loc.cypherbox.strike.ark_exit.already_cleared);
               } else {
-                Alert.alert('Release sent', `${res.sentSats.toLocaleString()} sats are on the way to your Hot Vault. They will appear there as a pending transaction.`);
+                Alert.alert(loc.cypherbox.strike.ark_exit.release_sent_title, String(loc.formatString(loc.cypherbox.strike.ark_exit.release_sent_message, { sats: res.sentSats.toLocaleString() })));
               }
             } catch (e: any) {
               // Same treatment as the top-up path: a dropped connection now
               // arrives as a flagged message that says it may have gone
               // through, so do not overwrite it with an "unchanged" claim.
-              Alert.alert('Release failed', String(e?.message || '') || 'The release could not be sent. Your funds are unchanged.');
+              Alert.alert(loc.cypherbox.strike.ark_exit.release_failed_title, String(e?.message || '') || loc.cypherbox.strike.ark_exit.release_failed_message);
             }
           },
         },
@@ -1432,11 +1480,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const doConvertToExitFees = async () => {
     const amt = parseInt(convertAmount, 10);
     if (!Number.isFinite(amt) || amt <= 0) {
-      SimpleToast.show('Enter an amount to convert.', SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.enter_convert_amount, SimpleToast.SHORT);
       return;
     }
     if (aspReachable === false) {
-      SimpleToast.show('Ark server unreachable. Use Receive Bitcoin instead.', SimpleToast.LONG);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.asp_unreachable, SimpleToast.LONG);
       return;
     }
     setFundingBusy(true);
@@ -1447,10 +1495,20 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       await convertToExitFees(amt);
       setExitFundingOpen(false);
       SimpleToast.show(
-        'Converting to on-chain fee funds. Emergency Exit unlocks once it confirms.',
+        loc.cypherbox.strike.ark_exit.converting_toast,
         SimpleToast.LONG,
       );
     } catch (e: any) {
+      // The server refused a capsule, for example one already spent from
+      // another device. A spent one is recorded so the balance stops counting
+      // it, and the user reads the app's words, not the raw server string. A
+      // dropped connection arrives as the flagged indeterminate error, whose
+      // text names no capsule, so it still takes the branch below.
+      const notSpendable = await recordAndDescribeNotSpendable(e);
+      if (notSpendable) {
+        Alert.alert(notSpendable.title, notSpendable.body);
+        return;
+      }
       // "Could not convert" is kept: the tab the user is on says "Convert from
       // balance", so it matches. What was wrong is the body. "Offboard" is
       // bark's word and appears nowhere in this UI, and "Your Ark funds are
@@ -1458,9 +1516,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       // raises a flagged indeterminate error in that case, whose message is
       // already user-facing, so the fallback below applies only to refusals.
       Alert.alert(
-        'Could not convert',
+        loc.cypherbox.strike.ark_exit.convert_failed_title,
         String(e?.message || '') ||
-          'The transfer could not be sent. Your vault balance is unchanged.',
+          loc.cypherbox.strike.ark_exit.convert_failed_message,
       );
     } finally {
       setFundingBusy(false);
@@ -1557,8 +1615,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     if (!plan) {
       setExitStarting(false);
       Alert.alert(
-        'Emergency Exit',
-        "Couldn't read your capsules just now, so the exit wasn't started. Try again in a moment.",
+        loc.cypherbox.strike.ark_exit.emergency_exit,
+        loc.cypherbox.strike.ark_exit.read_capsules_failed,
       );
       return;
     }
@@ -1580,26 +1638,26 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       const lines: string[] = [];
       if (p.runwayUnverifiedCount > 0) {
         lines.push(
-          `${p.runwayUnverifiedCount === p.selected.length ? 'These capsules' : `${p.runwayUnverifiedCount} of these capsules`} could not be checked against expiry, because there is no recent view of the chain. If one is closer to expiring than it looks, the exit can lose it and the fees spent on it.`,
+          p.runwayUnverifiedCount === p.selected.length ? loc.cypherbox.strike.ark_exit.unverified_runway_all : String(loc.formatString(loc.cypherbox.strike.ark_exit.unverified_runway_some, { count: p.runwayUnverifiedCount })),
         );
       } else if (p.tipUnavailable) {
         lines.push(
-          'Your capsules could not be checked against expiry, because there is no recent view of the chain.',
+          loc.cypherbox.strike.ark_exit.unverified_tip,
         );
       }
       if (p.feeRatesEstimated) {
         lines.push(
-          'Fee estimates are unavailable, so the amounts here are a guess rather than the current market rate. Anything described as costing more than it is worth may be cheaper than this says.',
+          loc.cypherbox.strike.ark_exit.unverified_fees,
         );
       }
       if (p.usedAssumedExitDelta) {
-        lines.push('The waiting period is assumed, not read from the server.');
+        lines.push(loc.cypherbox.strike.ark_exit.unverified_delta);
       }
       if (lines.length === 0) return '';
       return (
-        'You appear to be offline or unable to reach the chain.\n\n' +
+        loc.cypherbox.strike.ark_exit.unverified_header + '\n\n' +
         lines.map((l) => `  ${l}`).join('\n\n') +
-        '\n\nReconnecting and trying again will give you real numbers. You can still go ahead: a network fault must not take away your way out.\n\n'
+        '\n\n' + loc.cypherbox.strike.ark_exit.unverified_footer + '\n\n'
       );
     };
     const unverifiedNotice = buildUnverifiedNotice(plan);
@@ -1621,21 +1679,20 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       // COPY: Bam finalizes.
       const costClause =
         anyLoss && anyStale
-          ? 'For some, the miner fees cost more than the funds are worth. The rest are close to expiring, where a refresh costs far less than an exit and resets the timer.'
+          ? loc.cypherbox.strike.ark_exit.cost_clause_mixed
           : anyLoss
-            ? 'It costs more in miner fees than the funds are worth.'
-            : 'They are close to expiring. A refresh costs far less than an exit and resets the timer, so exiting is the more expensive way to keep them, though it does not lose money against what they hold.';
+            ? loc.cypherbox.strike.ark_exit.cost_clause_loss
+            : loc.cypherbox.strike.ark_exit.cost_clause_stale;
       Alert.alert(
-        'Emergency Exit',
+        loc.cypherbox.strike.ark_exit.emergency_exit,
         unverifiedNotice +
           bodyPrefix +
-          `\n\nYou can exit ${plan!.overridableCount === 1 ? 'it' : 'them'} anyway. ` +
-          'That is sometimes worth it, for instance to get your funds out of a server you no longer trust. ' +
+          '\n\n' + (plan!.overridableCount === 1 ? loc.cypherbox.strike.ark_exit.exit_anyway_offer_one : loc.cypherbox.strike.ark_exit.exit_anyway_offer_other) + ' ' +
           costClause,
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: loc._.cancel, style: 'cancel' },
           {
-            text: 'Exit anyway',
+            text: loc.cypherbox.strike.ark_exit.exit_anyway,
             style: 'destructive',
             onPress: () => {
               void startExitWithAddress(destLabel, address, 'recover-everything');
@@ -1649,27 +1706,27 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     // spend the reserve and return nothing.
     if (plan.selectedIds.length === 0) {
       const list = plan.excluded
-        .map((e) => `  ${e.sats.toLocaleString()} sats: ${describeExitExclusion(e.reason)}`)
+        .map((e) => `  ${loc.formatString(loc.cypherbox.strike.ark_exit.capsule_reason_row, { sats: e.sats.toLocaleString(), reason: describeExitExclusion(e.reason) })}`)
         .join('\n');
       if (plan.excluded.length === 0) {
         setExitStarting(false);
-        Alert.alert('Emergency Exit', 'There are no capsules to exit.');
+        Alert.alert(loc.cypherbox.strike.ark_exit.emergency_exit, loc.cypherbox.strike.ark_exit.no_capsules_to_exit);
         return;
       }
       if (plan.overridableCount === plan.excluded.length) {
         forcePrompt(
-          `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} ` +
-            `can be recovered by an emergency exit right now:\n${list}`,
+          String(loc.formatString((plan.excluded.length === 1 ? loc.cypherbox.strike.ark_exit.none_recoverable_one : loc.cypherbox.strike.ark_exit.none_recoverable_other), { count: plan.excluded.length })) +
+            `\n${list}`,
         );
         return;
       }
       setExitStarting(false);
       Alert.alert(
-        'Emergency Exit',
+        loc.cypherbox.strike.ark_exit.emergency_exit,
         unverifiedNotice +
-          `None of your ${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} can be recovered by an emergency exit right now:\n\n` +
+          String(loc.formatString((plan.excluded.length === 1 ? loc.cypherbox.strike.ark_exit.none_recoverable_one : loc.cypherbox.strike.ark_exit.none_recoverable_other), { count: plan.excluded.length })) + '\n\n' +
           list +
-          '\n\nThey stay in your vault and stay spendable.',
+          '\n\n' + loc.cypherbox.strike.ark_exit.stay_spendable,
       );
       return;
     }
@@ -1682,14 +1739,14 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     // named, with its amount and the reason, BEFORE the user commits.
     const exclusionNotice =
       plan.excluded.length > 0
-        ? `${plan.excluded.length} capsule${plan.excluded.length === 1 ? '' : 's'} holding ${plan.excludedSats.toLocaleString()} sats will NOT be exited:\n` +
+        ? String(loc.formatString((plan.excluded.length === 1 ? loc.cypherbox.strike.ark_exit.exclusion_header_one : loc.cypherbox.strike.ark_exit.exclusion_header_other), { count: plan.excluded.length, sats: plan.excludedSats.toLocaleString() })) + '\n' +
           plan.excluded
             .map(
               (e) =>
-                `  ${e.sats.toLocaleString()} sats: ${describeExitExclusion(e.reason)}`,
+                `  ${loc.formatString(loc.cypherbox.strike.ark_exit.capsule_reason_row, { sats: e.sats.toLocaleString(), reason: describeExitExclusion(e.reason) })}`,
             )
             .join('\n') +
-          '\n\nThey stay in your vault and stay spendable. Sending them, or combining them, recovers more than an exit would.\n\n'
+          '\n\n' + loc.cypherbox.strike.ark_exit.exclusion_footer + '\n\n'
         : '';
 
     // Principle: never silently spend more than the funds are worth. The
@@ -1702,18 +1759,21 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     const CAPSULE_LIST_MAX = 6;
     const capsuleNotice =
       plan.selected.length > 1
-        ? 'Capsules being exited:\n' +
+        ? loc.cypherbox.strike.ark_exit.capsules_being_exited + '\n' +
           plan.selected
             .slice(0, CAPSULE_LIST_MAX)
             .map(
               (e) =>
-                `  ${e.sats.toLocaleString()} sats: about ${e.netRecoveredSats.toLocaleString()} sats reach you, ` +
-                `collectable ${formatExitCollectWait(e.requiredRunwayBlocks)}, ` +
-                `expires ${e.blocksUntilExpiry != null ? formatBlocksUntil(e.blocksUntilExpiry) : 'unknown'}`,
+                `  ${loc.formatString(loc.cypherbox.strike.ark_exit.capsule_exit_row, {
+                  sats: e.sats.toLocaleString(),
+                  net: e.netRecoveredSats.toLocaleString(),
+                  collect: formatExitCollectWait(e.requiredRunwayBlocks),
+                  expires: e.blocksUntilExpiry != null ? formatBlocksUntil(e.blocksUntilExpiry) : loc.cypherbox.strike.ark_exit.expires_unknown,
+                })}`,
             )
             .join('\n') +
           (plan.selected.length > CAPSULE_LIST_MAX
-            ? `\n  and ${plan.selected.length - CAPSULE_LIST_MAX} more`
+            ? `\n  ${loc.formatString(loc.cypherbox.strike.ark_exit.and_more, { count: plan.selected.length - CAPSULE_LIST_MAX })}`
             : '') +
           '\n\n'
         : '';
@@ -1727,38 +1787,38 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     // sat capsule that it cost 4,105 sats more than it was worth, when the
     // expected spend was about 632 against 895 recovered.
     const costNotice =
-      `Exiting ${plan.selected.length} capsule${plan.selected.length === 1 ? '' : 's'} holding ${plan.selectedSats.toLocaleString()} sats. About ${plan.netRecoverableSats.toLocaleString()} sats reach your address.\n\n` +
-      `Miner fees are expected to cost about ${plan.expectedSpendSats.toLocaleString()} sats. You need ${plan.reserveSats.toLocaleString()} sats sitting in your on-chain wallet as cover in case fees rise, and anything not spent stays yours.\n\n` +
+      String(loc.formatString((plan.selected.length === 1 ? loc.cypherbox.strike.ark_exit.cost_summary_one : loc.cypherbox.strike.ark_exit.cost_summary_other), { count: plan.selected.length, sats: plan.selectedSats.toLocaleString(), net: plan.netRecoverableSats.toLocaleString() })) + '\n\n' +
+      String(loc.formatString(loc.cypherbox.strike.ark_exit.cost_fees, { spend: plan.expectedSpendSats.toLocaleString(), reserve: plan.reserveSats.toLocaleString() })) + '\n\n' +
       // The loss, in sats, whenever the exit spends more than it returns. This
       // is the sentence that makes an overridden exit a choice rather than a
       // surprise, so it is not conditional on how the policy got here.
       (plan.netLossSats > 0
-        ? `That is about ${plan.netLossSats.toLocaleString()} sats MORE in expected fees than the funds are worth.\n\n`
+        ? String(loc.formatString(loc.cypherbox.strike.ark_exit.net_loss, { loss: plan.netLossSats.toLocaleString() })) + '\n\n'
         : '');
 
     const shortfall = Math.max(0, freshRecommended - onchainReserveSats);
     const underfunded = freshRecommended > 0 && shortfall > 0;
     const underfundedPrefix = underfunded
-      ? `Your on-chain fee wallet holds ${onchainReserveSats.toLocaleString()} sats of about ${freshRecommended.toLocaleString()} needed for miner fees. Add about ${shortfall.toLocaleString()} sats more, or the exit may stall until you top up during the wait.\n\n`
+      ? String(loc.formatString(loc.cypherbox.strike.ark_exit.underfunded, { held: onchainReserveSats.toLocaleString(), needed: freshRecommended.toLocaleString(), shortfall: shortfall.toLocaleString() })) + '\n\n'
       : '';
     try {
       Alert.alert(
-        'Emergency Exit',
+        loc.cypherbox.strike.ark_exit.emergency_exit,
         unverifiedNotice +
           exclusionNotice +
           capsuleNotice +
           costNotice +
           underfundedPrefix +
-          `Forces your VTXO capsules onto the Bitcoin chain, into your ${destLabel}. Bitcoin enforces a waiting period first, ${formatExitCollectWait(exitPlan.collectableInBlocks)} for this exit. Once you start, this can't be cancelled.\n\n` +
-          'Only start this if your soonest capsule is at least 1 day from expiry. The exit txs must confirm on-chain before then, so it is not a last-minute rescue.\n\n' +
+          String(loc.formatString(loc.cypherbox.strike.ark_exit.exit_forces, { dest: destLabel, wait: formatExitCollectWait(exitPlan.collectableInBlocks) })) + '\n\n' +
+          loc.cypherbox.strike.ark_exit.exit_one_day + '\n\n' +
           `${address}\n\n` +
           // The wait does NOT run itself. The drive is foreground-only, so the
           // claim fires when the user next opens the app. Saying otherwise was
           // untrue for most of the 44 hours the 2026-08-22 exit ran.
-          `Come back and open the app ${formatExitCollectWait(exitPlan.collectableInBlocks)} to collect. It does not finish while the app is closed. The vault stays afterwards.`,
+          String(loc.formatString(loc.cypherbox.strike.ark_exit.exit_come_back, { wait: formatExitCollectWait(exitPlan.collectableInBlocks) })),
         [
           {
-            text: 'Cancel',
+            text: loc._.cancel,
             style: 'cancel',
             onPress: () => setExitStarting(false),
           },
@@ -1768,7 +1828,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
           ...(plan.overridableCount > 0
             ? [
                 {
-                  text: `Include all ${(plan.selected.length + plan.overridableCount)}`,
+                  text: String(loc.formatString(loc.cypherbox.strike.ark_exit.include_all, { count: (plan.selected.length + plan.overridableCount) })),
                   style: 'destructive' as const,
                   onPress: () => {
                     void startExitWithAddress(destLabel, address, 'recover-everything');
@@ -1777,7 +1837,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               ]
             : []),
           {
-            text: 'Start exit',
+            text: loc.cypherbox.strike.ark_exit.start_exit,
             style: 'destructive',
             onPress: async () => {
               try {
@@ -1819,13 +1879,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   correlationId,
                 });
                 SimpleToast.show(
-                  'Emergency exit started, broadcasting on-chain. It does not finish while the app is closed: reopen it after the timelock to collect.',
+                  loc.cypherbox.strike.ark_exit.exit_started,
                   SimpleToast.LONG,
                 );
               } catch (err: any) {
                 console.warn('[Ark exit] start failed:', 'tag=', err?.tag, 'inner=', err?.inner?.errorMessage ?? err?.inner?.message, 'message=', err?.message ?? String(err));
                 SimpleToast.show(
-                  describeArkFailure(err, "Couldn't start exit", { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }),
+                  describeArkFailure(err, loc.cypherbox.strike.ark_exit.couldnt_start_exit, { chainUrls: ESPLORA_URLS, arkUrl: ARK_SERVER_URL }),
                   SimpleToast.LONG,
                 );
               } finally {
@@ -1842,12 +1902,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
   const enterHotAddrStep = () => {
     if (!walletID) {
-      SimpleToast.show("No Hot Vault connected.", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.no_hot_vault_connected, SimpleToast.SHORT);
       return;
     }
     const list = deriveAddressList(walletID);
     if (list.length === 0) {
-      SimpleToast.show("Couldn't derive any Hot Vault addresses.", SimpleToast.LONG);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.no_hot_vault_addresses, SimpleToast.LONG);
       return;
     }
     setHotAddrs(list);
@@ -1858,12 +1918,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
   const enterColdAddrStep = () => {
     if (!coldStorageWalletID) {
-      SimpleToast.show("No Cold Storage wallet connected.", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.no_cold_wallet_connected, SimpleToast.SHORT);
       return;
     }
     const list = deriveAddressList(coldStorageWalletID);
     if (list.length === 0) {
-      SimpleToast.show("Couldn't derive any Cold Storage addresses.", SimpleToast.LONG);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.no_cold_addresses, SimpleToast.LONG);
       return;
     }
     setColdAddrs(list);
@@ -1875,25 +1935,25 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
   const confirmHotAddr = () => {
     if (!selectedAddr) return;
-    void startExitWithAddress('Hot Vault', selectedAddr);
+    void startExitWithAddress(loc.cypherbox.strike.ark_exit.dest_hot_vault, selectedAddr);
   };
 
   const confirmColdAddr = () => {
     if (!selectedAddr) return;
     if (!hardwareVerified) {
-      SimpleToast.show("Confirm you've verified the address on your hardware device first.", SimpleToast.LONG);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.confirm_hw_verified_first, SimpleToast.LONG);
       return;
     }
-    void startExitWithAddress('Cold Storage vault', selectedAddr);
+    void startExitWithAddress(loc.cypherbox.strike.ark_exit.dest_cold_vault, selectedAddr);
   };
 
   const handlePickExternal = () => {
     const t = externalAddrInput.trim();
     if (!looksLikeBitcoinAddress(t)) {
-      SimpleToast.show("That doesn't look like a valid Bitcoin address.", SimpleToast.SHORT);
+      SimpleToast.show(loc.cypherbox.strike.ark_exit.invalid_address, SimpleToast.SHORT);
       return;
     }
-    void startExitWithAddress('external Bitcoin address', t);
+    void startExitWithAddress(loc.cypherbox.strike.ark_exit.dest_external, t);
   };
 
   /**
@@ -1906,10 +1966,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
    *   - Clears zustand auth state
    *
    * If the seed is kept, a future Recover flow can surface the biometric
-   * (Face/Touch ID) fast path so the user doesn't have to type 12 words
-   * to come back. If unchecked, the user MUST have their 12-word phrase
-   * to recover (and a `.cbark` backup file to restore funds — VTXOs are
-   * never seed-derivable).
+   * (Face ID / passcode on iPhone, fingerprint on Android) fast path so the
+   * user doesn't have to type 12 words to come back. On Android the kept
+   * copy is gone once the app is uninstalled. If unchecked, the user MUST
+   * have their 12-word phrase to recover (and a `.cbark` backup file to
+   * restore funds — VTXOs are never seed-derivable).
    */
   const [deleting, setDeleting] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -1917,7 +1978,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const [exitInFlight, setExitInFlight] = useState(false);
   const [keepSeedOnDevice, setKeepSeedOnDevice] = useState(true);
 
-  const biometricLabel = Platform.OS === 'ios' ? 'Face ID' : 'Touch ID';
+  const keychainText = arkSeedKeychainText();
 
   /**
    * Probe for an in-flight exit BEFORE the modal opens, so the warning is on
@@ -1967,7 +2028,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       const mnemonic = await readArkSeedPhrase();
       if (!mnemonic) {
         SimpleToast.show(
-          "Couldn't read your seed to back up first, so delete was cancelled. Your funds are untouched.",
+          loc.cypherbox.strike.ark_settings.delete_seed_read_failed,
           SimpleToast.LONG,
         );
         setDeleting(false);
@@ -1977,7 +2038,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         const verified = await writeAndVerifyArkBackup(mnemonic);
         if (!verified.local.ok) {
           SimpleToast.show(
-            `Couldn't write a verified backup (${verified.local.error}), so delete was cancelled. Your funds are untouched.`,
+            String(loc.formatString(loc.cypherbox.strike.ark_settings.delete_backup_write_failed, { error: verified.local.error })),
             SimpleToast.LONG,
           );
           setDeleting(false);
@@ -1989,7 +2050,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // backup" and abort the delete rather than risk silent loss.
         console.warn('[Ark] pre-delete backup failed:', backupErr);
         SimpleToast.show(
-          `Couldn't create a backup to protect your funds, so delete was cancelled: ${backupErr?.message ?? "unknown error"}`,
+          String(loc.formatString(loc.cypherbox.strike.ark_settings.delete_backup_create_failed, { error: backupErr?.message ?? loc.cypherbox.strike.ark_settings.unknown_error })),
           SimpleToast.LONG,
         );
         setDeleting(false);
@@ -2002,15 +2063,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       }
       SimpleToast.show(
         keepSeedOnDevice
-          ? "Backup verified. Ark vault deleted. Seed kept on device for biometric recovery."
-          : "Backup verified. Ark vault deleted from this device.",
+          ? loc.cypherbox.strike.ark_settings.deleted_seed_kept
+          : loc.cypherbox.strike.ark_settings.deleted,
         SimpleToast.LONG,
       );
       setTimeout(() => navigation.goBack(), 300);
     } catch (err: any) {
       console.warn('[Ark] Delete vault failed:', err);
       SimpleToast.show(
-        `Delete failed: ${err?.message ?? "unknown error"}`,
+        String(loc.formatString(loc.cypherbox.strike.ark_settings.delete_failed, { error: err?.message ?? loc.cypherbox.strike.ark_settings.unknown_error })),
         SimpleToast.LONG,
       );
       setDeleting(false);
@@ -2042,15 +2103,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               <RNText
-                style={{
+                style={[{
                   fontSize: 14,
                   fontWeight: '700',
                   color: colors.white,
                   flex: 1,
                   marginRight: 12,
-                }}
+                }, rtl.startText]}
               >
-                Notify me before capsules expire
+                {loc.cypherbox.strike.ark_settings.notify_before_expiry}
               </RNText>
               <Switch
                 // The EFFECTIVE state, not the stored preference. A green
@@ -2074,10 +2135,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   "reminders can arrive" are different facts and only the
                   second one protects anybody. COPY: Bam finalizes. */}
               {remindersBlockedByOs
-                ? '⚠ Reminders are blocked. You turned them on, but notifications are not allowed for Cypher Box in system settings, so none will arrive. Tap the switch to fix this.'
+                ? loc.cypherbox.strike.ark_settings.reminders_blocked
                 : remindersEffectivelyOn
-                  ? 'Cypher Box sends 6 reminders before any capsule expires (7 days, 4 days, 2 days, 24 hours, 12 hours, and 6 hours before). Without a refresh, recovery is not guaranteed once a capsule expires.'
-                  : '⚠ Reminders are OFF. You must open Cypher Box yourself and refresh capsules before they expire. Once a capsule expires, recovery is not guaranteed.'}
+                  ? loc.cypherbox.strike.ark_settings.reminders_on_desc
+                  : loc.cypherbox.strike.ark_settings.reminders_off_desc}
             </Text>
 
           </View>
@@ -2103,15 +2164,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               <RNText
-                style={{
+                style={[{
                   fontSize: 14,
                   fontWeight: '700',
                   color: colors.white,
                   flex: 1,
                   marginRight: 12,
-                }}
+                }, rtl.startText]}
               >
-                Refresh VTXOs when app is open
+                {loc.cypherbox.strike.ark_settings.auto_refresh_label}
               </RNText>
               <Switch
                 value={arkAutoRefreshEnabled}
@@ -2129,15 +2190,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               {arkAutoRefreshEnabled
-                ? 'While Cypher Box is open, capsules nearing expiry (7 days or below) are refreshed for you and cost 0.2% in fees. Refreshing is free in the last two days, but waiting that long risks losing the exit window if the ASP goes offline.'
-                : '⚠ Automatic refresh is OFF. Capsules are now only refreshed inside their last two days, where the server charges no fee. That leaves less room to react if a refresh fails, so refresh earlier yourself if you want more exit runway.'}
+                ? loc.cypherbox.strike.ark_settings.auto_refresh_on_desc
+                : loc.cypherbox.strike.ark_settings.auto_refresh_off_desc}
             </Text>
           </View>
         </View>
 
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Seed Phrase (1/2)
+            {loc.cypherbox.strike.ark_settings.seed_phrase_title}
           </Text>
           <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, padding: 14 }}>
             {/* Two-line description split intentionally across two
@@ -2150,14 +2211,17 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 not seed-derivable, the .cbark backup file is also
                 required and equally critical. */}
             <Text style={{ fontSize: 13, color: '#AAA', marginBottom: 6 }}>
-              Write these 12 words on paper and store them somewhere safe. We cannot recover them for you.
+              {loc.cypherbox.strike.ark_settings.seed_write_down}
             </Text>
             <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 12 }}>
-              Keep the Bark backup file (2/2) below as well. The seed restores the wallet, the file covers capsules the server scan can miss.
+              {loc.cypherbox.strike.ark_settings.seed_keep_backup_file}
             </Text>
             {words ? (
               <>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                {/* direction: the words read 1, 2, 3 left to right in every
+                    language. Without it the row flipped in Arabic and word 1
+                    sat top right. */}
+                <View style={{ direction: 'ltr', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
                   {words.map((word, i) => (
                     <View
                       key={`${i}-${word}`}
@@ -2179,7 +2243,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                           long word in one row would silently drag the
                           whole grid into a smaller font. Built-in
                           Text honors fontSize literally. */}
-                      <RNText style={{ fontSize: 14, color: '#FFF', textAlign: 'center' }}>
+                      <RNText style={[{ fontSize: 14, color: '#FFF', textAlign: 'center' }, rtl.ltrText]}>
                         {`${i + 1}. ${word}`}
                       </RNText>
                     </View>
@@ -2189,7 +2253,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   onPress={handleHide}
                   style={{ marginTop: 8, alignSelf: 'flex-end', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: '#444' }}
                 >
-                  <Text bold style={{ fontSize: 13, color: '#AAA' }}>Hide</Text>
+                  <Text bold style={{ fontSize: 13, color: '#AAA' }}>{loc.cypherbox.strike.ark_settings.hide}</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -2207,7 +2271,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 {revealing ? (
                   <ActivityIndicator color="#000" />
                 ) : (
-                  <Text bold style={{ fontSize: 15, color: '#000' }}>Show seed phrase</Text>
+                  <Text bold style={{ fontSize: 15, color: '#000' }}>{loc.cypherbox.strike.ark_settings.show_seed_phrase}</Text>
                 )}
               </TouchableOpacity>
             )}
@@ -2220,7 +2284,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             digging into a file manager or the Drive web UI. */}
         <View style={{ marginTop: 24 }}>
           <Text bold style={{ fontSize: 16, color: colors.ark?.light ?? colors.pink.default, marginBottom: 8 }}>
-            Bark backup file (2/2)
+            {loc.cypherbox.strike.ark_settings.backup_file_title}
           </Text>
 
           {/* iOS backup-snapshot reminder. Active whenever the user
@@ -2256,10 +2320,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               }}
             >
               <Text bold style={{ fontSize: 14, color: '#FB923C', marginBottom: 4 }}>
-                ⚠ Re-export backup after every receive
+                {loc.cypherbox.strike.ark_settings.reexport_title}
               </Text>
               <Text style={{ fontSize: 12, color: colors.white, lineHeight: 17 }}>
-                When you created this wallet, you saved a one-time snapshot of the encrypted backup file. That file doesn't auto-update unless iCloud Drive is on for Cypher Box. Tap "Re-export now" after every Lightning receive, or enable iCloud Drive for Cypher Box and this reminder will go away.
+                {loc.cypherbox.strike.ark_settings.reexport_body}
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 }}>
                 <TouchableOpacity
@@ -2282,7 +2346,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     <ActivityIndicator size="small" color="#FB923C" />
                   ) : (
                     <Text bold style={{ fontSize: 12, color: '#FB923C' }}>
-                      Re-export now
+                      {loc.cypherbox.strike.ark_settings.reexport_now}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -2301,7 +2365,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   }}
                 >
                   <Text bold style={{ fontSize: 12, color: '#AAA' }}>
-                    How to enable iCloud Drive
+                    {loc.cypherbox.strike.ark_settings.how_to_enable_icloud}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -2318,10 +2382,47 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   }}
                 >
                   <Text bold style={{ fontSize: 12, color: '#4ADE80' }}>
-                    iCloud Drive is on, dismiss
+                    {loc.cypherbox.strike.ark_settings.icloud_on_dismiss}
                   </Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          )}
+          {/* "Only on this phone" reminder, both platforms: the lasting
+              form of the create screen's one-time "Create without it"
+              warning. Backups are written, but only inside the app, which a
+              lost phone or a deleted app takes along. Shown until a write
+              reaches iCloud Drive, Google Drive or the chosen folder; Home's
+              status line taps through to here. Stays out of the way of the
+              iOS snapshot card above, which covers share-sheet vaults. The
+              button adds that copy: iOS Settings for iCloud Drive, or
+              Connect for Google Drive while it isn't connected. */}
+          {backupThisPhoneOnly && !(Platform.OS === 'ios' && arkIosBackupReminderActive) && (
+            <View style={thisPhoneStyles.card}>
+              <Text bold style={thisPhoneStyles.title}>
+                {loc.cypherbox.strike.ark_settings.this_phone_title}
+              </Text>
+              <Text style={thisPhoneStyles.body}>
+                {Platform.OS === 'ios'
+                  ? loc.cypherbox.strike.ark_settings.this_phone_body_ios
+                  : loc.cypherbox.strike.ark_settings.this_phone_body_android}
+              </Text>
+              {(Platform.OS === 'ios' || driveConnected === false) && (
+                <View style={thisPhoneStyles.actions}>
+                  <TouchableOpacity
+                    onPress={Platform.OS === 'ios' ? handleICloudHint : handleDriveConnect}
+                    disabled={Platform.OS !== 'ios' && driveBusy}
+                    activeOpacity={0.7}
+                    style={[thisPhoneStyles.action, Platform.OS !== 'ios' && driveBusy && thisPhoneStyles.busy]}
+                  >
+                    <Text bold style={thisPhoneStyles.actionText}>
+                      {Platform.OS === 'ios'
+                        ? loc.cypherbox.strike.ark_settings.how_to_enable_icloud
+                        : loc.cypherbox.strike.ark_settings.connect_gdrive}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
           {/* Mirror of the red warning under the Seed Phrase section: a
@@ -2331,7 +2432,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               symmetric pair (seed alone insufficient, backup alone
               insufficient) makes the (1/2) + (2/2) labels honest. */}
           <Text bold style={{ fontSize: 13, color: '#FF7A68', marginBottom: 10, lineHeight: 17 }}>
-            You also need your seed phrase (1/2) above. The Bark backup file alone is not enough.
+            {loc.cypherbox.strike.ark_settings.backup_also_need_seed}
           </Text>
           <View style={{ backgroundColor: '#1a1a1a', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
             {/* Local file row — always probes Documents/ark-backup.cbark
@@ -2345,28 +2446,28 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 isn't user-navigable without root or adb. */}
             <View style={{ paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: '#333' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 15, color: '#AAA' }}>Local copy (on-device)</Text>
+                <Text style={{ fontSize: 15, color: '#AAA' }}>{loc.cypherbox.strike.ark_settings.local_copy}</Text>
                 {localBackup === null ? (
                   <ActivityIndicator size="small" color="#888" />
                 ) : localBackup === undefined ? (
-                  <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>Not yet</Text>
+                  <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>{loc.cypherbox.strike.ark_settings.not_yet}</Text>
                 ) : (
                   <Text bold style={{ fontSize: 13, color: colors.green }}>{formatAgo(localBackup.modifiedAt)}</Text>
                 )}
               </View>
               {localBackup && (
-                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                <Text style={[{ fontSize: 11, color: '#666', marginTop: 2 }, rtl.ltrText]}>
                   {`${formatSize(localBackup.sizeBytes)} · ${localBackup.filename ?? 'ark-backup.cbark'}`}
                 </Text>
               )}
               <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
                 {Platform.OS === 'ios'
-                  ? 'Files → On My iPhone → Cypher Box'
-                  : 'Inside the app\'s private storage'}
+                  ? loc.cypherbox.strike.ark_settings.local_path_ios
+                  : loc.cypherbox.strike.ark_settings.local_path_android}
               </Text>
               {localNote && (
-                <Text style={{ fontSize: 11, color: localNote.startsWith('Local save failed') ? '#E85C5A' : '#888', marginTop: 2 }}>
-                  {localNote}
+                <Text style={{ fontSize: 11, color: localNote.startsWith(LOCAL_SAVE_FAILED) ? '#E85C5A' : '#888', marginTop: 2 }}>
+                  {localBackupNoteText(localNote)}
                 </Text>
               )}
             </View>
@@ -2379,43 +2480,43 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 Android branch is the Google Drive row.*/}
             <View style={{ paddingVertical: 8 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 15, color: '#AAA' }}>{Platform.OS === 'ios' ? 'iCloud Drive copy' : 'Google Drive copy'}</Text>
+                <Text style={{ fontSize: 15, color: '#AAA' }}>{Platform.OS === 'ios' ? loc.cypherbox.strike.ark_settings.icloud_copy : loc.cypherbox.strike.ark_settings.gdrive_copy}</Text>
                 {Platform.OS === 'ios' ? (
                   iCloudAvailable === null ? (
                     <ActivityIndicator size="small" color="#888" />
                   ) : !iCloudAvailable ? (
-                    <Text bold style={{ fontSize: 13, color: '#888' }}>Off for Cypher Box</Text>
+                    <Text bold style={{ fontSize: 13, color: '#888' }}>{loc.cypherbox.strike.ark_settings.off_for_cypher_box}</Text>
                   ) : iCloudBackup === null ? (
                     <ActivityIndicator size="small" color="#888" />
                   ) : iCloudBackup === undefined ? (
-                    <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>No copy yet</Text>
+                    <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>{loc.cypherbox.strike.ark_settings.no_copy_yet}</Text>
                   ) : (
                     <Text bold style={{ fontSize: 13, color: colors.green }}>{formatAgo(iCloudBackup.modifiedAt)}</Text>
                   )
                 ) : driveConnected === null ? (
                   <ActivityIndicator size="small" color="#888" />
                 ) : !driveConnected ? (
-                  <Text bold style={{ fontSize: 13, color: '#888' }}>Not connected</Text>
+                  <Text bold style={{ fontSize: 13, color: '#888' }}>{loc.cypherbox.strike.ark_settings.not_connected}</Text>
                 ) : driveBackup === null ? (
                   <ActivityIndicator size="small" color="#888" />
                 ) : driveBackup === undefined ? (
-                  <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>No copy yet</Text>
+                  <Text bold style={{ fontSize: 13, color: '#E85C5A' }}>{loc.cypherbox.strike.ark_settings.no_copy_yet}</Text>
                 ) : (
                   <Text bold style={{ fontSize: 13, color: colors.green }}>{formatAgo(driveBackup.modifiedAt)}</Text>
                 )}
               </View>
               {Platform.OS === 'ios' && iCloudBackup && (
-                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                <Text style={[{ fontSize: 11, color: '#666', marginTop: 2 }, rtl.ltrText]}>
                   {`${formatSize(iCloudBackup.sizeBytes)} · ${iCloudBackup.filename ?? 'ark-backup.cbark'}`}
                 </Text>
               )}
               {Platform.OS === 'ios' && (
                 <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
-                  Files → iCloud Drive → Cypher Box
+                  {loc.cypherbox.strike.ark_settings.icloud_path}
                 </Text>
               )}
               {Platform.OS === 'android' && driveBackup && (
-                <Text style={{ fontSize: 11, color: '#666', marginTop: 2 }}>
+                <Text style={[{ fontSize: 11, color: '#666', marginTop: 2 }, rtl.ltrText]}>
                   {`${formatSize(driveBackup.sizeBytes)} · appDataFolder`}
                 </Text>
               )}
@@ -2459,7 +2560,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       fontSize: 13,
                       color: iCloudAvailable ? colors.green : '#AAA',
                     }}>
-                      {iCloudAvailable ? '✓ iCloud Drive enabled' : 'How to enable iCloud Drive'}
+                      {iCloudAvailable ? loc.cypherbox.strike.ark_settings.icloud_enabled : loc.cypherbox.strike.ark_settings.how_to_enable_icloud}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -2487,7 +2588,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       fontSize: 13,
                       color: driveConnected ? '#E85C5A' : (colors.ark?.light ?? colors.green),
                     }}>
-                      {driveConnected ? 'Disconnect' : 'Connect Google Drive'}
+                      {driveConnected ? loc.cypherbox.strike.ark_settings.disconnect : loc.cypherbox.strike.ark_settings.connect_gdrive}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -2511,7 +2612,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         {arkExitInProgress ? (
           <View style={{ marginTop: 30, alignSelf: 'center', width: widths * 0.85, paddingVertical: 14, paddingHorizontal: 18, borderRadius: 12, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: colors.redLight }}>
             <Text bold style={{ fontSize: 15, color: colors.redLight, marginBottom: 8 }}>
-              Emergency exit in progress
+              {loc.cypherbox.strike.ark_exit.exit_in_progress}
             </Text>
             <Text style={{ fontSize: 13, color: '#DDD', marginBottom: 6 }}>
               {(() => {
@@ -2547,8 +2648,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 // below, which used to be baked into this sentence and so never
                 // changed for the whole run.
                 return shownSats == null || shownSats <= 0
-                  ? 'Exit in flight.'
-                  : `${shownSats.toLocaleString()} sats pending exit.`;
+                  ? loc.cypherbox.strike.ark_exit.exit_in_flight
+                  : String(loc.formatString(loc.cypherbox.strike.ark_exit.sats_pending_exit, { sats: shownSats.toLocaleString() }));
               })()}
             </Text>
 
@@ -2558,7 +2659,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 with the vault still locked is never blank. */}
             <Text style={{ fontSize: 13, color: '#DDD', marginBottom: 6 }}>
               {exitPhase?.headline
-                ?? 'Broadcasting, then a timelock. Reopen the app after that to collect; it does not progress while closed.'}
+                ?? loc.cypherbox.strike.ark_exit.exit_phase_fallback}
             </Text>
             {exitPhase?.detail && (
               <Text style={{ fontSize: 12, color: '#AAA', marginBottom: 6 }}>
@@ -2597,12 +2698,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   borderColor: 'rgba(251, 146, 60, 0.45)',
                 }}>
                 <Text bold style={{ fontSize: 12, color: '#FB923C', marginBottom: 3 }}>
-                  Set Cypher Box battery to Unrestricted
+                  {loc.cypherbox.strike.ark_exit.battery_title}
                 </Text>
                 <Text style={{ fontSize: 11, color: colors.white, lineHeight: 16 }}>
-                  The exit stops while your phone sleeps unless Cypher Box is
-                  allowed to run in the background. Open settings, choose
-                  Battery, and set it to Unrestricted.
+                  {loc.cypherbox.strike.ark_exit.battery_body}
                 </Text>
                 <View style={{ flexDirection: 'row', marginTop: 8 }}>
                   <TouchableOpacity
@@ -2613,23 +2712,23 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     }}
                     style={{ marginRight: 18 }}>
                     <Text bold style={{ fontSize: 12, color: '#FB923C' }}>
-                      Open settings
+                      {loc.cypherbox.strike.ark_exit.open_settings}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => setArkExitBatteryNoticeDismissed(true)}>
-                    <Text style={{ fontSize: 12, color: '#888' }}>Already done</Text>
+                    <Text style={{ fontSize: 12, color: '#888' }}>{loc.cypherbox.strike.ark_exit.already_done}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
             {arkExitDestinationAddress && (
-              <Text style={{ fontSize: 12, color: '#888' }} numberOfLines={1}>
+              <Text style={[{ fontSize: 12, color: '#888' }, rtl.ltrText]} numberOfLines={1}>
                 → {arkExitDestinationAddress}
               </Text>
             )}
             {arkExitStartedAt && (
               <Text style={{ fontSize: 11, color: '#666', marginTop: 4 }}>
-                Started {new Date(arkExitStartedAt).toLocaleString()}. Funds go to the destination when you reopen the app after the timelock; the vault stays afterwards.
+                {loc.formatString(loc.cypherbox.strike.ark_exit.exit_started_at, { date: new Date(arkExitStartedAt).toLocaleString() })}
               </Text>
             )}
 
@@ -2647,21 +2746,20 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 outage, which is exactly when an exit is running. */}
             <View style={{ marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#2A2A2A' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 12, color: '#AAA' }}>Fee reserve on-chain</Text>
+                <Text style={{ fontSize: 12, color: '#AAA' }}>{loc.cypherbox.strike.ark_exit.fee_reserve_onchain}</Text>
                 <Text bold style={{ fontSize: 13, color: onchainReserveSats > 0 ? colors.green : '#FFD54F' }}>
                   {onchainReserveSats.toLocaleString()} sats
                 </Text>
               </View>
               <Text style={{ fontSize: 11, color: '#777', marginTop: 6, lineHeight: 15 }}>
-                Pays the miner fees for each capsule's exit and claim. If it runs
-                out, the remaining capsules wait until you top it up.
+                {loc.cypherbox.strike.ark_exit.fee_reserve_desc}
               </Text>
               <TouchableOpacity
                 onPress={() => setExitFundingOpen(true)}
                 activeOpacity={0.7}
                 style={{ marginTop: 10, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)' }}
               >
-                <Text bold style={{ fontSize: 13, color: '#FFF' }}>Top up exit fees</Text>
+                <Text bold style={{ fontSize: 13, color: '#FFF' }}>{loc.cypherbox.strike.ark_exit.top_up_exit_fees}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2686,10 +2784,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             >
               <Text h3 bold center style={{ color: colors.ark?.light ?? colors.pink.default }}>
                 {exitStarting
-                  ? 'Starting exit…'
+                  ? loc.cypherbox.strike.ark_exit.starting_exit
                   : recommendedReserveSats === null
-                    ? 'Checking exit fees…'
-                    : 'Emergency Exit'}
+                    ? loc.cypherbox.strike.ark_exit.checking_exit_fees
+                    : loc.cypherbox.strike.ark_exit.emergency_exit}
               </Text>
             </GradientView>
 
@@ -2703,21 +2801,21 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 COPY: Bam finalizes. */}
             <View style={{ marginTop: 12, marginHorizontal: 24, padding: 10, borderRadius: 10, backgroundColor: exitNotWorthFees ? 'rgba(255, 200, 80, 0.06)' : '#131313', borderWidth: 1, borderColor: exitNotWorthFees ? 'rgba(255, 200, 80, 0.30)' : '#2A2A2A' }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                <Text style={{ fontSize: 12, color: '#888' }}>Exit fee wallet (on-chain)</Text>
+                <Text style={{ fontSize: 12, color: '#888' }}>{loc.cypherbox.strike.ark_exit.exit_fee_wallet}</Text>
                 <Text bold style={{ fontSize: 12, color: colors.white }}>
                   {onchainReserveSats.toLocaleString()} sats
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: 12, color: '#888' }}>Reserve needed</Text>
+                <Text style={{ fontSize: 12, color: '#888' }}>{loc.cypherbox.strike.ark_exit.reserve_needed}</Text>
                 <Text bold style={{ fontSize: 12, color: (exitFeeGated || exitNotWorthFees) ? '#FFD54F' : colors.green }}>
                   {recommendedReserveSats === null
-                    ? 'checking…'
+                    ? loc.cypherbox.strike.ark_exit.checking
                     : reserveTargetSats > 0
                       ? `${reserveTargetSats.toLocaleString()} sats`
                       : exitNotWorthFees
-                        ? 'more than the balance'
-                        : 'none needed'}
+                        ? loc.cypherbox.strike.ark_exit.more_than_balance
+                        : loc.cypherbox.strike.ark_exit.none_needed}
                 </Text>
               </View>
               {/* Fee rate the reserve was priced at.
@@ -2734,7 +2832,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   COPY: Bam finalizes. */}
               {(reserveDetail?.feeRateSatPerVb ?? 0) > 0 && (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
-                  <Text style={{ fontSize: 11, color: '#777' }}>Priced at</Text>
+                  <Text style={{ fontSize: 11, color: '#777' }}>{loc.cypherbox.strike.ark_exit.priced_at}</Text>
                   <Text style={{ fontSize: 11, color: '#777' }}>
                     {reserveDetail?.feeRateSatPerVb} sat/vB
                   </Text>
@@ -2742,14 +2840,18 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               )}
               <Text style={{ fontSize: 11, color: '#777', marginTop: 6, lineHeight: 16 }}>
                 {recommendedReserveSats === null
-                  ? 'Sizing the reserve from your capsules. Emergency Exit unlocks when this finishes.'
+                  ? loc.cypherbox.strike.ark_exit.sizing_reserve
                   : reserveTargetSats <= 0
                     ? (exitNotWorthFees && reserveDetail
-                        ? `Your balance is too small to exit on chain. ${reserveDetail.excludedCount === 1 ? 'Your capsule holds' : `Your ${reserveDetail.excludedCount} capsules hold`} ${reserveDetail.excludedSats.toLocaleString()} sats, which is less than the Bitcoin miner fees an exit would cost${reserveDetail.feeRateSatPerVb > 0 ? ` at ${reserveDetail.feeRateSatPerVb} sat/vB` : ''}. Emergency Exit is turned off because it would cost you more than it recovers. Only the cooperative paths are open: spend over Lightning, or Withdraw on chain while the Ark server is reachable.`
-                        : 'There are no capsules to exit, so no reserve is needed.')
+                        ? loc.formatString((reserveDetail.excludedCount === 1 ? loc.cypherbox.strike.ark_exit.too_small_to_exit_one : loc.cypherbox.strike.ark_exit.too_small_to_exit_other), {
+                            count: reserveDetail.excludedCount,
+                            sats: reserveDetail.excludedSats.toLocaleString(),
+                            rate_clause: reserveDetail.feeRateSatPerVb > 0 ? String(loc.formatString(loc.cypherbox.strike.ark_exit.rate_clause, { rate: reserveDetail.feeRateSatPerVb })) : '',
+                          })
+                        : loc.cypherbox.strike.ark_exit.no_capsules_no_reserve)
                     : exitFeeGated
-                      ? `Short by ${exitFeeShortfallSats.toLocaleString()} sats. An exit pays Bitcoin miner fees from this separate wallet, not from your Ark balance.`
-                      : 'Funded. An exit pays Bitcoin miner fees from this separate wallet, not from your Ark balance.'}
+                      ? loc.formatString(loc.cypherbox.strike.ark_exit.short_by, { sats: exitFeeShortfallSats.toLocaleString() })
+                      : loc.cypherbox.strike.ark_exit.funded}
               </Text>
             </View>
 
@@ -2759,17 +2861,17 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             {exitFeeGated && onchainReserveSats <= 0 && (
               <View style={{ marginTop: 12, marginHorizontal: 24, padding: 12, borderRadius: 10, backgroundColor: 'rgba(255, 200, 80, 0.06)', borderWidth: 1, borderColor: 'rgba(255, 200, 80, 0.30)' }}>
                 <Text bold style={{ fontSize: 13, color: '#FFD54F', marginBottom: 6 }}>
-                  Fund exit fees first
+                  {loc.cypherbox.strike.ark_exit.fund_exit_fees_first}
                 </Text>
                 <Text style={{ fontSize: 12, color: '#CCC', lineHeight: 17 }}>
-                  Emergency Exit pays Bitcoin miner fees from a separate on-chain wallet that holds {onchainReserveSats.toLocaleString()} sats. Add about {exitFeeShortfallSats.toLocaleString()} sats more so the exit can broadcast and confirm. Without it the exit will stall.
+                  {loc.formatString(loc.cypherbox.strike.ark_exit.fund_exit_fees_first_body, { held: onchainReserveSats.toLocaleString(), shortfall: exitFeeShortfallSats.toLocaleString() })}
                 </Text>
                 <TouchableOpacity
                   onPress={openExitFunding}
                   style={{ marginTop: 10, paddingVertical: 10, borderRadius: 8, alignItems: 'center', backgroundColor: '#FFD54F' }}
                 >
                   <Text bold style={{ fontSize: 13, color: '#1C1C1C' }}>
-                    Fund exit fees
+                    {loc.cypherbox.strike.ark_exit.fund_exit_fees}
                   </Text>
                 </TouchableOpacity>
                 {/* Break-glass only when they actually have SOME on-chain fee
@@ -2782,7 +2884,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     style={{ marginTop: 10, alignItems: 'center' }}
                   >
                     <Text style={{ fontSize: 12, color: '#888', textDecorationLine: 'underline' }}>
-                      Start exit anyway
+                      {loc.cypherbox.strike.ark_exit.start_exit_anyway}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -2800,38 +2902,38 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             {onchainReserveSats > 0 && (
               <View style={{ marginTop: 12, marginHorizontal: 24, padding: 12, borderRadius: 10, backgroundColor: (arkExitFeeReserveSats ?? 0) > 0 ? 'rgba(35, 196, 127, 0.07)' : 'rgba(255, 200, 80, 0.06)', borderWidth: 1, borderColor: (arkExitFeeReserveSats ?? 0) > 0 ? 'rgba(35, 196, 127, 0.35)' : 'rgba(255, 200, 80, 0.30)' }}>
                 <Text bold style={{ fontSize: 13, color: (arkExitFeeReserveSats ?? 0) > 0 ? colors.green : '#FFD54F', marginBottom: 6 }}>
-                  {(arkExitFeeReserveSats ?? 0) > 0 ? 'Exit fees ready' : 'On-chain funds'}
+                  {(arkExitFeeReserveSats ?? 0) > 0 ? loc.cypherbox.strike.ark_exit.exit_fees_ready : loc.cypherbox.strike.ark_exit.onchain_funds}
                 </Text>
                 <Text style={{ fontSize: 12, color: '#CCC', lineHeight: 17 }}>
                   {(arkExitFeeReserveSats ?? 0) > 0
-                    ? `${onchainReserveSats.toLocaleString()} sats are reserved on-chain to pay Emergency Exit fees. Start the exit at least 1 day before your soonest capsule expires. It unrolls on-chain and needs time to confirm, so it is not a last-minute rescue.`
-                    : `${onchainReserveSats.toLocaleString()} sats are sitting in your on-chain wallet. Reserve them to pay Emergency Exit fees, add more, or release them back to your Hot Vault.`}
+                    ? loc.formatString(loc.cypherbox.strike.ark_exit.reserved_desc, { sats: onchainReserveSats.toLocaleString() })
+                    : loc.formatString(loc.cypherbox.strike.ark_exit.unreserved_desc, { sats: onchainReserveSats.toLocaleString() })}
                 </Text>
                 {(arkExitFeeReserveSats ?? 0) > 0 && reserveBelowRecommended && (
                   <Text style={{ fontSize: 11, color: '#FFD54F', marginTop: 8, lineHeight: 15 }}>
-                    You reserved less than the recommended {(recommendedReserveSats ?? 0).toLocaleString()} sats. A fee spike could stall the exit.
+                    {loc.formatString(loc.cypherbox.strike.ark_exit.reserved_below_recommended, { sats: (recommendedReserveSats ?? 0).toLocaleString() })}
                   </Text>
                 )}
                 <View style={{ flexDirection: 'row', marginTop: 12 }}>
                   {(arkExitFeeReserveSats ?? 0) <= 0 && (
                     <TouchableOpacity
-                      onPress={() => { setArkExitFeeReserveSats(onchainReserveSats); SimpleToast.show('Reserved for exit fees.', SimpleToast.SHORT); }}
+                      onPress={() => { setArkExitFeeReserveSats(onchainReserveSats); SimpleToast.show(loc.cypherbox.strike.ark_exit.reserved_toast, SimpleToast.SHORT); }}
                       style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', backgroundColor: '#FFD54F', marginRight: 8 }}
                     >
-                      <Text bold style={{ fontSize: 12, color: '#1C1C1C' }}>Reserve as exit fee</Text>
+                      <Text bold style={{ fontSize: 12, color: '#1C1C1C' }}>{loc.cypherbox.strike.ark_exit.reserve_as_exit_fee}</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity
                     onPress={openExitFunding}
                     style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: colors.green, marginRight: 8 }}
                   >
-                    <Text bold style={{ fontSize: 12, color: colors.green }}>Add more</Text>
+                    <Text bold style={{ fontSize: 12, color: colors.green }}>{loc.cypherbox.strike.ark_exit.add_more}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={doRecoverOnchain}
                     style={{ flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#888' }}
                   >
-                    <Text bold style={{ fontSize: 12, color: '#AAA' }}>Release</Text>
+                    <Text bold style={{ fontSize: 12, color: '#AAA' }}>{loc.cypherbox.strike.ark_exit.release_button}</Text>
                   </TouchableOpacity>
                 </View>
                 {/* Break-glass: armed target is above the on-chain balance
@@ -2847,7 +2949,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     style={{ marginTop: 12, alignItems: 'center' }}
                   >
                     <Text style={{ fontSize: 12, color: '#888', textDecorationLine: 'underline' }}>
-                      Start exit anyway
+                      {loc.cypherbox.strike.ark_exit.start_exit_anyway}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -2862,7 +2964,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             <View style={{ marginTop: 8, paddingHorizontal: 24 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ fontSize: 11, color: '#888', textAlign: 'center', flexShrink: 1 }}>
-                  Eject from Ark: sweep your Ark balance back on-chain without ASP cooperation.
+                  {loc.cypherbox.strike.ark_exit.eject_caption}
                 </Text>
                 <TouchableOpacity
                   onPress={() => setExitInfoExpanded(v => !v)}
@@ -2896,22 +2998,22 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 >
                   <Text style={{ fontSize: 12, color: '#BBB', lineHeight: 17 }}>
                     <Text bold style={{ color: colors.ark?.light ?? colors.pink.default }}>
-                      When to use Emergency Exit
+                      {loc.cypherbox.strike.ark_exit.when_to_use_title}
                     </Text>
                     {'\n\n'}
-                    Normal sends, swaps and refreshes all go through the Ark server (Second.tech). Emergency Exit is the trustless fallback that doesn't need the server. It broadcasts pre-signed exit transactions directly to the Bitcoin chain.
+                    {loc.cypherbox.strike.ark_exit.when_to_use_intro}
                     {'\n\n'}
-                    Use it when:
+                    {loc.cypherbox.strike.ark_exit.use_it_when}
                     {'\n'}
-                    • The Ark server is down or unreachable for an extended period
+                    {loc.cypherbox.strike.ark_exit.use_case_down}
                     {'\n'}
-                    • The server refuses your transactions (regulatory pressure, censorship, or a server-side bug blocking specific capsules)
+                    {loc.cypherbox.strike.ark_exit.use_case_refuses}
                     {'\n'}
-                    • The server is going out of business or has shut down
+                    {loc.cypherbox.strike.ark_exit.use_case_shutdown}
                     {'\n'}
-                    • News breaks of a server-side compromise and you want out fast without waiting for cooperative paths
+                    {loc.cypherbox.strike.ark_exit.use_case_compromise}
                     {'\n\n'}
-                    Emergency Exit moves funds on-chain (slower, higher fee) so it's the break-glass option, not the everyday one. In normal use prefer swap or refresh: same destinations, faster, cheaper.
+                    {loc.cypherbox.strike.ark_exit.when_to_use_outro}
                   </Text>
                 </View>
               )}
@@ -2928,7 +3030,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               onPress={deleting ? undefined : () => { void handleDeleteVault(); }}
             >
               <Text h3 bold center style={{ color: colors.redLight }}>
-                {deleting ? 'Deleting…' : 'Delete Ark vault'}
+                {deleting ? loc.cypherbox.strike.ark_settings.deleting : loc.cypherbox.strike.ark_settings.delete_ark_vault}
               </Text>
             </GradientView>
           </>
@@ -2961,7 +3063,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   style={{ alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 4, marginBottom: 6 }}
                 >
                   <Text bold style={{ fontSize: 13, color: colors.ark?.light ?? colors.pink.default }}>
-                    ← Back
+                    {loc.cypherbox.strike.ark_exit.back}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -2969,12 +3071,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               {pickerStep === 'category' && (
                 <>
                   <Text bold style={{ fontSize: 17, color: '#FFF', marginBottom: 6 }}>
-                    Where should funds go?
+                    {loc.cypherbox.strike.ark_exit.where_should_funds_go}
                   </Text>
                   <Text style={{ fontSize: 13, color: '#AAA', marginBottom: 14 }}>
-                    Pick a destination for your on-chain payout. The exit takes
-                    ~24h to clear the protocol timelock, and the address can't be
-                    changed after you start.
+                    {loc.cypherbox.strike.ark_exit.pick_destination_desc}
                   </Text>
 
                   <TouchableOpacity
@@ -2982,11 +3082,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     disabled={!walletID}
                     style={{ paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: '#333', opacity: walletID ? 1 : 0.5 }}
                   >
-                    <Text bold style={{ fontSize: 15, color: '#FFF' }}>Hot Vault</Text>
+                    <Text bold style={{ fontSize: 15, color: '#FFF' }}>{loc.cypherbox.strike.ark_exit.hot_vault}</Text>
                     <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                       {walletID
-                        ? 'Pick a default or specific Hot Vault address.'
-                        : 'No Hot Vault connected.'}
+                        ? loc.cypherbox.strike.ark_exit.hot_vault_desc
+                        : loc.cypherbox.strike.ark_exit.no_hot_vault_connected}
                     </Text>
                   </TouchableOpacity>
 
@@ -2995,11 +3095,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     disabled={!coldStorageWalletID}
                     style={{ paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: '#333', opacity: coldStorageWalletID ? 1 : 0.5 }}
                   >
-                    <Text bold style={{ fontSize: 15, color: '#FFF' }}>Cold Storage vault</Text>
+                    <Text bold style={{ fontSize: 15, color: '#FFF' }}>{loc.cypherbox.strike.ark_exit.cold_vault}</Text>
                     <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
                       {coldStorageWalletID
-                        ? 'Pick a default or specific Cold Storage address (hardware verification required).'
-                        : 'No Cold Storage wallet connected.'}
+                        ? loc.cypherbox.strike.ark_exit.cold_vault_desc
+                        : loc.cypherbox.strike.ark_exit.no_cold_wallet_connected}
                     </Text>
                   </TouchableOpacity>
 
@@ -3007,9 +3107,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     onPress={() => setPickerStep('external')}
                     style={{ paddingVertical: 14, borderBottomWidth: 0.5, borderBottomColor: '#333' }}
                   >
-                    <Text bold style={{ fontSize: 15, color: '#FFF' }}>External Bitcoin address</Text>
+                    <Text bold style={{ fontSize: 15, color: '#FFF' }}>{loc.cypherbox.strike.ark_exit.external_address}</Text>
                     <Text style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-                      Paste any Bitcoin address.
+                      {loc.cypherbox.strike.ark_exit.paste_any_address}
                     </Text>
                   </TouchableOpacity>
                 </>
@@ -3019,8 +3119,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 <>
                   <Text bold style={{ fontSize: 17, color: '#FFF', marginBottom: 10 }}>
                     {pickerStep === 'hot-addr'
-                      ? (addrListOpen ? 'Pick a Hot Vault address' : 'Hot Vault destination')
-                      : (addrListOpen ? 'Pick a Cold Storage address' : 'Cold Storage destination')}
+                      ? (addrListOpen ? loc.cypherbox.strike.ark_exit.pick_hot_address : loc.cypherbox.strike.ark_exit.hot_destination)
+                      : (addrListOpen ? loc.cypherbox.strike.ark_exit.pick_cold_address : loc.cypherbox.strike.ark_exit.cold_destination)}
                   </Text>
 
                   {/* Default flow: QR + address + "Choose another" — mirrors
@@ -3040,13 +3140,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                         onPress={() => {
                           if (selectedAddr) {
                             Clipboard.setString(selectedAddr);
-                            SimpleToast.show('Address copied', SimpleToast.SHORT);
+                            SimpleToast.show(loc.cypherbox.strike.ark_exit.address_copied, SimpleToast.SHORT);
                           }
                         }}
                         activeOpacity={0.7}
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, marginBottom: 10 }}
                       >
-                        <Text style={{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }} numberOfLines={1}>
+                        <Text style={[{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }, rtl.ltrText]} numberOfLines={1}>
                           {selectedAddr}
                         </Text>
                         <Image source={Copy} style={{ width: 20, height: 16, marginLeft: 8, tintColor: '#aaa' }} resizeMode="contain" />
@@ -3057,17 +3157,14 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                         style={{ paddingVertical: 10, paddingHorizontal: 16, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: colors.ark?.light ?? colors.pink.default, marginBottom: 12 }}
                       >
                         <Text bold style={{ fontSize: 13, color: colors.ark?.light ?? colors.pink.default }}>
-                          Choose another address
+                          {loc.cypherbox.strike.ark_exit.choose_another_address}
                         </Text>
                       </TouchableOpacity>
 
                       {pickerStep === 'cold-addr' && (
                         <View style={{ padding: 10, borderRadius: 8, backgroundColor: 'rgba(232, 92, 90, 0.08)', borderWidth: 1, borderColor: colors.redLight, marginBottom: 4 }}>
                           <Text style={{ fontSize: 12, color: '#FFF', marginBottom: 8 }}>
-                            ⚠️ DO NOT proceed without verifying the selected
-                            address on your hardware device. Confirm
-                            character-by-character that the address above
-                            matches what your device displays.
+                            {loc.cypherbox.strike.ark_exit.hw_verify_warning}
                           </Text>
                           <TouchableOpacity
                             onPress={() => setHardwareVerified((v) => !v)}
@@ -3084,7 +3181,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                               )}
                             </View>
                             <Text style={{ fontSize: 12, color: '#FFF', flex: 1 }}>
-                              I have verified this address on my hardware device.
+                              {loc.cypherbox.strike.ark_exit.hw_verified_checkbox}
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -3111,7 +3208,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                               ? '#000'
                               : '#666',
                         }}>
-                          Send to this address
+                          {loc.cypherbox.strike.ark_exit.send_to_this_address}
                         </Text>
                       </TouchableOpacity>
                     </>
@@ -3125,9 +3222,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   {addrListOpen && (
                     <>
                       <Text style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
-                        Default (top) is a fresh address. Earlier addresses are
-                        listed below in case you want to send to one you've
-                        used before.
+                        {loc.cypherbox.strike.ark_exit.address_list_desc}
                       </Text>
 
                       <ScrollView style={{ maxHeight: 280 }}>
@@ -3152,9 +3247,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                               }}
                             >
                               <Text style={{ fontSize: 11, color: '#888', marginBottom: 2 }}>
-                                {idx === 0 ? 'Default (new address)' : `Previously derived #${idx}`}
+                                {idx === 0 ? loc.cypherbox.strike.ark_exit.default_new_address : loc.formatString(loc.cypherbox.strike.ark_exit.previously_derived, { n: idx })}
                               </Text>
-                              <Text style={{ fontSize: 12, color: '#FFF' }}>
+                              <Text style={[{ fontSize: 12, color: '#FFF' }, rtl.ltrText]}>
                                 {addr}
                               </Text>
                             </TouchableOpacity>
@@ -3167,7 +3262,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                         style={{ marginTop: 10, paddingVertical: 10, alignItems: 'center' }}
                       >
                         <Text bold style={{ fontSize: 13, color: '#AAA' }}>
-                          ← Back to selected address
+                          {loc.cypherbox.strike.ark_exit.back_to_selected}
                         </Text>
                       </TouchableOpacity>
                     </>
@@ -3178,11 +3273,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               {pickerStep === 'external' && (
                 <>
                   <Text bold style={{ fontSize: 17, color: '#FFF', marginBottom: 6 }}>
-                    External Bitcoin address
+                    {loc.cypherbox.strike.ark_exit.external_address}
                   </Text>
                   <Text style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
-                    Paste any Bitcoin address. The CSV timelock can't be undone,
-                    so triple-check before you start.
+                    {loc.cypherbox.strike.ark_exit.external_address_desc}
                   </Text>
                   <TextInput
                     value={externalAddrInput}
@@ -3192,7 +3286,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     autoCapitalize="none"
                     autoCorrect={false}
                     spellCheck={false}
-                    style={{
+                    style={[{
                       backgroundColor: '#0E0E0E',
                       color: '#FFF',
                       fontSize: 13,
@@ -3201,7 +3295,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       paddingVertical: 10,
                       borderWidth: 1,
                       borderColor: '#333',
-                    }}
+                    }, rtl.ltrText]}
                   />
                   <TouchableOpacity
                     onPress={handlePickExternal}
@@ -3217,7 +3311,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     }}
                   >
                     <Text bold style={{ fontSize: 13, color: externalAddrInput.trim() ? '#000' : '#666' }}>
-                      Send to this address
+                      {loc.cypherbox.strike.ark_exit.send_to_this_address}
                     </Text>
                   </TouchableOpacity>
                 </>
@@ -3227,7 +3321,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 onPress={() => setExitPickerOpen(false)}
                 style={{ marginTop: 14, paddingVertical: 10, alignItems: 'center' }}
               >
-                <Text bold style={{ fontSize: 14, color: '#AAA' }}>Cancel</Text>
+                <Text bold style={{ fontSize: 14, color: '#AAA' }}>{loc._.cancel}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -3260,16 +3354,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
             <View style={{ backgroundColor: '#1a1a1a', borderRadius: 14, padding: 18, borderWidth: 1, borderColor: colors.ark?.light ?? colors.pink.default }}>
               <Text bold style={{ fontSize: 17, color: '#FFF', marginBottom: 4 }}>
-                Fund exit fees
+                {loc.cypherbox.strike.ark_exit.fund_exit_fees}
               </Text>
               <Text style={{ fontSize: 12, color: '#AAA', marginBottom: 12, lineHeight: 17 }}>
-                Emergency Exit needs on-chain sats to pay Bitcoin miner fees. On-chain now: {onchainReserveSats.toLocaleString()} of {reserveTargetSats.toLocaleString()} sats reserved.
+                {loc.formatString(loc.cypherbox.strike.ark_exit.funding_desc, { held: onchainReserveSats.toLocaleString(), target: reserveTargetSats.toLocaleString() })}
               </Text>
 
               {/* Editable reserve target: hold more (bigger fee-spike buffer) or
                   less. Applied on blur; auto-board keeps exactly this much
                   on-chain and boards any surplus into the Ark balance. */}
-              <Text style={{ fontSize: 12, color: '#FFF', marginBottom: 6 }}>Reserve for fees (sats)</Text>
+              <Text style={{ fontSize: 12, color: '#FFF', marginBottom: 6 }}>{loc.cypherbox.strike.ark_exit.reserve_for_fees}</Text>
               <TextInput
                 value={reserveTargetInput}
                 onChangeText={(t) => setReserveTargetInput(t.replace(/[^0-9]/g, ''))}
@@ -3281,7 +3375,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 style={{ color: '#FFF', borderWidth: 1, borderColor: '#444', borderRadius: 8, padding: 10, fontSize: 14, marginBottom: 4 }}
               />
               <Text style={{ fontSize: 11, color: '#777', marginBottom: 14, lineHeight: 15 }}>
-                Recommended {(recommendedReserveSats ?? 0).toLocaleString()} sats. We keep this much on-chain; anything above it boards into your Ark balance.
+                {loc.formatString(loc.cypherbox.strike.ark_exit.recommended_reserve, { sats: (recommendedReserveSats ?? 0).toLocaleString() })}
               </Text>
 
               {/* Tab switch */}
@@ -3303,10 +3397,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                             active pill read as oversized next to the others.
                             The tab body below carries the full explanation. */}
                         {tab === 'receive'
-                          ? 'Receive Bitcoin'
+                          ? loc.cypherbox.strike.ark_exit.tab_receive
                           : tab === 'wallet'
-                            ? 'From a wallet'
-                            : 'Convert'}
+                            ? loc.cypherbox.strike.ark_exit.tab_wallet
+                            : loc.cypherbox.strike.ark_exit.tab_convert}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -3316,7 +3410,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               {fundingTab === 'receive' && (
                 <>
                   <Text style={{ fontSize: 12, color: '#CCC', marginBottom: 12, lineHeight: 17 }}>
-                    Send at least {exitFeeShortfallSats.toLocaleString()} sats to this address. It stays on-chain to pay exit fees (it will not be moved into Ark).
+                    {loc.formatString(loc.cypherbox.strike.ark_exit.receive_desc, { sats: exitFeeShortfallSats.toLocaleString() })}
                   </Text>
                   {onchainFundAddr ? (
                     <>
@@ -3327,19 +3421,19 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                         onPress={() => {
                           if (onchainFundAddr) {
                             Clipboard.setString(onchainFundAddr);
-                            SimpleToast.show('Address copied', SimpleToast.SHORT);
+                            SimpleToast.show(loc.cypherbox.strike.ark_exit.address_copied, SimpleToast.SHORT);
                           }
                         }}
                         activeOpacity={0.7}
                         style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10, marginBottom: 8 }}
                       >
-                        <Text style={{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }} numberOfLines={1}>
+                        <Text style={[{ fontSize: 12, color: '#CCC', flex: 1, fontFamily: 'monospace' }, rtl.ltrText]} numberOfLines={1}>
                           {onchainFundAddr}
                         </Text>
                         <Image source={Copy} style={{ width: 20, height: 16, marginLeft: 8, tintColor: '#aaa' }} resizeMode="contain" />
                       </TouchableOpacity>
                       <Text style={{ fontSize: 11, color: '#777', lineHeight: 15 }}>
-                        Emergency Exit unlocks automatically once the deposit confirms on-chain.
+                        {loc.cypherbox.strike.ark_exit.unlocks_on_confirm}
                       </Text>
                     </>
                   ) : (
@@ -3351,8 +3445,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               {fundingTab === 'wallet' && (
                 <>
                   <Text style={{ fontSize: 12, color: '#CCC', marginBottom: 12, lineHeight: 17 }}>
-                    Send {exitFeeShortfallSats.toLocaleString()} sats on-chain from one of your
-                    wallets. The address is filled in for you.
+                    {loc.formatString(loc.cypherbox.strike.ark_exit.wallet_desc, { sats: exitFeeShortfallSats.toLocaleString() })}
                   </Text>
                   {/* Sources that cannot be used are listed too, dimmed and with
                       a reason. Hiding them makes the feature look broken to
@@ -3360,8 +3453,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   <ExitFundingSourceList
                     shortfallSats={exitFeeShortfallSats}
                     sources={buildExitFundingSources({
-                      coinos: { connected: !!isAuth },
-                      strike: { connected: !!isStrikeAuth },
+                      coinos: { connected: !!isAuth && isCoinosAllowed() },
+                      strike: { connected: !!isStrikeAuth && isStrikeAllowed() },
                       hotVault: { walletID: walletID ?? null },
                       coldVault: { walletID: coldStorageWalletID ?? null },
                       shortfallSats: exitFeeShortfallSats,
@@ -3371,7 +3464,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       // list so the roadmap is visible, but must not pretend to
                       // work.
                       if (id !== 'coinos') {
-                        SimpleToast.show('Coming soon for this wallet', SimpleToast.SHORT);
+                        SimpleToast.show(loc.cypherbox.strike.ark_exit.coming_soon_wallet, SimpleToast.SHORT);
                         return;
                       }
                       setExitFundingOpen(false);
@@ -3392,16 +3485,16 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               {fundingTab === 'convert' && (
                 <>
                   <Text style={{ fontSize: 12, color: '#CCC', marginBottom: 10, lineHeight: 17 }}>
-                    Move sats from your Ark balance to the on-chain fee wallet. This uses the Ark server, so do it ahead of time. It will not work if the server is down.
+                    {loc.cypherbox.strike.ark_exit.convert_desc}
                   </Text>
                   {aspReachable === false && (
                     <View style={{ padding: 10, borderRadius: 8, backgroundColor: 'rgba(232, 92, 90, 0.08)', borderWidth: 1, borderColor: colors.redLight, marginBottom: 10 }}>
                       <Text style={{ fontSize: 12, color: '#FFF' }}>
-                        Ark server unreachable. Use Receive Bitcoin instead.
+                        {loc.cypherbox.strike.ark_exit.asp_unreachable}
                       </Text>
                     </View>
                   )}
-                  <Text style={{ fontSize: 12, color: '#FFF', marginBottom: 6 }}>Amount (sats)</Text>
+                  <Text style={{ fontSize: 12, color: '#FFF', marginBottom: 6 }}>{loc.cypherbox.strike.ark_exit.amount_sats}</Text>
                   <TextInput
                     value={convertAmount}
                     onChangeText={(t) => setConvertAmount(t.replace(/[^0-9]/g, ''))}
@@ -3413,7 +3506,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   />
                   {convertEst && (
                     <Text style={{ fontSize: 12, color: '#AAA', marginTop: 8, lineHeight: 17 }}>
-                      About {convertEst.netLandingSats.toLocaleString()} sats will land on-chain after a {convertEst.feeSats.toLocaleString()} sat fee.
+                      {loc.formatString(loc.cypherbox.strike.ark_exit.convert_estimate, { net: convertEst.netLandingSats.toLocaleString(), fee: convertEst.feeSats.toLocaleString() })}
                     </Text>
                   )}
                   <TouchableOpacity
@@ -3422,7 +3515,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     style={{ marginTop: 14, paddingVertical: 12, borderRadius: 10, alignItems: 'center', backgroundColor: (fundingBusy || aspReachable === false || !convertEst) ? '#222' : (colors.ark?.light ?? colors.pink.default) }}
                   >
                     <Text bold style={{ fontSize: 13, color: (fundingBusy || aspReachable === false || !convertEst) ? '#666' : '#000' }}>
-                      {fundingBusy ? 'Converting…' : 'Convert to exit fees'}
+                      {fundingBusy ? loc.cypherbox.strike.ark_exit.converting : loc.cypherbox.strike.ark_exit.convert_to_exit_fees}
                     </Text>
                   </TouchableOpacity>
                 </>
@@ -3433,7 +3526,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 style={{ marginTop: 14, paddingVertical: 10, alignItems: 'center' }}
               >
                 <Text bold style={{ fontSize: 13, color: '#AAA' }}>
-                  Close
+                  {loc._.close}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -3453,13 +3546,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
             <View style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 20 }}>
               <Text bold style={{ fontSize: 18, color: '#FFF', marginBottom: 10 }}>
-                Delete Ark vault?
+                {loc.cypherbox.strike.ark_settings.delete_title}
               </Text>
               <Text style={{ fontSize: 13, color: '#CCC', lineHeight: 19, marginBottom: 16 }}>
-                This wipes your Ark wallet from this device. The local
-                database with your VTXO capsules. To restore funds you'll
-                still need your{' '}
-                <Text bold style={{ color: '#FFF' }}>ark-backup file</Text>.
+                {loc.formatString(loc.cypherbox.strike.ark_settings.delete_body, { file: <Text bold style={{ color: '#FFF' }}>{loc.cypherbox.strike.ark_settings.delete_body_file}</Text> })}
               </Text>
 
               {/* An exit that is mid-flight has transactions on the chain and a
@@ -3481,13 +3571,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   }}
                 >
                   <Text bold style={{ color: '#FFC65C', fontSize: 12, marginBottom: 4 }}>
-                    ⚠ An Emergency Exit is in progress
+                    {loc.cypherbox.strike.ark_settings.delete_exit_in_progress_title}
                   </Text>
                   <Text style={{ color: '#FFD79A', fontSize: 12, lineHeight: 16 }}>
-                    Deleting now stops it. Transactions already on the chain stay
-                    there, but nothing will move the rest along until you restore
-                    from your ark-backup file. Restore soon, because capsules can
-                    expire while an exit is paused.
+                    {loc.cypherbox.strike.ark_settings.delete_exit_in_progress_body}
                   </Text>
                 </View>
               )}
@@ -3516,7 +3603,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   )}
                 </View>
                 <Text style={{ flex: 1, fontSize: 13, color: '#EEE', lineHeight: 18 }}>
-                  Keep seedphrase stored on device for future {biometricLabel} recovery
+                  {loc.formatString(keychainText.settings.keepSeedOnDevice, { biometric: keychainText.biometric })}
                 </Text>
               </TouchableOpacity>
 
@@ -3532,10 +3619,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   }}
                 >
                   <Text bold style={{ color: '#FF7A7A', fontSize: 12, marginBottom: 4 }}>
-                    ⚠ Make sure you have your 12-word seed phrase
+                    {loc.cypherbox.strike.ark_settings.delete_seed_warning_title}
                   </Text>
                   <Text style={{ color: '#FF9A9A', fontSize: 12, lineHeight: 16 }}>
-                    Without the seed AND your ark-backup file, this wallet's funds become unrecoverable.
+                    {loc.cypherbox.strike.ark_settings.delete_seed_warning_body}
                   </Text>
                 </View>
               )}
@@ -3545,7 +3632,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   onPress={() => setDeleteModalVisible(false)}
                   style={{ paddingVertical: 10, paddingHorizontal: 16 }}
                 >
-                  <Text bold style={{ fontSize: 14, color: '#AAA' }}>Cancel</Text>
+                  <Text bold style={{ fontSize: 14, color: '#AAA' }}>{loc._.cancel}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={confirmDeleteVault}
@@ -3556,7 +3643,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     backgroundColor: '#7A1A1A',
                   }}
                 >
-                  <Text bold style={{ fontSize: 14, color: '#FFB0B0' }}>Delete vault</Text>
+                  <Text bold style={{ fontSize: 14, color: '#FFB0B0' }}>{loc.cypherbox.strike.ark_settings.delete_vault}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -3567,3 +3654,30 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     </ScrollView>
   );
 }
+
+// The "only on this phone" card in the Bark backup section. Same look as the
+// iOS snapshot card above it, which is the reminder it sits beside.
+const thisPhoneStyles = StyleSheet.create({
+  card: {
+    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: 'rgba(251, 146, 60, 0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 146, 60, 0.40)',
+  },
+  title: { fontSize: 14, color: '#FB923C', marginBottom: 4 },
+  body: { fontSize: 12, color: colors.white, lineHeight: 17 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
+  action: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#0F0F0F',
+    borderWidth: 1,
+    borderColor: 'rgba(251, 146, 60, 0.55)',
+  },
+  busy: { opacity: 0.5 },
+  actionText: { fontSize: 12, color: '#FB923C' },
+});

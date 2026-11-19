@@ -7,6 +7,7 @@ interface Style {
     inner: ViewStyle;
     descption: TextStyle;
     title: TextStyle;
+    subtitle: TextStyle;
     button: ViewStyle;
     btnText: ViewStyle;
 }
@@ -30,6 +31,9 @@ export default StyleSheet.create<Style>({
         color: colors.green,
         fontFamily: 'Archivo-SemiBold',
         fontSize: 18,
+    },
+    subtitle: {
+        marginTop: 6,
     },
     button: {
         backgroundColor: colors.green,

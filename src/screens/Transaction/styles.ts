@@ -17,6 +17,7 @@ interface Style {
     invoiceButton: ViewStyle;
     sats: ViewStyle;
     extra: ViewStyle;
+    destination: TextStyle;
     ringEffect: ImageStyle;
     imageContainer: ImageStyle;
     ringStyle: ViewStyle;
@@ -138,6 +139,11 @@ export default StyleSheet.create<Style>({
     },
     extra: {
         height: 50,
+    },
+    destination: {
+        fontSize: 16,
+        lineHeight: 22,
+        marginHorizontal: 20,
     },
     ringEffect: {
         // flex: 1,

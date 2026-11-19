@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import SimpleToast from "react-native-simple-toast";
 import { revoke } from 'react-native-app-auth';
 import { v4 as uuidv4 } from 'uuid';
+import loc from '../../loc';
+import { expireStrikeSession } from '../services/sessionExpiry';
 
 const BASE_URL = 'https://api.strike.me/v1';
 
@@ -55,7 +57,7 @@ export const revokeStrikeToken = async (accessToken: string | null | undefined):
 const withAuthToken = async (requestConfig: any) => {
     const authToken = useAuthStore.getState().strikeToken;
     if (!authToken) {
-        throw new Error('Strike not logged in. Please log into Strike first.');
+        throw new Error(loc.cypherbox.services.strike_api.not_logged_in);
     }
     return {
         ...requestConfig,
@@ -76,8 +78,7 @@ export const getBalances = async () => {
         }));
         const responseJSON = await response.json();
         if(responseJSON?.data && responseJSON?.data?.status === 401){
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -96,8 +97,7 @@ export const getStrikeRates = async () => {
         }));
         const responseJSON = await response.json();
         if(responseJSON?.status === 401){
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -196,8 +196,8 @@ export const sendStrikeLightningPayment = async (invoice: string, amount?: numbe
       // CheckingAccountLogin instead of leaving them stuck on a
       // wallet card whose balance reads now-stale data.
       if (quoteResponse.status === 401) {
-        useAuthStore.getState().clearStrikeAuth();
-        throw new Error('Strike session expired. Please log into Strike again.');
+        expireStrikeSession(null);
+        throw new Error(loc.cypherbox.services.strike_api.session_expired);
       }
       throw new Error(
         `Strike quote error: ${quoteResponse.status}${body ? `: ${body.slice(0, 200)}` : ''}`,
@@ -220,8 +220,8 @@ export const sendStrikeLightningPayment = async (invoice: string, amount?: numbe
       let body = '';
       try { body = await executeResponse.text(); } catch { /* ignore */ }
       if (executeResponse.status === 401) {
-        useAuthStore.getState().clearStrikeAuth();
-        throw new Error('Strike session expired. Please log into Strike again.');
+        expireStrikeSession(null);
+        throw new Error(loc.cypherbox.services.strike_api.session_expired);
       }
       throw new Error(
         `Strike execute error: ${executeResponse.status}${body ? `: ${body.slice(0, 200)}` : ''}`,
@@ -251,8 +251,7 @@ if (__DEV__) console.log('idempotencyKey: ' ,idempotencyKey)
         }));
         const responseJSON = await response.json();
         if(responseJSON?.data && responseJSON?.data?.status === 401){
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -305,8 +304,7 @@ export const createFiatExchangeQuote = async (data: any, maxBuyFallback: boolean
         }));
         const responseJSON = await responsePayment.json();
         if(responseJSON?.data && responseJSON?.data?.status === 401){
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -374,8 +372,7 @@ export const getOnChainTiers = async (data: any) => {
 if (__DEV__) console.log('response: ', response)
         const responseJSON = await response.json();
         if(responseJSON?.data && responseJSON?.data?.status === 401){
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -408,8 +405,7 @@ if (__DEV__) console.log('idempotencyKey: ', idempotencyKey)
         }));
         const responsePaymentJSON = await responsePayment.json();
         if(responsePaymentJSON?.data && responsePaymentJSON?.data?.status === 401){
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responsePaymentJSON;
     } catch (error) {
@@ -428,8 +424,7 @@ export const getInvoices = async () => {
         }));
         const responseJSON = await response.json();
         if(responseJSON?.data && responseJSON?.data?.status === 401){
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -466,8 +461,8 @@ export const getStrikePaymentStatus = async (paymentId: string): Promise<any> =>
             headers: { 'Content-Type': 'application/json' },
         }));
         if (response.status === 401) {
-            useAuthStore.getState().clearStrikeAuth();
-            throw new Error('Strike session expired. Please log into Strike again.');
+            expireStrikeSession(null);
+            throw new Error(loc.cypherbox.services.strike_api.session_expired);
         }
         if (!response.ok) {
             let body = '';
@@ -520,8 +515,7 @@ export const getStrikeProfile = async () => {
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -540,8 +534,7 @@ export const getStrikeLimits = async () => {
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -562,8 +555,7 @@ export const getBankPaymentMethods = async () => {
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -585,8 +577,7 @@ export const estimateDepositFee = async (amount: string, paymentMethodId: string
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -608,8 +599,7 @@ export const initiateDeposit = async (amount: string, paymentMethodId: string) =
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -628,8 +618,7 @@ export const getDeposits = async () => {
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -651,8 +640,7 @@ export const createPayout = async (amount: string, paymentMethodId: string) => {
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -671,8 +659,7 @@ export const initiatePayout = async (payoutId: string) => {
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -691,8 +678,7 @@ export const getPayouts = async () => {
         }));
         const responseJSON = await response.json();
         if (responseJSON?.data?.status === 401) {
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT);
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
@@ -711,8 +697,7 @@ export const getInvoicesByID = async (id: string) => {
         }));
         const responseJSON = await response.json();
         if(responseJSON?.data && responseJSON?.data?.status === 401){
-            SimpleToast.show("Authorization expired. Please login again to continue", SimpleToast.SHORT)
-            useAuthStore.getState().clearStrikeAuth();
+            expireStrikeSession();
         }
         return responseJSON;
     } catch (error) {
