@@ -35,8 +35,14 @@ on:
 permissions:
   contents: read
 
+# One group per commit, not per branch. GitHub keeps only one waiting run in a
+# group and cancels it when another run arrives, so with one group per branch
+# three merges in a row cancelled the middle one: that commit was never
+# verified, and the cancelled run showed as "failing" on the README badge.
+# With one group per commit, every push to main gets its own run, and only a
+# second run of the same commit waits for the first.
 concurrency:
-  group: build-verify-${{ github.ref }}
+  group: build-verify-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
