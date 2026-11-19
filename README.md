@@ -1,4 +1,4 @@
-# ⚡ Cypher Box - A Fun Way to Play Bitcoin
+# Cypher Box - Progressive Bitcoin Self-custody
 
 [![Release](https://img.shields.io/github/v/release/CypherBoxLLC/Cypher-Box?color=f7931a&label=release)](https://github.com/CypherBoxLLC/Cypher-Box/releases)
 [![Reproducible build](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml/badge.svg)](https://github.com/CypherBoxLLC/Cypher-Box/actions/workflows/build-verify.yml)
