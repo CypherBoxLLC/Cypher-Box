@@ -11,6 +11,8 @@ on:
       - main
       - CB-Production
       - bark-0.6.3-upgrade
+      # release branches are protected like main (the "Access controls" ruleset), which requires both checks below
+      - 'release/**'
 
 # Least privilege: read the repo + its dependency graph. No write anywhere.
 permissions:
