@@ -2,8 +2,12 @@
 
 ## Reporting a vulnerability
 
-Email **info@cypherbox.io** with details. Please don't open a public GitHub
-issue for an unpatched vulnerability; we'll coordinate disclosure.
+Preferred: open a private report with the **"Report a vulnerability"** button on
+this repository's [Security tab](https://github.com/CypherBoxLLC/Cypher-Box/security/advisories).
+It goes straight to the maintainers and stays private until we coordinate disclosure.
+
+You can also email **info@cypherbox.io** with details. Either way, please don't
+open a public GitHub issue for an unpatched vulnerability.
 
 Expected response: initial reply within 5 business days, then weekly progress
 updates until resolved.
