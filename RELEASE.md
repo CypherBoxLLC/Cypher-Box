@@ -11,6 +11,7 @@ every upload, and tag the commit `tf-<version>-b<build>`.
 | Build | Version | Commit | Date (UTC) | Branch | Notes |
 |------:|---------|--------|------------|--------|-------|
 | 15 | 0.0.10 | `50a0ced` | 2026-06-06 | `bark-0.6.3-upgrade` | bark 0.6.3 upgrade + ark->LN swap fixes; hot-vault orphan auto-adopt |
+| 26 | 0.1.13 | `fcf73f8` | 2026-11-18 | `release/v0.1.13` | Offline Seed-Signer (dice seeds, SeedQR, multisig co-signer), expired Bark capsule recovery, Arabic, security fixes; same commit as Android `v0.1.13-vc44` (`v0.1.13-vc45` adds only the Android portrait-feature fix) |
 
 Builds before 15 (including 0.0.10 (12) and (14), seen in a user report) predate
 this log and were uploaded without committing the build number, so their commits
