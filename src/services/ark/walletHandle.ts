@@ -16,6 +16,7 @@ import type { RecoveryBucket, RecoveryReport } from '@secondts/bark-react-native
 import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS_BARK } from './config';
 import { arkDatadirHasWallet, deleteArkDatadir, ensureArkDatadir } from './datadir';
 import { ensureBackgroundArkSeed, recordSavedSeedConsent } from './backgroundKeychain';
+import { resolveArkSeedForRestore } from './seedResolve';
 import { ARK_VAULT_EXISTS } from './createErrors';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
@@ -632,11 +633,16 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
 
     let mnemonic = cachedMnemonic;
     if (!mnemonic) {
-        const creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
-        if (!creds || !creds.password) {
+        // Prefer the biometry-gated primary; fall back to the non-gated
+        // background-refresh copy when it is gone or unreadable (passcode
+        // removed, device migration, keystore fault), mirroring restore.ts so
+        // an on-chain action such as an Ark exit is not blocked by a lost
+        // primary entry while a readable copy of the same seed still exists.
+        const resolved = await resolveArkSeedForRestore();
+        if (!resolved.seed) {
             throw new Error('Ark seed not in Keychain, so the onchain wallet cannot start');
         }
-        mnemonic = creds.password;
+        mnemonic = resolved.seed;
     }
 
     await ensureUniffi();
