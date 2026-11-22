@@ -381,6 +381,28 @@ const WalletsView = forwardRef<WalletsViewHandle, Props>(function WalletsView({
             });
         }
 
+        // Capsules bark will not send until they are refreshed (bark's
+        // `needsRefreshSats`: live capsules at the server's exit-depth limit).
+        // Out of the headline, so say why. Mirrors ArkWallet's branch. Back
+        // after Ignore when the amount changes.
+        {
+            const needsRefreshSats = arkBalanceDetail?.needsRefreshSats ?? 0;
+            if (needsRefreshSats > 0) {
+                notices.push({
+                    id: 'ark-needs-refresh',
+                    severity: 'yellow',
+                    icon: 'refresh-outline',
+                    situation: String(needsRefreshSats),
+                    text: String(loc.formatString(loc.cypherbox.ark.wallet.needs_refresh_warning, {
+                        sats: needsRefreshSats.toLocaleString(),
+                        link: loc.cypherbox.home_lists.wallets_view.link_here,
+                    })),
+                    linkText: loc.cypherbox.home_lists.wallets_view.link_here,
+                    onPress: () => openArkTab(0), // Capsules tab
+                });
+            }
+        }
+
         // Red: a capsule can expire within the week. Never ignorable.
         if (expiryWarning) {
             notices.push({

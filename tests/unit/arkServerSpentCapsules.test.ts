@@ -139,15 +139,23 @@ function sdkVtxo(id: string, sats: number, state = 'Spendable') {
     };
 }
 
-/** bark's balance(): it still counts the phantom, because it never asked the server. */
+/**
+ * bark's balance(): it still counts the phantom, because it never asked the
+ * server. bark 0.8.0 (SDK 0.26.0+) shape: `needsRefreshSats`,
+ * `pendingArkoorSendSats` and `pendingOffboardSats` are new and 0 here (no
+ * capsule in these fixtures is expired or at the depth limit).
+ */
 function sdkBalance(spendableSats: number) {
     return {
         spendableSats: BigInt(spendableSats),
+        needsRefreshSats: 0n,
         pendingInRoundSats: 0n,
         pendingExitSats: 0n,
         pendingLightningSendSats: 0n,
         claimableLightningReceiveSats: 0n,
         pendingBoardSats: 0n,
+        pendingArkoorSendSats: 0n,
+        pendingOffboardSats: 0n,
     };
 }
 

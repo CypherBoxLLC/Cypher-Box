@@ -1,5 +1,5 @@
 /**
- * Helpers for bark 0.16.x (bark 0.6.1) tagged-enum state fields.
+ * Helpers for bark tagged-enum state fields (since SDK 0.16.x / bark 0.6.1).
  *
  * bark 0.6.1 changed `Vtxo.state` and `ExitVtxo.state` from plain strings to
  * UniFFI tagged-enum objects: `{ tag: "Spendable", ... }` /
@@ -23,18 +23,37 @@ export function barkStateTag(state: unknown): string {
 }
 
 /**
- * Terminal exit states (bark 0.6.1 `ExitState`): the exit has finished and the
- * vtxo no longer needs driving.
+ * Terminal exit states (`ExitState`): the exit has finished and the vtxo no
+ * longer needs driving.
  *   Claimed          - swept on-chain, done.
  *   VtxoAlreadySpent - the vtxo was already spent, so the exit is moot.
  *   Canceled         - exit aborted.
+ *   VtxoSwept        - (bark 0.8.0) an output the exit chain needed was spent
+ *                      on chain, normally the server sweeping the round after
+ *                      expiry. The exit can never finish. bark says a refresh
+ *                      may still produce a fresh VTXO, which is the custodial
+ *                      recovery route, not this one.
  * Everything else (Start, Processing, AwaitingDelta, Claimable,
  * ClaimInProgress) is an IN-PROGRESS exit. We test "not terminal" rather than an
  * allow-list of active states on purpose: a new or renamed in-progress state
  * must never be mis-read as complete, which is the failure mode that retired an
  * exit early and deleted a wallet mid-exit (2026-07-31).
+ *
+ * The cost of that rule is that a new TERMINAL state reads as active until it
+ * is listed here. VtxoSwept was exactly that: without it, a swept exit counted
+ * as live forever, so every spend stayed blocked by the exit guard and the
+ * background wake kept skipping maintenance.
  */
-const EXIT_TERMINAL_TAGS = new Set(['Claimed', 'VtxoAlreadySpent', 'Canceled']);
+const EXIT_TERMINAL_TAGS = new Set(['Claimed', 'VtxoAlreadySpent', 'Canceled', 'VtxoSwept']);
+
+/**
+ * True when an exit ended because the chain it needed was swept (bark 0.8.0
+ * `ExitState.VtxoSwept`). Terminal, so `isActiveExit` is false for it; this
+ * lets the exit panel say why the capsule did not come out.
+ */
+export function isSweptExit(exit: { state: unknown } | null | undefined): boolean {
+    return barkStateTag(exit?.state) === 'VtxoSwept';
+}
 
 /**
  * True while an exit vtxo is still in flight: it locks the vtxo out of the

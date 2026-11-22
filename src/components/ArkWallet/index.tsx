@@ -613,6 +613,29 @@ export default function ArkWallet({
             });
         }
 
+        // Capsules bark will not send until they are refreshed (bark's
+        // `needsRefreshSats`: live capsules at the server's exit-depth limit).
+        // Their sats are out of the headline, so without this line the balance
+        // would drop with no reason given. Back after Ignore when the amount
+        // changes. Same branch in WalletsView, for the shared-row layout.
+        {
+            const needsRefreshSats = arkBalanceDetail?.needsRefreshSats ?? 0;
+            if (needsRefreshSats > 0) {
+                notices.push({
+                    id: 'ark-needs-refresh',
+                    severity: 'yellow',
+                    icon: 'refresh-outline',
+                    situation: String(needsRefreshSats),
+                    text: String(loc.formatString(loc.cypherbox.ark.wallet.needs_refresh_warning, {
+                        sats: needsRefreshSats.toLocaleString(),
+                        link: loc.cypherbox.ark.wallet.dust_warning_link,
+                    })),
+                    linkText: loc.cypherbox.ark.wallet.dust_warning_link,
+                    onPress: () => arkMenuClickHandler(0), // Capsules tab
+                });
+            }
+        }
+
         // Red: a non-dust capsule expires within the week. Never ignorable.
         if (expiryWarning) {
             notices.push({

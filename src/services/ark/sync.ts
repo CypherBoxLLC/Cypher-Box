@@ -135,7 +135,9 @@ export async function syncArkWallet(): Promise<boolean> {
                     'sats; keeping', boardDecision.holdSats, 'on-chain for exit fees',
                 );
                 try {
-                    await handle.boardAmount(BigInt(boardDecision.sats));
+                    // bark 0.9.0 added a board `expiryHeight`; undefined uses
+                    // Config.boardLifetime (clamped to the server VTXO lifetime).
+                    await handle.boardAmount(BigInt(boardDecision.sats), undefined);
                     console.log('[Ark sync] auto-board: boardAmount initiated');
                 } catch (boardErr) {
                     console.warn('[Ark sync] auto-board: boardAmount failed:', boardErr);
@@ -147,7 +149,9 @@ export async function syncArkWallet(): Promise<boolean> {
                     'sats unboarded onchain and nothing to hold, initiating boardAll',
                 );
                 try {
-                    await handle.boardAll();
+                    // bark 0.9.0: board `expiryHeight` undefined uses
+                    // Config.boardLifetime (clamped to the server VTXO lifetime).
+                    await handle.boardAll(undefined);
                     console.log('[Ark sync] auto-board: boardAll initiated');
                 } catch (boardErr) {
                     console.warn('[Ark sync] auto-board: boardAll failed:', boardErr);

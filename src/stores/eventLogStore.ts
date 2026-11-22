@@ -62,7 +62,8 @@ export type AppEvent =
     | (EventBase & {
         kind: "ark-exit-finished";
         correlationId: string;
-        result: "success" | "failure";
+        /** "canceled": the user undid it before it reached the chain (bark 0.8 cancelExit). */
+        result: "success" | "failure" | "canceled";
     })
     | (EventBase & {
         kind: "ark-refresh-started";

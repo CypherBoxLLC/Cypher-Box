@@ -22,9 +22,16 @@ export async function createArkLightningInvoice(amountSats: number): Promise<str
     // hit. ensureArkWalletHandleReady awaits the in-flight open (reusing the
     // cached seed — no FaceID) and only throws a friendly message on timeout.
     const handle = await ensureArkWalletHandleReady();
-    // bark 0.2.x: bolt11Invoice gained a second `description` arg (optional).
-    // Pass undefined to preserve the prior no-description behavior.
-    const { invoice } = await handle.bolt11Invoice(BigInt(Math.floor(amountSats)), undefined);
+    // Arguments after the amount: description, token, expirySecs (bark 0.8.1).
+    // All undefined: no description, no server token, and the server's own
+    // invoice expiry, which is the default and also the longest it allows. A
+    // shorter expiry the server does not honour makes the create fail.
+    const { invoice } = await handle.bolt11Invoice(
+        BigInt(Math.floor(amountSats)),
+        undefined,
+        undefined,
+        undefined,
+    );
     return invoice;
 }
 
