@@ -267,7 +267,14 @@ export function applyExpiredVtxoFilter(
     let exitingAll = 0;
 
     for (const v of vtxos) {
-        if (v.state.toLowerCase() !== 'spendable') continue;
+        if (v.state.toLowerCase() !== 'spendable') {
+            // A forced-exit capsule the app locked in bark (forcedExitLock.ts)
+            // reads Locked, so bark already leaves it out of spendableSats and
+            // nothing is subtracted; it still belongs in the pending-exit
+            // figure, or its sats would simply vanish from every total.
+            if (v.exiting && v.state.toLowerCase() === 'locked') exitingAll += v.sats;
+            continue;
+        }
         const isExpired =
             tipKnown &&
             v.expiryHeight > 0 &&

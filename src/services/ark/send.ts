@@ -12,6 +12,7 @@ import { assertNoActiveArkExit } from './exit';
 import { ensureArkWalletHandleReady } from './restore';
 import { fetchArkBalance } from './balance';
 import { fetchArkVtxos, recordServerSpentFromError } from './vtxos';
+import { assertNotForcedExitVtxos } from './forcedExitGuard';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import loc from '../../../loc';
 
@@ -369,6 +370,14 @@ async function maybeRefreshDeepenedChange(): Promise<void> {
     const serverSpent = new Set(
         ((store.arkServerSpentVtxoIds ?? []) as string[]).map((id) => id.toLowerCase()),
     );
+    // Capsules mid unilateral exit. With a user-started exit this function has
+    // already returned above; a forced one (bark 0.9.0) leaves the flag down,
+    // and its capsules must not be folded into a round.
+    const exiting = new Set(
+        ((store.arkVtxos ?? []) as { id: string; exiting?: boolean }[])
+            .filter((v) => !!v.exiting)
+            .map((v) => String(v.id).toLowerCase()),
+    );
 
     // allVtxos() is a JS-thread-blocking UniFFI call, so this runs after the
     // send has resolved and off the render path, alongside the sync above.
@@ -378,6 +387,7 @@ async function maybeRefreshDeepenedChange(): Promise<void> {
     let totalSats = 0;
     for (const v of vtxos) {
         if (serverSpent.has(String(v.id).toLowerCase())) continue;
+        if (exiting.has(String(v.id).toLowerCase())) continue;
         const sats = Number(v.amountSats ?? 0n);
         const expiryHeight = Number(v.expiryHeight ?? 0);
         const decision = decideChangeRefresh({
@@ -434,6 +444,11 @@ export async function executeArkSend(
     // success screen so users see what they paid without re-estimating
     // against a now-spent VTXO set.
     const fee = await estimateArkSendFee(dest, amountSats);
+    // A forced exit (bark 0.9.0) does not lock the wallet; its capsules are
+    // locked in bark instead, so coin selection should never pick one. This is
+    // the belt on top of that: the estimate's selection is what the send will
+    // use, so refuse before anything is sent if it names a forced capsule.
+    assertNotForcedExitVtxos(fee.vtxosSpent);
 
     let kind: ArkDestinationKind = dest.kind;
     let id!: string;

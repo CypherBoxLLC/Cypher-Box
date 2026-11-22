@@ -182,6 +182,21 @@ export {
     syncArkExits,
 } from './exit';
 export type { ArkExitCancelOutcome, ArkExitCancelRefusal } from './exit';
+export {
+    buildForcedExitNotice,
+    classifyExitRecords,
+    forcedExitIds,
+    isLegacyUserExit,
+    pickForcedExitsToNotice,
+    pruneStartedExitIds,
+    sumExitSats,
+} from './forcedExit';
+export type { ExitRecordLike, ForcedExitContext, ForcedExitNoticeInput } from './forcedExit';
+export { noticeForcedExits } from './forcedExitNotice';
+export { driveForcedExits } from './forcedExitDrive';
+export type { ForcedExitDriveOutcome } from './forcedExitDrive';
+export { assertNotForcedExitVtxos, forcedExitIdsFromStore } from './forcedExitGuard';
+export { lockForcedExitVtxos } from './forcedExitLock';
 export { acceptServerSpentId, serverSpentIdsWithWalletEvidence, soonestExpiryBlocks } from './serverSpentList';
 export { recheckArkServerSpentVtxos } from './serverSpentRecheck';
 export type { ServerSpentRecheck } from './serverSpentRecheck';
@@ -200,6 +215,7 @@ export {
     fetchFastFeeRateSatPerVb,
     getLastExitFeeDeadlineHeight,
     probeAspReachable,
+    computeExitFeeNeedForVtxos,
 } from './exitFunding';
 export type { ExitFeeReserve, ExitFeeConvertEstimate } from './exitFunding';
 export {

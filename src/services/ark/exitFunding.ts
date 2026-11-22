@@ -20,7 +20,7 @@
 
 import useAuthStore from '@Cypher/stores/authStore';
 
-import { barkStateTag } from './barkState';
+import { barkStateTag, isActiveExit } from './barkState';
 import { ESPLORA_URLS } from './config';
 import { noteEsploraFailure, noteEsploraSuccess, orderedEsploraUrls } from './esploraHealth';
 import { assertNoActiveArkExit } from './exit';
@@ -47,6 +47,7 @@ import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
 import { offboardTxid, runBroadcastCall } from './indeterminate';
 import { recordServerSpentFromError } from './vtxos';
+import { assertNotForcedExitVtxos } from './forcedExitGuard';
 import loc from '../../../loc';
 
 // --- Tunable sizing constants ----------------------------------------------
@@ -312,7 +313,9 @@ export async function fetchFastFeeRateSatPerVb(): Promise<number> {
  * confirm dialog and the reserve card all still show them with amount and
  * expiry. The read is local, so it holds with the server gone.
  */
-async function readExitCandidates(): Promise<ExitTriageVtxo[] | null> {
+async function readExitCandidates(
+    opts?: { includeExiting?: boolean },
+): Promise<ExitTriageVtxo[] | null> {
     const handle = getArkWalletHandle();
     if (!handle) return null;
     try {
@@ -320,7 +323,24 @@ async function readExitCandidates(): Promise<ExitTriageVtxo[] | null> {
         const serverSpent = new Set(
             (useAuthStore.getState().arkServerSpentVtxoIds ?? []).map((id) => id.toLowerCase()),
         );
-        return (vtxos ?? []).map((v) => ({
+        // Capsules already in an exit are not candidates for a NEW one. The
+        // Emergency Exit button used to be hidden whenever any exit ran, so
+        // this never came up; a forced exit (bark 0.9.0, forcedExit.ts) now
+        // runs with the button still available, and handing bark an id it is
+        // already exiting would make the user's exit fail to start. Local
+        // read. `includeExiting` is for pricing an exit that already exists.
+        let alreadyExiting = new Set<string>();
+        if (!opts?.includeExiting) {
+            try {
+                const exits = await handle.getExitVtxos();
+                alreadyExiting = new Set(
+                    (exits ?? []).filter((e) => isActiveExit(e)).map((e) => String(e.vtxoId).toLowerCase()),
+                );
+            } catch (err) {
+                if (__DEV__) console.warn('[Ark exit-funding] getExitVtxos threw; not filtering exiting capsules:', err);
+            }
+        }
+        return (vtxos ?? []).filter((v) => !alreadyExiting.has(String(v.id).toLowerCase())).map((v) => ({
             id: v.id,
             sats: Number(v.amountSats ?? 0n),
             exitDepth: Number(v.exitDepth ?? 0),
@@ -523,6 +543,60 @@ export async function computeExitFeeReserveSats(): Promise<ExitFeeReserve> {
 }
 
 /**
+ * What an exit of exactly these capsules needs in on-chain fee reserve, and
+ * how long until it can be collected.
+ *
+ * For an exit the user did not start (see ./forcedExit.ts): bark has already
+ * put the capsules into the exit flow, so the question is no longer whether to
+ * exit them but what the drive needs to finish. Priced with
+ * 'recover-everything' and the server-spent flag cleared, because nothing here
+ * is a choice any more; the chain is moving them whatever triage would have
+ * said. Takes no ASP call. Returns null when the capsules cannot be read or
+ * none of the ids is known to bark.
+ */
+export async function computeExitFeeNeedForVtxos(
+    vtxoIds: readonly string[],
+): Promise<{ reserveSats: number; feeRateSatPerVb: number; collectableInBlocks: number } | null> {
+    const wanted = new Set(vtxoIds.map((id) => String(id).toLowerCase()));
+    if (wanted.size === 0) return null;
+    const all = await readExitCandidates({ includeExiting: true });
+    if (!all) return null;
+    const vtxos = all
+        .filter((v) => wanted.has(String(v.id).toLowerCase()))
+        .map((v) => ({ ...v, serverSpent: false }));
+    if (vtxos.length === 0) return null;
+
+    const s = useAuthStore.getState();
+    const tipAgeMs =
+        s.arkChainTipHeightAt != null ? Date.now() - s.arkChainTipHeightAt : Infinity;
+    const tipIsFresh = s.arkChainTipHeight != null && tipAgeMs <= MAX_TIP_AGE_FOR_TRIAGE_MS;
+    const { rates } = await fetchExitFeeRatesWithSource();
+    const runTriage = (feeRateSatPerVb: number) =>
+        triageArkExit({
+            vtxos,
+            feeRateSatPerVb,
+            chainTipHeight: tipIsFresh ? (s.arkChainTipHeight as number) : null,
+            vtxoExitDeltaBlocks: s.arkVtxoExitDeltaBlocks ?? null,
+            maxVtxoExitDepth: s.arkMaxVtxoExitDepth ?? null,
+            economicPolicy: 'recover-everything',
+        });
+    // Same two-pass pricing as computeArkExitPlan, reduced: the dearest band
+    // first, then the band the capsules' own runway justifies when cheaper.
+    let plan = runTriage(rates.urgent);
+    const urgency = exitFeeUrgency(plan.selected).urgency;
+    if (plan.selected.length > 0 && rates[urgency] < rates.urgent) plan = runTriage(rates[urgency]);
+    // The runway axis still excludes a capsule that cannot clear its CSV in
+    // time, and the structural axis one with no chain. Price what is left; if
+    // triage kept nothing, fall back to the floor so the notice can still name
+    // a figure rather than claim no fees are needed.
+    return {
+        reserveSats: plan.selected.length > 0 ? plan.reserveSats : RESERVE_FLOOR_SATS,
+        feeRateSatPerVb: plan.feeRateSatPerVb,
+        collectableInBlocks: plan.collectableInBlocks,
+    };
+}
+
+/**
  * Cache the server's exit-relevant protocol constants so the exit path never
  * has to ask for them.
  *
@@ -663,6 +737,9 @@ export async function convertToExitFees(
             return null;
         }
     })();
+    // A forced-exit capsule (forcedExitLock.ts) is locked in bark and should
+    // never be selected; refuse rather than spend one if it is.
+    assertNotForcedExitVtxos(inputs);
     // 'conversion' matches the tab the user is on ("Convert from balance").
     // Deliberately not "offboard", which is bark's word and appears nowhere in
     // the UI.

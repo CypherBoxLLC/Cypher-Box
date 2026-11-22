@@ -3,6 +3,7 @@ import { getArkWalletHandle } from './walletHandle';
 import { offboardTxid, runBroadcastCall } from './indeterminate';
 import loc from '../../../loc';
 import { recordServerSpentFromError } from './vtxos';
+import { assertNotForcedExitVtxos } from './forcedExitGuard';
 
 /**
  * Cooperative on-chain offboard of SPECIFIC VTXOs (coin control).
@@ -63,6 +64,9 @@ export async function offboardArkVtxos(
     address: string,
 ): Promise<string> {
     assertNoActiveArkExit();
+    // offboardVtxos takes the ids as given, with no state filter in bark, so a
+    // forced-exit capsule (see forcedExitLock.ts) has to be refused here.
+    assertNotForcedExitVtxos(vtxoIds);
     const handle = requireHandle();
     try {
         const result = await runBroadcastCall(

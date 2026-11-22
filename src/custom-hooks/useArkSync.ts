@@ -10,6 +10,8 @@ import {
     cancelVtxoExpiryWarnings,
     cancelVtxoStuckSwapWarnings,
     claimArkExitsToAddress,
+    classifyExitRecords,
+    driveForcedExits,
     fetchClaimFeeRateSatPerVb,
     getArkCancelling,
     setArkCancelling,
@@ -28,6 +30,7 @@ import {
     decideExitReadyNotice,
     scheduleArkExitReadyNotice,
     type ExitDriveSnapshot,
+    type ExitRecordLike,
     isVtxoMidRound,
     fetchClaimableExitVtxos,
     fetchPendingExitsTotalSats,
@@ -35,9 +38,11 @@ import {
     getCachedArkMnemonic,
     barkStateTag,
     isActiveExit,
+    noticeForcedExits,
     isICloudBackupAvailable,
     maybeSweepDueArkVtxos,
     progressArkExits,
+    pruneStartedExitIds,
     progressArkPendingRounds,
     sweepStaleArkRefreshingVtxos,
     reopenArkWalletFromCache,
@@ -505,16 +510,29 @@ export default function useArkSync(): UseArkSync {
             // drive block below resumes progressing + claiming. Destination
             // backfill (ArkExitBackfill) re-derives the payout address when
             // it's missing, so claim still lands in the user's Hot Vault.
+            // Exit records the user did NOT start (bark 0.9.0's force-exit scan
+            // routes capsules another party pushed on-chain into the exit flow
+            // by itself). Driven below WITHOUT the wallet-wide lock: the flag
+            // stays down, their capsules are locked in bark one by one, and the
+            // normal sync path still runs. See services/ark/forcedExit.ts.
+            let forcedOnlyExits: ExitRecordLike[] = [];
             if (!arkExitInProgress) {
                 try {
                     const orphanExits = await fetchArkExitVtxos();
+                    const st = useAuthStore.getState();
                     // bark 0.6.1: exit `state` is a tagged-enum object; the
-                    // not-terminal liveness check re-arms the drive for any
-                    // in-flight exit (incl. the new Start / ClaimInProgress).
-                    const activeOrphans = orphanExits.filter((v) => isActiveExit(v));
-                    if (activeOrphans.length > 0) {
+                    // not-terminal liveness check inside classifyExitRecords
+                    // counts any in-flight exit (incl. Start / ClaimInProgress).
+                    const { userStarted, forced } = classifyExitRecords(orphanExits, {
+                        startedIds: st.arkExitStartedVtxoIds ?? [],
+                        exitStartedAt: st.arkExitStartedAt ?? null,
+                    });
+                    // Tell the user, once per capsule, the first time a forced
+                    // exit is seen, whether or not their own exit is running.
+                    if (forced.length > 0) await noticeForcedExits(orphanExits);
+                    if (userStarted.length > 0) {
                         console.warn(
-                            '[Ark exit] found', activeOrphans.length,
+                            '[Ark exit] found', userStarted.length,
                             'in-flight exit vtxo(s) in bark DB with no in-progress flag — re-arming exit drive',
                         );
                         setArkExitInProgress(true);
@@ -523,6 +541,7 @@ export default function useArkSync(): UseArkSync {
                         // stale false).
                         return;
                     }
+                    forcedOnlyExits = forced;
                 } catch {
                     // Handle closed or read failed — nothing to heal this tick.
                 }
@@ -672,6 +691,18 @@ export default function useArkSync(): UseArkSync {
                     // an ordinary UTXO that only this wallet can spend, with no
                     // deadline and nobody to race.
                     const exitVtxosForBatch = await fetchArkExitVtxos();
+                    // A forced exit can also arrive while the user's own exit
+                    // is running; same once-per-capsule notice. The started-id
+                    // list is pruned as records finish, so a record that shows
+                    // up later is still told apart from the user's own.
+                    await noticeForcedExits(exitVtxosForBatch);
+                    {
+                        const started = useAuthStore.getState().arkExitStartedVtxoIds ?? [];
+                        const kept = pruneStartedExitIds(started, exitVtxosForBatch);
+                        if (kept.length !== started.length) {
+                            useAuthStore.getState().setArkExitStartedVtxoIds(kept);
+                        }
+                    }
                     const stragglers = exitVtxosForBatch.filter(
                         (v) => isActiveExit(v) && !v.isClaimable,
                     );
@@ -931,6 +962,7 @@ export default function useArkSync(): UseArkSync {
                             setArkExitDestinationAddress(null);
                             setArkExitStartedAt(null);
                             setArkExitStartedSats(null);
+                            useAuthStore.getState().setArkExitStartedVtxoIds([]);
                         }
                     } else {
                         // Exit complete: funds drained to the destination and
@@ -958,6 +990,7 @@ export default function useArkSync(): UseArkSync {
                         setArkExitStartedAt(null);
                         setArkExitStartedSats(null);
                         setArkExitDrained(false);
+                        useAuthStore.getState().setArkExitStartedVtxoIds([]);
                     }
                 } catch (exitErr: any) {
                     console.warn('[Ark exit] cycle failed:', exitErr?.message ?? exitErr);
@@ -969,6 +1002,20 @@ export default function useArkSync(): UseArkSync {
                 // sensible mix, and the heavy UniFFI calls below are pure
                 // overhead while every VTXO is in exit state.
                 return;
+            }
+
+            // Forced exit, no user exit: progress, sync and claim it with the
+            // wallet still open for business. The forced capsules are locked in
+            // bark inside the drive, so none of the cooperative paths below can
+            // pick them, and the per-id refusals in forcedExitLock catch the
+            // paths bark does not filter. Never throws.
+            if (forcedOnlyExits.length > 0) {
+                const outcome = await driveForcedExits(forcedOnlyExits);
+                _stamp(
+                    `forced exit drive ${outcome.action}` +
+                    (outcome.lockFailedCount > 0 ? ` (${outcome.lockFailedCount} not locked)` : '') +
+                    (outcome.claimTxid ? ` claim=${outcome.claimTxid}` : ''),
+                );
             }
 
             // Drive forward any pending Lightning receives BEFORE reading
@@ -1695,6 +1742,10 @@ export default function useArkSync(): UseArkSync {
             if (tip !== null && vtxos) {
                 for (const v of vtxos.spendable) {
                     if (v.expiryHeight === 0) continue;
+                    // A capsule mid unilateral exit is the exit's business, not
+                    // a refresh's. Reached only for a forced exit, since a
+                    // user-started one returns before this path.
+                    if (v.exiting) continue;
                     // Skip anything mid-round: its expiry is the pre-refresh
                     // one, and escalating on it would raise the blocking rescue
                     // Alert while a refresh is already in flight fixing it.

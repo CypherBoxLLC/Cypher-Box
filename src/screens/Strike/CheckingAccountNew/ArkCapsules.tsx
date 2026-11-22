@@ -272,6 +272,14 @@ interface VtxoRowData {
      */
     exiting: boolean;
     /**
+     * True when `exiting` is true but the exit was not started on this device:
+     * bark 0.9.0 routes a capsule another party force-exited on-chain into the
+     * exit flow by itself (ArkVtxoView.exitForced, services/ark/forcedExit).
+     * Same locked treatment, its own label, so the row does not claim an
+     * action the user never took.
+     */
+    exitForced: boolean;
+    /**
      * Recoverability classification for the per-row badge.
      *
      * The TRUTH about Ark/Bark recovery: VTXOs cannot be reconstructed
@@ -505,7 +513,9 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                 ? '#888'
                 : view.color;
     const labelText = isExiting
-        ? loc.cypherbox.strike.ark_capsules.label_exiting
+        ? (vtxo.exitForced
+            ? loc.cypherbox.strike.ark_capsules.label_exit_forced
+            : loc.cypherbox.strike.ark_capsules.label_exiting)
         : isTransientForLabel
             ? (isCancelling
                 ? loc.cypherbox.strike.ark_capsules.label_cancelling
@@ -1518,6 +1528,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     kind: v.kind,
                     pendingRound,
                     exiting: v.exiting ?? false,
+                    exitForced: v.exitForced ?? false,
                     recoverability,
                 };
             }
@@ -1530,6 +1541,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 kind: v.kind,
                 pendingRound,
                 exiting: v.exiting ?? false,
+                exitForced: v.exitForced ?? false,
                 recoverability,
             };
         });

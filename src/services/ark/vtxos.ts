@@ -2,6 +2,7 @@ import { getArkWalletHandle } from './walletHandle';
 import { barkStateTag, isActiveExit } from './barkState';
 import useAuthStore from '@Cypher/stores/authStore';
 import { applyExpiredVtxoFilter, fetchArkBalance } from './balance';
+import { forcedExitIds } from './forcedExit';
 import { acceptServerSpentId, serverSpentIdsWithWalletEvidence } from './serverSpentList';
 import {
     isPermanentlyGone,
@@ -54,6 +55,12 @@ export type ArkVtxoView = {
      * balance, the same way it does for `exiting`.
      */
     serverSpent?: boolean;
+    /**
+     * True when `exiting` is true but the exit was NOT started on this device
+     * (bark 0.9.0 routes capsules another party force-exited on-chain into the
+     * exit flow by itself). Renders with its own label; see ./forcedExit.ts.
+     */
+    exitForced?: boolean;
 };
 
 export type ArkVtxoList = {
@@ -157,6 +164,7 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
     // UI/balance offers coins that are mid-exit (see `exiting` docs above).
     // Best-effort: an empty set on failure just means no lock this tick.
     let activeExitIds = new Set<string>();
+    let forcedIds = new Set<string>();
     let exitRecords: { vtxoId: string; state: unknown }[] = [];
     try {
         const exits = await handle.getExitVtxos();
@@ -169,6 +177,12 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
                 .filter((e: any) => isActiveExit(e))
                 .map((e: any) => String(e.vtxoId)),
         );
+        // Which of those the user never asked for (bark 0.9.0 force-exit scan).
+        const st = useAuthStore.getState();
+        forcedIds = forcedExitIds(exits ?? [], {
+            startedIds: st.arkExitStartedVtxoIds ?? [],
+            exitStartedAt: st.arkExitStartedAt ?? null,
+        });
     } catch { /* handle busy or exit subsystem unavailable — no lock */ }
 
     // Prune the server-spent list on the WALLET's evidence, and only that: an
@@ -218,6 +232,7 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         // downstream `.toLowerCase()` comparison keeps working.
         state: barkStateTag(v.state),
         exiting: activeExitIds.has(v.id),
+        exitForced: forcedIds.has(String(v.id).toLowerCase()),
         serverSpent: serverSpent.has(String(v.id).toLowerCase()),
     }));
 
