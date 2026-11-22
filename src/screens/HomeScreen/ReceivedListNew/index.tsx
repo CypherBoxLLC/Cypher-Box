@@ -38,6 +38,7 @@ import { colors, rtl } from "@Cypher/style-guide";
 import Clipboard from "@react-native-clipboard/clipboard";
 import styles from "./styles";
 import { createInvoice } from "@Cypher/api/coinOSApis";
+import { describeCoinosFailure } from "@Cypher/services/coinos/apiResponse";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import 'text-encoding';
 import QRCode from 'react-native-qrcode-svg';
@@ -139,6 +140,12 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
    */
   const [arkAddressError, setArkAddressError] = useState<string | null>(null);
   const [arkOnchainAddressError, setArkOnchainAddressError] = useState<string | null>(null);
+  // CoinOS / Strike address fetch failure for the Bitcoin and Liquid tabs,
+  // rendered in place of the address row (an empty row with a copy icon said
+  // nothing). CoinOS's own reason rides along when it gave one: "Liquid
+  // deposits are temporarily disabled" is what the user needs to read, not
+  // "please try again".
+  const [coinosAddressError, setCoinosAddressError] = useState<string | null>(null);
   /** Bumped by "Try again" so the fetch effect re-runs. */
   const [addressReloadTick, setAddressReloadTick] = useState(0);
   const [showSecondView, setShowSecondView] = useState(initialVaultType !== null || allBTCWallets.length == 1 ? true : false);
@@ -252,6 +259,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
 
   const handleCreateInvoice = async (type: string) => {
     setIsLoading(true);
+    setCoinosAddressError(null);
     try {
       const response = selectedItem == 2 ? await createInvoice({
         type: type,
@@ -268,7 +276,9 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
       }
     } catch (error) {
       console.error('Error generating bitcoin address handleCreateInvoice:', error);
-      SimpleToast.show(type == 'bitcoin' ? loc.cypherbox.home.address_failed_bitcoin : loc.cypherbox.home.address_failed_liquid, SimpleToast.SHORT);
+      const fallback = type == 'bitcoin' ? loc.cypherbox.home.address_failed_bitcoin : loc.cypherbox.home.address_failed_liquid;
+      // null for a 401: the session expiry already asked for a new login.
+      setCoinosAddressError(describeCoinosFailure(error, fallback));
     } finally {
       setIsLoading(false);
     }
@@ -851,7 +861,15 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   {loc.cypherbox.home_lists.received_list_new.bitcoin_network_address}
                 </Text>
                 {isLoading ? <ActivityIndicator size="large" color="#ffffff" />
-                  :
+                  : coinosAddressError ? (
+                    <AddressFetchFailed
+                      message={coinosAddressError}
+                      onRetry={() => {
+                        setCoinosAddressError(null);
+                        setAddressReloadTick((n) => n + 1);
+                      }}
+                    />
+                  ) :
                   <>
                     <View style={styles.addressRow}>
                       <Text semibold style={styles.bitcoinAddressText}>
@@ -883,7 +901,15 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
                   {loc.cypherbox.home_lists.received_list_new.liquid_address}
                 </Text>
                 {isLoading ? <ActivityIndicator size="large" color="#ffffff" />
-                  :
+                  : coinosAddressError ? (
+                    <AddressFetchFailed
+                      message={coinosAddressError}
+                      onRetry={() => {
+                        setCoinosAddressError(null);
+                        setAddressReloadTick((n) => n + 1);
+                      }}
+                    />
+                  ) :
                   <>
                     <View style={styles.addressRow}>
                       <Text semibold style={[styles.bitcoinAddressText, rtl.ltrText]}>
