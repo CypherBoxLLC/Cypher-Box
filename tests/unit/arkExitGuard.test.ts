@@ -26,7 +26,13 @@ const mockHandle = {
 };
 const mockStoreState = {
     arkExitInProgress: false,
-    arkVtxos: [] as Array<{ id: string; exiting?: boolean }>,
+    arkVtxos: [] as Array<{ id: string; exiting?: boolean; exitForced?: boolean }>,
+    // The exits below are the USER's: an exit started on this device before
+    // ids were tracked (started-at set, id list empty). An active record with
+    // neither is a FORCED exit (bark 0.9.0) and does not hold the guard; see
+    // the dedicated describe at the end.
+    arkExitStartedAt: Date.now() as number | null,
+    arkExitStartedVtxoIds: [] as string[],
 };
 
 jest.mock('@Cypher/stores/authStore', () => ({
@@ -62,6 +68,8 @@ beforeEach(() => {
     mockHandle.cancelExit.mockReset();
     mockStoreState.arkExitInProgress = false;
     mockStoreState.arkVtxos = [];
+    mockStoreState.arkExitStartedAt = Date.now();
+    mockStoreState.arkExitStartedVtxoIds = [];
 });
 
 describe('hasActiveArkExitRecords', () => {
@@ -409,5 +417,48 @@ describe('cancelling an exit (bark 0.8.x cancelExit)', () => {
         const out = await cancelArkExits(['', 'a']);
         expect(mockHandle.cancelExit).toHaveBeenCalledTimes(1);
         expect(out).toEqual([{ vtxoId: 'a', canceled: true }]);
+    });
+});
+
+describe('forced exits (bark 0.9.0) do not hold the wallet-wide guard', () => {
+    const MINE = `${'1f66'.repeat(16)}:1`;
+    const FORCED = `${'9ca5'.repeat(16)}:0`;
+    const rec = (vtxoId: string, tag: string) => ({ vtxoId, amountSats: 1_000n, state: { tag }, isClaimable: false });
+
+    beforeEach(() => {
+        // Ids are tracked on this device; nothing in flight was started here.
+        mockStoreState.arkExitStartedAt = null;
+        mockStoreState.arkExitStartedVtxoIds = [];
+    });
+
+    it('hasActiveArkExitRecords is false for forced-only records', async () => {
+        mockGetExitVtxos.mockResolvedValue([rec(FORCED, 'Processing'), rec(MINE, 'Claimed')]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(false);
+    });
+
+    it('is true for the user\'s own record, alone or mixed with a forced one', async () => {
+        mockStoreState.arkExitStartedVtxoIds = [MINE];
+        mockGetExitVtxos.mockResolvedValue([rec(MINE, 'AwaitingDelta')]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(true);
+        mockGetExitVtxos.mockResolvedValue([rec(MINE, 'AwaitingDelta'), rec(FORCED, 'Processing')]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(true);
+    });
+
+    it('a legacy exit (started here before ids were tracked) is still the user\'s', async () => {
+        mockStoreState.arkExitStartedAt = Date.now() - 60_000;
+        mockGetExitVtxos.mockResolvedValue([rec(FORCED, 'Processing')]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(true);
+    });
+
+    it('assertNoActiveArkExitAsync resolves for forced-only records and forced-only rows', async () => {
+        mockGetExitVtxos.mockResolvedValue([rec(FORCED, 'Processing')]);
+        mockStoreState.arkVtxos = [{ id: 'a' }, { id: FORCED, exiting: true, exitForced: true }];
+        await expect(assertNoActiveArkExitAsync('Refreshing')).resolves.toBeUndefined();
+    });
+
+    it('still throws on a row exiting for the user\'s own exit, beside a forced one', async () => {
+        mockGetExitVtxos.mockResolvedValue([]);
+        mockStoreState.arkVtxos = [{ id: FORCED, exiting: true, exitForced: true }, { id: MINE, exiting: true }];
+        await expect(assertNoActiveArkExitAsync('Refreshing')).rejects.toThrow(/Emergency Exit/);
     });
 });

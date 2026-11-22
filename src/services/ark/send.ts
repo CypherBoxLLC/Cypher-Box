@@ -11,7 +11,8 @@ import { decideChangeRefresh } from './changeRefresh';
 import { assertNoActiveArkExit } from './exit';
 import { ensureArkWalletHandleReady } from './restore';
 import { fetchArkBalance } from './balance';
-import { fetchArkVtxos } from './vtxos';
+import { fetchArkVtxos, recordServerSpentFromError } from './vtxos';
+import { assertNotForcedExitVtxos } from './forcedExitGuard';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import loc from '../../../loc';
 
@@ -369,6 +370,14 @@ async function maybeRefreshDeepenedChange(): Promise<void> {
     const serverSpent = new Set(
         ((store.arkServerSpentVtxoIds ?? []) as string[]).map((id) => id.toLowerCase()),
     );
+    // Capsules mid unilateral exit. With a user-started exit this function has
+    // already returned above; a forced one (bark 0.9.0) leaves the flag down,
+    // and its capsules must not be folded into a round.
+    const exiting = new Set(
+        ((store.arkVtxos ?? []) as { id: string; exiting?: boolean }[])
+            .filter((v) => !!v.exiting)
+            .map((v) => String(v.id).toLowerCase()),
+    );
 
     // allVtxos() is a JS-thread-blocking UniFFI call, so this runs after the
     // send has resolved and off the render path, alongside the sync above.
@@ -378,6 +387,7 @@ async function maybeRefreshDeepenedChange(): Promise<void> {
     let totalSats = 0;
     for (const v of vtxos) {
         if (serverSpent.has(String(v.id).toLowerCase())) continue;
+        if (exiting.has(String(v.id).toLowerCase())) continue;
         const sats = Number(v.amountSats ?? 0n);
         const expiryHeight = Number(v.expiryHeight ?? 0);
         const decision = decideChangeRefresh({
@@ -434,6 +444,11 @@ export async function executeArkSend(
     // success screen so users see what they paid without re-estimating
     // against a now-spent VTXO set.
     const fee = await estimateArkSendFee(dest, amountSats);
+    // A forced exit (bark 0.9.0) does not lock the wallet; its capsules are
+    // locked in bark instead, so coin selection should never pick one. This is
+    // the belt on top of that: the estimate's selection is what the send will
+    // use, so refuse before anything is sent if it names a forced capsule.
+    assertNotForcedExitVtxos(fee.vtxosSpent);
 
     let kind: ArkDestinationKind = dest.kind;
     let id!: string;
@@ -445,134 +460,149 @@ export async function executeArkSend(
         dest.kind === 'ln-offer' ||
         dest.kind === 'ln-address';
 
-    if (isLn) {
-        // --- LN send with settlement-confirmed retry ------------------------
-        //
-        // Two facts drive this loop:
-        //  1. payLightning*(wait=false) returns at DISPATCH, not settlement. It
-        //     yields a `Paid` LightningSendStatus (with preimage) only once
-        //     settled; a non-Paid status is NOT proof of payment (it may still
-        //     fail and refund). We always wait for the movement to reach a
-        //     terminal state rather than trusting the call returning.
-        //  2. The ASP's route to the destination settles INTERMITTENTLY
-        //     (confirmed: two identical 500-sat sends 12s apart, one settled and
-        //     one failed; a 7,890-sat send succeeded while a 53k one failed). A
-        //     FAILED HTLC is fully refunded, so re-attempting is safe and turns
-        //     ~50% per-attempt into ~90%+ over a few tries.
-        //
-        // We retry ONLY on a confirmed `failed` (refunded, so safe). We never
-        // retry on `pending` (it might still settle, a double-pay risk); that
-        // throws so the user checks Activity instead of being silently re-sent.
-        let settled = false;
-        for (let attempt = 1; attempt <= MAX_LN_SEND_ATTEMPTS; attempt++) {
-            // Wrapped, so a connection that dies mid-dispatch is reported as
-            // UNKNOWN rather than as a failure. This is the one send path that
-            // was not: runBroadcastCall guards sendArkoorPayment and sendOnchain
-            // below, and the four other ASP-facing calls across exit.ts,
-            // offboard.ts, exitFunding.ts and recoverOnchainBoard.ts, but the
-            // Lightning branch went straight to the SDK.
+    // The dispatch is wrapped for ONE reason: a server refusal naming a spent
+    // capsule has to be recorded against the inputs THIS call used, and bark
+    // picked those inputs itself. The fee estimate above is the only record of
+    // its coin selection, so that list is the bound (see ./serverSpentList.ts);
+    // a refusal naming any other capsule is classified for the screen's
+    // message and not recorded. The screens no longer record on their own.
+    try {
+        if (isLn) {
+            // --- LN send with settlement-confirmed retry ------------------------
             //
-            // It is also the path where being wrong costs the most. On a
-            // transport failure the ASP may already have begun the HTLC. If the
-            // caller is told "failed" it re-arms the send control, and for an
-            // ln-address or ln-offer a retry mints a FRESH invoice with a new
-            // payment hash, so it settles alongside the first one. The recipient
-            // is paid twice and the retry loop below cannot see it, because it
-            // only ever retries on a movement confirmed refunded.
+            // Two facts drive this loop:
+            //  1. payLightning*(wait=false) returns at DISPATCH, not settlement. It
+            //     yields a `Paid` LightningSendStatus (with preimage) only once
+            //     settled; a non-Paid status is NOT proof of payment (it may still
+            //     fail and refund). We always wait for the movement to reach a
+            //     terminal state rather than trusting the call returning.
+            //  2. The ASP's route to the destination settles INTERMITTENTLY
+            //     (confirmed: two identical 500-sat sends 12s apart, one settled and
+            //     one failed; a 7,890-sat send succeeded while a 53k one failed). A
+            //     FAILED HTLC is fully refunded, so re-attempting is safe and turns
+            //     ~50% per-attempt into ~90%+ over a few tries.
             //
-            // Throwing here leaves the loop entirely, which is correct: an
-            // indeterminate outcome must never be retried.
-            const status = await runBroadcastCall(
-                () => dispatchLnSend(handle, dest, amount, comment),
-                loc.cypherbox.services.indeterminate.what_payment,
-            );
-
-            // Fast path: bark settled at dispatch and handed us the preimage.
-            if (status.tag === LightningSendStatus_Tags.Paid) {
-                id = status.inner.paymentHash;
-                if (__DEV__) console.log('[Ark send] LN attempt', attempt, 'Paid at dispatch (preimage in hand)');
-                settled = true;
-                break;
-            }
-
-            // InProgress carries the resolved bolt11 (for offer/address kinds
-            // this is the only place we learn it); Unknown carries nothing, so
-            // fall back to the raw destination for the settlement match. (Offer/
-            // address + Unknown will not match the movement poll and so fail
-            // safe to 'pending' rather than a false success.)
-            const resolvedInvoice =
-                status.tag === LightningSendStatus_Tags.InProgress
-                    ? status.inner.send.invoice
-                    : dest.value;
-            // Receipt handle until we have a preimage: the invoice we paid.
-            id = resolvedInvoice;
-            if (__DEV__) {
-                console.log(
-                    '[Ark send] LN attempt', attempt, 'of', MAX_LN_SEND_ATTEMPTS,
-                    'status=', status.tag,
-                    status.tag === LightningSendStatus_Tags.InProgress
-                        ? `htlcVtxoCount=${status.inner.send.htlcVtxoCount}`
-                        : '',
-                );
-            }
-
-            const outcome = await waitForArkLightningSettlement(handle, resolvedInvoice);
-            if (outcome === 'settled') { settled = true; break; }
-            if (outcome === 'pending') {
-                // INDETERMINATE, not a failure. The HTLC is still live and may
-                // yet settle. Retrying an ln-address or ln-offer mints a FRESH
-                // invoice with a new payment hash, so a retry can settle
-                // alongside this one and pay the recipient twice.
+            // We retry ONLY on a confirmed `failed` (refunded, so safe). We never
+            // retry on `pending` (it might still settle, a double-pay risk); that
+            // throws so the user checks Activity instead of being silently re-sent.
+            let settled = false;
+            for (let attempt = 1; attempt <= MAX_LN_SEND_ATTEMPTS; attempt++) {
+                // Wrapped, so a connection that dies mid-dispatch is reported as
+                // UNKNOWN rather than as a failure. This is the one send path that
+                // was not: runBroadcastCall guards sendArkoorPayment and sendOnchain
+                // below, and the four other ASP-facing calls across exit.ts,
+                // offboard.ts, exitFunding.ts and recoverOnchainBoard.ts, but the
+                // Lightning branch went straight to the SDK.
                 //
-                // Flagged rather than left to string-matching so callers can
-                // branch on it reliably. A caller MUST NOT tell the user their
-                // funds are safe, and MUST NOT re-arm its send control, when
-                // this flag is set.
-                throw makeIndeterminate(
-                    loc.cypherbox.services.ark_send.payment_in_flight,
-                );
-            }
-            // outcome === 'failed' -> HTLC refunded, funds back. Retry if attempts remain.
-            console.log(
-                '[Ark send] LN attempt', attempt, 'failed and refunded;',
-                attempt < MAX_LN_SEND_ATTEMPTS ? 'retrying' : 'no attempts left',
-            );
-        }
-        if (!settled) {
-            throw new Error(
-                loc.cypherbox.services.ark_send.ln_failed_refunded,
-            );
-        }
-    } else {
-        switch (dest.kind) {
-            case 'ark': {
-                // bark 0.8.0 returns the id of the movement that records the
-                // payment (it returned nothing before). No caller reads an id
-                // for ark-to-ark sends, so `id` stays empty; the movement id is
-                // only logged, to link a send to its history row when debugging.
-                const movementId = await runBroadcastCall(
-                    () => handle.sendArkoorPayment(dest.value, amount),
+                // It is also the path where being wrong costs the most. On a
+                // transport failure the ASP may already have begun the HTLC. If the
+                // caller is told "failed" it re-arms the send control, and for an
+                // ln-address or ln-offer a retry mints a FRESH invoice with a new
+                // payment hash, so it settles alongside the first one. The recipient
+                // is paid twice and the retry loop below cannot see it, because it
+                // only ever retries on a movement confirmed refunded.
+                //
+                // Throwing here leaves the loop entirely, which is correct: an
+                // indeterminate outcome must never be retried.
+                const status = await runBroadcastCall(
+                    () => dispatchLnSend(handle, dest, amount, comment),
                     loc.cypherbox.services.indeterminate.what_payment,
                 );
-                if (__DEV__) console.log('[Ark send] arkoor payment movement id=', movementId);
-                id = '';
-                break;
-            }
-            case 'onchain':
-                // bark 0.8.0 returns OffboardResult { txid, movementId } here,
-                // not the txid string. offboardTxid reads it without throwing:
-                // this line runs after the withdrawal is already broadcast.
-                id = offboardTxid(
-                    await runBroadcastCall(
-                        () => handle.sendOnchain(dest.value, amount),
-                        loc.cypherbox.services.indeterminate.what_withdrawal,
-                    ),
+
+                // Fast path: bark settled at dispatch and handed us the preimage.
+                if (status.tag === LightningSendStatus_Tags.Paid) {
+                    id = status.inner.paymentHash;
+                    if (__DEV__) console.log('[Ark send] LN attempt', attempt, 'Paid at dispatch (preimage in hand)');
+                    settled = true;
+                    break;
+                }
+
+                // InProgress carries the resolved bolt11 (for offer/address kinds
+                // this is the only place we learn it); Unknown carries nothing, so
+                // fall back to the raw destination for the settlement match. (Offer/
+                // address + Unknown will not match the movement poll and so fail
+                // safe to 'pending' rather than a false success.)
+                const resolvedInvoice =
+                    status.tag === LightningSendStatus_Tags.InProgress
+                        ? status.inner.send.invoice
+                        : dest.value;
+                // Receipt handle until we have a preimage: the invoice we paid.
+                id = resolvedInvoice;
+                if (__DEV__) {
+                    console.log(
+                        '[Ark send] LN attempt', attempt, 'of', MAX_LN_SEND_ATTEMPTS,
+                        'status=', status.tag,
+                        status.tag === LightningSendStatus_Tags.InProgress
+                            ? `htlcVtxoCount=${status.inner.send.htlcVtxoCount}`
+                            : '',
+                    );
+                }
+
+                const outcome = await waitForArkLightningSettlement(handle, resolvedInvoice);
+                if (outcome === 'settled') { settled = true; break; }
+                if (outcome === 'pending') {
+                    // INDETERMINATE, not a failure. The HTLC is still live and may
+                    // yet settle. Retrying an ln-address or ln-offer mints a FRESH
+                    // invoice with a new payment hash, so a retry can settle
+                    // alongside this one and pay the recipient twice.
+                    //
+                    // Flagged rather than left to string-matching so callers can
+                    // branch on it reliably. A caller MUST NOT tell the user their
+                    // funds are safe, and MUST NOT re-arm its send control, when
+                    // this flag is set.
+                    throw makeIndeterminate(
+                        loc.cypherbox.services.ark_send.payment_in_flight,
+                    );
+                }
+                // outcome === 'failed' -> HTLC refunded, funds back. Retry if attempts remain.
+                console.log(
+                    '[Ark send] LN attempt', attempt, 'failed and refunded;',
+                    attempt < MAX_LN_SEND_ATTEMPTS ? 'retrying' : 'no attempts left',
                 );
-                break;
-            case 'unknown':
-            default:
-                throw new Error(loc.cypherbox.services.ark_send.cannot_send_unknown_dest);
+            }
+            if (!settled) {
+                throw new Error(
+                    loc.cypherbox.services.ark_send.ln_failed_refunded,
+                );
+            }
+        } else {
+            switch (dest.kind) {
+                case 'ark': {
+                    // bark 0.8.0 returns the id of the movement that records the
+                    // payment (it returned nothing before). No caller reads an id
+                    // for ark-to-ark sends, so `id` stays empty; the movement id is
+                    // only logged, to link a send to its history row when debugging.
+                    const movementId = await runBroadcastCall(
+                        () => handle.sendArkoorPayment(dest.value, amount),
+                        loc.cypherbox.services.indeterminate.what_payment,
+                    );
+                    if (__DEV__) console.log('[Ark send] arkoor payment movement id=', movementId);
+                    id = '';
+                    break;
+                }
+                case 'onchain':
+                    // bark 0.8.0 returns OffboardResult { txid, movementId } here,
+                    // not the txid string. offboardTxid reads it without throwing:
+                    // this line runs after the withdrawal is already broadcast.
+                    id = offboardTxid(
+                        await runBroadcastCall(
+                            () => handle.sendOnchain(dest.value, amount),
+                            loc.cypherbox.services.indeterminate.what_withdrawal,
+                        ),
+                    );
+                    break;
+                case 'unknown':
+                default:
+                    throw new Error(loc.cypherbox.services.ark_send.cannot_send_unknown_dest);
+            }
         }
+    } catch (err) {
+        // Best-effort bookkeeping; the original failure is what the caller
+        // must see, whatever happens in here.
+        try {
+            await recordServerSpentFromError(err, fee.vtxosSpent ?? null);
+        } catch { /* recorded nothing; the send error below still stands */ }
+        throw err;
     }
 
     console.log('[Ark send]', dest.kind, 'resolved id=', id.slice(0, 16) + '…');

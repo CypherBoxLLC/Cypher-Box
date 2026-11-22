@@ -41,7 +41,7 @@ import type { ExitClaimTransaction, ExitVtxo } from '@secondts/bark-react-native
 
 import useAuthStore from '@Cypher/stores/authStore';
 
-import { isActiveExit } from './barkState';
+import { classifyExitRecords } from './forcedExit';
 import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
 import { runBroadcastCall } from './indeterminate';
 import loc from '../../../loc';
@@ -60,12 +60,27 @@ import loc from '../../../loc';
  *   - any store VTXO marked `exiting` — belt-and-suspenders for the window
  *     before the self-heal tick lands.
  *
+ * An exit the user did NOT start (bark 0.9.0's force-exit scan, see
+ * ./forcedExit.ts) does not count here. Those capsules are kept out of every
+ * cooperative spend one by one, by a bark lock and the per-call checks in
+ * ./forcedExitLock.ts, so the rest of the wallet keeps working. A single
+ * capsule forced on-chain by someone else used to freeze every send, swap and
+ * refresh for the whole timelock.
+ *
  * Throws with user-facing copy: callers surface `err.message` in the
  * estimate/send error toast, so the block explains itself.
  */
+/** A store row exiting for the USER's exit (a forced one does not count). */
+function hasUserExitingRow(rows: readonly unknown[] | undefined): boolean {
+    return (rows ?? []).some((v) => {
+        const r = v as { exiting?: boolean; exitForced?: boolean };
+        return !!r.exiting && !r.exitForced;
+    });
+}
+
 export function assertNoActiveArkExit(): void {
     const s = useAuthStore.getState();
-    const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
+    const exitingVtxo = hasUserExitingRow(s.arkVtxos);
     if (s.arkExitInProgress || exitingVtxo) {
         throw new Error(
             loc.cypherbox.services.ark_exit.exit_in_progress,
@@ -111,6 +126,12 @@ export async function startArkEmergencyExit(vtxoIds: readonly string[]): Promise
     // letting the first sync-cycle progress call fail with "not initialized".
     await ensureArkOnchainHandle();
     await handle.startExitForVtxos([...ids]);
+    // Remember that THIS device asked for these. bark 0.9.0's sync routes
+    // capsules another party force-exited on-chain into the same exit flow,
+    // and this list is how the app tells the user's exit from one they did not
+    // start (see ./forcedExit.ts). Pruned by the sync loop once bark's record
+    // for an id is terminal.
+    useAuthStore.getState().addArkExitStartedVtxoIds(ids);
 }
 
 /**
@@ -178,7 +199,13 @@ export async function fetchArkExitVtxos(): Promise<ExitVtxo[]> {
 }
 
 /**
- * Does bark's own DB hold any NON-TERMINAL exit record?
+ * Does bark's own DB hold any NON-TERMINAL exit record the USER started?
+ *
+ * Records the user did not start (bark 0.9.0's force-exit scan) are left out:
+ * they are handled capsule by capsule (./forcedExitLock.ts) and must not
+ * hold the wallet-wide lock. The split comes from `arkExitStartedVtxoIds`, see
+ * ./forcedExit.ts; an exit started before ids were tracked counts as the
+ * user's.
  *
  * The authoritative "is an exit live" signal, and deliberately independent of
  * zustand: the background-refresh wake runs headless and can execute before the
@@ -207,7 +234,11 @@ export async function hasActiveArkExitRecords(): Promise<boolean> {
         const handle = getArkWalletHandle();
         if (!handle) return false;
         const exits = await handle.getExitVtxos();
-        return (exits ?? []).some((v) => isActiveExit(v));
+        const s = useAuthStore.getState();
+        return classifyExitRecords(exits ?? [], {
+            startedIds: s.arkExitStartedVtxoIds ?? [],
+            exitStartedAt: s.arkExitStartedAt ?? null,
+        }).userStarted.length > 0;
     } catch {
         return false;
     }
@@ -224,7 +255,7 @@ export async function assertNoActiveArkExitAsync(
     action: string = loc.cypherbox.services.ark_exit.this_action,
 ): Promise<void> {
     const s = useAuthStore.getState();
-    const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
+    const exitingVtxo = hasUserExitingRow(s.arkVtxos);
     if (s.arkExitInProgress || exitingVtxo || (await hasActiveArkExitRecords())) {
         // shown to the user like its synchronous twin's message, so callers pass `action` in the app's language too
         throw new Error(

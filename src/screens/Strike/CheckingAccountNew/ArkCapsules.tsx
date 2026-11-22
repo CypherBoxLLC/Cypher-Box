@@ -272,6 +272,14 @@ interface VtxoRowData {
      */
     exiting: boolean;
     /**
+     * True when `exiting` is true but the exit was not started on this device:
+     * bark 0.9.0 routes a capsule another party force-exited on-chain into the
+     * exit flow by itself (ArkVtxoView.exitForced, services/ark/forcedExit).
+     * Same locked treatment, its own label, so the row does not claim an
+     * action the user never took.
+     */
+    exitForced: boolean;
+    /**
      * Recoverability classification for the per-row badge.
      *
      * The TRUTH about Ark/Bark recovery: VTXOs cannot be reconstructed
@@ -505,7 +513,9 @@ function VtxoRow({ vtxo, selected, onPress, onRefreshIcon, onCancelIcon, onDustR
                 ? '#888'
                 : view.color;
     const labelText = isExiting
-        ? loc.cypherbox.strike.ark_capsules.label_exiting
+        ? (vtxo.exitForced
+            ? loc.cypherbox.strike.ark_capsules.label_exit_forced
+            : loc.cypherbox.strike.ark_capsules.label_exiting)
         : isTransientForLabel
             ? (isCancelling
                 ? loc.cypherbox.strike.ark_capsules.label_cancelling
@@ -1518,6 +1528,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     kind: v.kind,
                     pendingRound,
                     exiting: v.exiting ?? false,
+                    exitForced: v.exitForced ?? false,
                     recoverability,
                 };
             }
@@ -1530,6 +1541,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 kind: v.kind,
                 pendingRound,
                 exiting: v.exiting ?? false,
+                exitForced: v.exitForced ?? false,
                 recoverability,
             };
         });
@@ -1969,16 +1981,16 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 );
                 return;
             }
-            // The server only reveals a spent VTXO when one is submitted, so
-            // record it here. That prunes it from the spendable set, which is
-            // also what makes the pre-submit liveness check above start
-            // working: it tests "still in the store", and until the denylist
-            // existed a VTXO spent by another holder of the same seed never
-            // left the store, so the guard passed it through every time.
+            // The server only reveals a spent VTXO when one is submitted. The
+            // refresh service has already recorded it against the ids it
+            // submitted (services/ark/serverSpentList.ts: only an input of the
+            // failed call is accepted), which prunes it from the spendable set
+            // and makes the pre-submit liveness check above start working.
+            // Here the error is only classified for the message.
             //
             // Must precede the dust translation below, or a spent VTXO gets
             // reported to the user as a size problem.
-            const serverSpent = await recordServerSpentFromError(err);
+            const serverSpent = await recordServerSpentFromError(err, null);
             if (serverSpent) {
                 const { title, body } = notSpendableMessage(serverSpent);
                 Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
@@ -2438,10 +2450,10 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                         '[Ark dust-refresh] failed tag=', err?.tag,
                         'inner=', err?.inner?.errorMessage ?? err?.message ?? String(err),
                     );
-                    // Same correction as the main batch path: a spent input is
-                    // a permanent fact the server just handed us, not a failed
-                    // sweep to retry.
-                    const dustSpent = await recordServerSpentFromError(err);
+                    // Same as the main batch path: the refresh service recorded
+                    // the spent input against the ids it submitted; this only
+                    // picks the message.
+                    const dustSpent = await recordServerSpentFromError(err, null);
                     if (dustSpent) {
                         const { title, body } = notSpendableMessage(dustSpent);
                         Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
@@ -2644,8 +2656,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                 return null;
             }
             // Spent elsewhere (another device on the same seed, or a recovery
-            // that already landed): a fact, not a refusal.
-            const spent = await recordServerSpentFromError(err);
+            // that already landed): a fact, not a refusal. Recorded by the
+            // refresh service against its own inputs; classified here.
+            const spent = await recordServerSpentFromError(err, null);
             if (spent) {
                 const { title, body } = notSpendableMessage(spent);
                 Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
@@ -2747,7 +2760,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
                     Alert.alert(loc.cypherbox.strike.ark_capsules.recover_failed, String(err?.message ?? ''));
                     return;
                 }
-                const spent = await recordServerSpentFromError(err);
+                // offboardArkVtxos recorded a spent input against set.ids;
+                // this only picks the message.
+                const spent = await recordServerSpentFromError(err, null);
                 if (spent) {
                     const { title, body } = notSpendableMessage(spent);
                     Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });
