@@ -105,8 +105,12 @@ export type AuthStateType = {
     // without hitting Keychain (and triggering biometric) on every mount.
     // NOTE: the zustand flag is a UI hint, not ground truth. Ground truth is
     // the Keychain entry itself — which we only read on explicit recovery.
-    hotVaultKeychainBackups: Record<string, boolean>;
-    setHotVaultKeychainBackup: (walletID: string, backedUp: boolean) => void;
+    // walletID -> true (legacy) or the backup's random Keychain handle (new
+    // backups). The handle lets Settings target the randomized service for
+    // remove / the signing-phone copy check; a plain `true` falls back to the
+    // walletID. Only present while the vault is in the app; cleared on delete.
+    hotVaultKeychainBackups: Record<string, boolean | string>;
+    setHotVaultKeychainBackup: (walletID: string, backedUp: boolean, ref?: string) => void;
 
     // Ark (experimental — Second.tech)
     // Non-custodial; no token/credential. We persist a lightweight descriptor:
@@ -874,11 +878,11 @@ const createAuthStore = (
     setFirstTimeCoinOS: (state: boolean) => set({ FirstTimeCoinOS: state }),
     setFirstTimeArk: (state: boolean) => set({ FirstTimeArk: state }),
     setHasSeenCustodialWarning: (state: boolean) => set({ hasSeenCustodialWarning: state }),
-    setHotVaultKeychainBackup: (walletID: string, backedUp: boolean) =>
+    setHotVaultKeychainBackup: (walletID: string, backedUp: boolean, ref?: string) =>
         set(state => {
             const next = { ...state.hotVaultKeychainBackups };
             if (backedUp) {
-                next[walletID] = true;
+                next[walletID] = ref || true;
             } else {
                 delete next[walletID];
             }

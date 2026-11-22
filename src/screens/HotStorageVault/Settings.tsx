@@ -69,6 +69,14 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
     const isKeychainBackedUp = thisWalletID
         ? !!hotVaultKeychainBackups?.[thisWalletID]
         : false;
+    // This vault's Keychain service handle. A new backup uses a random handle,
+    // kept here in the store, so the walletID never reaches the ungated service
+    // list; a legacy backup's handle is the walletID itself. Remove and the
+    // signing-phone copy check go by this handle, not the walletID.
+    const keychainRef = useMemo(() => {
+        const stored = thisWalletID ? hotVaultKeychainBackups?.[thisWalletID] : undefined;
+        return typeof stored === 'string' && stored ? stored : (thisWalletID ?? '');
+    }, [hotVaultKeychainBackups, thisWalletID]);
     // iPhone Keychain or Android Keystore wording for the backup tile and a signing phone's row, in the current language
     const keychainText = hotVaultKeychainText().settings;
     // On a signing phone, whether the Keychain really holds a copy of this vault's seed, from listing the Keychain
@@ -76,11 +84,11 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
     // signing phone mustn't keep.
     const [keychainCopy, setKeychainCopy] = useState(false);
     useEffect(() => {
-        if (!header || !thisWalletID) return;
+        if (!header || !keychainRef) return;
         listHotVaultKeychainBackups()
-            .then(ids => setKeychainCopy(ids.includes(thisWalletID)))
+            .then(ids => setKeychainCopy(ids.includes(keychainRef)))
             .catch(() => {});
-    }, [header, thisWalletID, isKeychainBackedUp]);
+    }, [header, keychainRef, isKeychainBackedUp]);
     // const wallet = vaultTab ? useRef(wallets.find(w => w.getID() === coldStorageWalletID)).current : useRef(wallets.find(w => w.getID() === walletID)).current;
     // on a signing phone this tab sits on the home screen, which can have no params
     const { name, params: routeParams = {} } = useRoute();
@@ -199,7 +207,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         );
         setKeychainBusy(false);
         if (result.ok) {
-            setHotVaultKeychainBackup(thisWalletID, true);
+            setHotVaultKeychainBackup(thisWalletID, true, result.ref);
             triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
             SimpleToast.show(keychainText.savedToast, SimpleToast.SHORT);
         } else if (result.kind === "no-biometric-gate") {
@@ -232,6 +240,10 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                     text: loc.cypherbox.vault.storage_vault.settings.remove,
                     style: "destructive",
                     onPress: async () => {
+                        // Target the backup's handle (random for a new backup,
+                        // the walletID for a legacy one) captured before the
+                        // store hint is cleared below.
+                        const ref = keychainRef;
                         setKeychainBusy(true);
                         // Full wipe — seed + meta sidecar. Leaving a meta
                         // orphan would make the Recover screen render a
@@ -239,7 +251,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                         // asked to remove; `resetHotVaultBackupFully`
                         // tears down both atomically (from caller POV).
                         const ok = await resetHotVaultBackupFully(
-                            thisWalletID,
+                            ref,
                         );
                         setKeychainBusy(false);
                         // Clear the zustand hint either way — if the Keychain
@@ -250,7 +262,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
                         // the signing phone's row goes by what the Keychain holds, so look again
                         if (header) {
                             listHotVaultKeychainBackups()
-                                .then(ids => setKeychainCopy(ids.includes(thisWalletID)))
+                                .then(ids => setKeychainCopy(ids.includes(ref)))
                                 .catch(() => {});
                         }
                         if (ok) {
@@ -430,9 +442,11 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
         if (await Biometric.isBiometricUseCapableAndEnabled()) {
             if (!(await Biometric.unlockWithBiometrics())) return;
         }
+        // Target the backup's handle (random for a new backup, the walletID for a legacy one).
+        const ref = keychainRef;
         const keychainCleared =
-            (await resetHotVaultKeychainBackup(thisWalletID)) &&
-            !(await listHotVaultKeychainBackups()).includes(thisWalletID);
+            (await resetHotVaultKeychainBackup(ref)) &&
+            !(await listHotVaultKeychainBackups()).includes(ref);
         if (!keychainCleared) {
             Alert.alert(
                 loc.cypherbox.seed_signer.vault.wipe_failed_title,
@@ -441,7 +455,7 @@ export default function Settings({wallet, to, matchedRate, toStrike, header}: an
             return;
         }
         // the backup's date and label, nothing secret
-        await resetHotVaultMeta(thisWalletID);
+        await resetHotVaultMeta(ref);
         setHotVaultKeychainBackup(thisWalletID, false);
         navigateToOverviewAndDeleteWallet();
         SimpleToast.show(loc.cypherbox.seed_signer.vault.wiped, SimpleToast.LONG);

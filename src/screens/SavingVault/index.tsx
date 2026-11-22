@@ -103,7 +103,9 @@ export default function SavingVault() {
                 );
                 if (result.ok) {
                     setKeychainStatus("ok");
-                    setHotVaultKeychainBackup(walletID, true);
+                    // Store the backup's random handle so Settings can later
+                    // target the randomized Keychain service for remove.
+                    setHotVaultKeychainBackup(walletID, true, result.ref);
                 } else if (result.kind === "no-biometric-gate") {
                     // Android only: the OS handed back a cipher that is NOT
                     // bound to a fingerprint, so the helper deleted the

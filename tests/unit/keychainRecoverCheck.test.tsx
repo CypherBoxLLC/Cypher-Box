@@ -128,11 +128,11 @@ beforeEach(() => {
     jest.clearAllMocks();
     addAndSaveWallet = jest.fn();
     (listHotVaultKeychainBackupsWithMeta as jest.Mock).mockResolvedValue([
-        { walletID: ID_A, meta: { createdAt: Date.UTC(2026, 9, 3) } },
-        { walletID: ID_B, meta: { createdAt: Date.UTC(2026, 8, 27) } },
-        { walletID: ID_C, meta: null },
+        { ref: ID_A, meta: { createdAt: Date.UTC(2026, 9, 3) } },
+        { ref: ID_B, meta: { createdAt: Date.UTC(2026, 8, 27) } },
+        { ref: ID_C, meta: null },
     ]);
-    (getHotVaultSeedFromKeychain as jest.Mock).mockImplementation(async (id: string) => ({ ok: true, mnemonic: seeds[id] }));
+    (getHotVaultSeedFromKeychain as jest.Mock).mockImplementation(async (id: string) => ({ ok: true, mnemonic: seeds[id], walletID: id }));
     jest.spyOn(HDSegwitBech32Wallet.prototype, '_binarySearchIterationForInternalAddress').mockResolvedValue(0);
     jest.spyOn(HDSegwitBech32Wallet.prototype, '_binarySearchIterationForExternalAddress').mockResolvedValue(3);
     jest.spyOn(HDSegwitBech32Wallet.prototype, '_fetchBalance').mockResolvedValue(undefined);
