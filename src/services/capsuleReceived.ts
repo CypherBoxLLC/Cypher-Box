@@ -54,8 +54,15 @@ export const outpointId = (txid: string, vout: number) => `${txid}:${vout}`;
 const BASE_HEIGHT_MARGIN = 12;
 /** Spent outpoints are dropped from a cursor once it holds this many. */
 const SEEN_CAP = 5000;
-/** A check that takes longer is abandoned; the next one starts fresh. */
+/** How long a run waits for one vault's check before it moves on; the check keeps going. */
 const CHECK_TIMEOUT_MS = 45_000;
+/**
+ * A vault check still going after this long is taken for stuck, not slow, and a
+ * new check replaces it. When a server answers with no request id (some send
+ * "Batch limit exceeded" that way), Electrum can't match the reply, so the
+ * request waits until the connection closes.
+ */
+const STUCK_CHECK_MS = 5 * 60_000;
 
 export type CapsuleDiffInput = {
   walletId: string;
@@ -186,8 +193,15 @@ export function isOwnSpend(wallet: CapsuleWallet, utxo: CapsuleUtxo, spent: stri
   return !!utxo.address && typeof wallet.addressIsChange === 'function' && wallet.addressIsChange(utxo.address);
 }
 
-/** Refreshes one vault wallet from Electrum and queues its newly confirmed capsules. */
-export async function checkWalletForNewCapsules(wallet: CapsuleWallet, vault: CapsuleVault): Promise<ReceivedCapsule[]> {
+/**
+ * Refreshes one vault wallet from Electrum and queues its newly confirmed capsules.
+ * Once `isCurrent` says false, a newer check has replaced this one, and it writes nothing.
+ */
+export async function checkWalletForNewCapsules(
+  wallet: CapsuleWallet,
+  vault: CapsuleVault,
+  isCurrent: () => boolean = () => true,
+): Promise<ReceivedCapsule[]> {
   const walletId = wallet.getID();
   // fetchUtxo only asks about addresses that fetchBalance found money on
   await wallet.fetchBalance();
@@ -205,6 +219,9 @@ export async function checkWalletForNewCapsules(wallet: CapsuleWallet, vault: Ca
       }
     }
   }
+
+  // a check replaced while it was stuck holds old figures; the newer check's record stands
+  if (!isCurrent()) return [];
 
   // read and write the record with no await in between, so two checks can't undo each other
   const store = useCapsuleReceivedStore.getState();
@@ -229,8 +246,10 @@ export async function checkWalletForNewCapsules(wallet: CapsuleWallet, vault: Ca
 
 let running: Promise<void> | null = null;
 let again = false;
-// a check that outlived its timeout keeps running; the vault waits for it rather than start another
-const inFlight = new Map<string, Promise<unknown>>();
+// A check that outlived its timeout keeps running, and the vault waits for it
+// rather than start another, until the check is STUCK_CHECK_MS old.
+type VaultCheck = { startedAt: number; current: boolean };
+const inFlight = new Map<string, VaultCheck>();
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
   new Promise((resolve, reject) => {
@@ -250,9 +269,14 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | undefined>
 /**
  * Checks every vault `getTargets` returns, one wallet after the other. Only one
  * run at a time: a request during a run makes it go round once more, with the
- * vaults as they are then.
+ * vaults as they are then. A vault whose last check is still going is skipped,
+ * unless that check is `stuckAfterMs` old: then a new check replaces it.
  */
-export function checkVaultsForNewCapsules(getTargets: () => CapsuleTarget[], timeoutMs: number = CHECK_TIMEOUT_MS): Promise<void> {
+export function checkVaultsForNewCapsules(
+  getTargets: () => CapsuleTarget[],
+  timeoutMs: number = CHECK_TIMEOUT_MS,
+  stuckAfterMs: number = STUCK_CHECK_MS,
+): Promise<void> {
   if (!isCapsuleStoreHydrated()) return Promise.resolve();
   if (running) {
     again = true;
@@ -269,9 +293,18 @@ export function checkVaultsForNewCapsules(getTargets: () => CapsuleTarget[], tim
       }
       for (const { wallet, vault } of targets) {
         const walletId = wallet.getID();
-        if (inFlight.has(walletId)) continue;
-        const check = checkWalletForNewCapsules(wallet, vault).finally(() => inFlight.delete(walletId));
-        inFlight.set(walletId, check);
+        const previous = inFlight.get(walletId);
+        if (previous) {
+          if (Date.now() - previous.startedAt < stuckAfterMs) continue;
+          previous.current = false;
+          if (__DEV__) console.log(`[CapsuleReceived] ${vault} vault check stuck; starting a new one`);
+        }
+        const entry: VaultCheck = { startedAt: Date.now(), current: true };
+        inFlight.set(walletId, entry);
+        const check = checkWalletForNewCapsules(wallet, vault, () => entry.current).finally(() => {
+          // a replaced check that returns late must not clear its replacement
+          if (inFlight.get(walletId) === entry) inFlight.delete(walletId);
+        });
         try {
           await withTimeout(check, timeoutMs);
         } catch (e) {

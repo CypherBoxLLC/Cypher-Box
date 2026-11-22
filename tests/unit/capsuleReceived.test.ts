@@ -423,6 +423,89 @@ describe('checkVaultsForNewCapsules', () => {
     expect(hot.fetchBalance).toHaveBeenCalledTimes(2);
   });
 
+  it('replaces a check stuck for five minutes, and the stuck one never writes', async () => {
+    const { store, service } = await startApp();
+    const hot = fakeVault('hot-1');
+    hot.state.utxos = [{ txid: TXID_A, vout: 0, value: 50_000, height: 899_500, address: 'bc1qown-receive' }];
+    await service.checkWalletForNewCapsules(hot, 'hot'); // first look
+    hot.fetchBalance.mockClear();
+
+    // a payment arrives, and Electrum never answers the next check (a reply it can't match)
+    onChain(TXID_B, ['bc1qsomeone-else']);
+    hot.state.utxos.push({ txid: TXID_B, vout: 1, value: 2_500_000, height: 900_001, address: 'bc1qown-receive' });
+    const stuck = hanging();
+    const slow = hanging();
+    hot.fetchBalance.mockImplementationOnce(() => stuck.promise).mockImplementationOnce(() => slow.promise);
+    const targets = () => [{ wallet: hot, vault: 'hot' as const }];
+
+    let now = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      await service.checkVaultsForNewCapsules(targets, 10);
+      now += 4 * 60_000;
+      await service.checkVaultsForNewCapsules(targets, 10);
+      expect(hot.fetchBalance).toHaveBeenCalledTimes(1); // maybe only slow: wait for it
+
+      now += 60_000;
+      await service.checkVaultsForNewCapsules(targets, 10);
+      expect(hot.fetchBalance).toHaveBeenCalledTimes(2); // five minutes: a new check replaces it
+
+      // the stuck check returns at last: it writes nothing, and the vault still waits for the new one
+      stuck.release();
+      await flush();
+      expect(store.default.getState().queue).toEqual([]);
+      await service.checkVaultsForNewCapsules(targets, 10);
+      expect(hot.fetchBalance).toHaveBeenCalledTimes(2);
+
+      slow.release();
+      await flush();
+      expect(store.default.getState().queue.map(c => c.id)).toEqual([`${TXID_B}:1`]);
+      await service.checkVaultsForNewCapsules(targets, 10);
+      expect(hot.fetchBalance).toHaveBeenCalledTimes(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("keeps a replaced check's old figures from undoing the new check's", async () => {
+    const { store, service } = await startApp();
+    const hot = fakeVault('hot-1');
+    hot.state.utxos = [{ txid: TXID_A, vout: 0, value: 50_000, height: 899_500, address: 'bc1qown-receive' }];
+    await service.checkWalletForNewCapsules(hot, 'hot'); // first look
+    const targets = () => [{ wallet: hot, vault: 'hot' as const }];
+
+    // a payment arrives, and looking up its transaction never gets an answer
+    onChain(TXID_B, ['bc1qsomeone-else']);
+    hot.state.utxos.push({ txid: TXID_B, vout: 1, value: 2_500_000, height: 900_001, address: 'bc1qown-receive' });
+    const stuck = hanging();
+    const lookup = electrum().multiGetTransactionByTxid;
+    const answer = lookup.getMockImplementation() as (...args: any[]) => Promise<any>;
+    lookup.mockImplementationOnce(async (...args: any[]) => {
+      await stuck.promise;
+      return answer(...args);
+    });
+
+    let now = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      await service.checkVaultsForNewCapsules(targets, 10);
+
+      // a second payment; five minutes on, the new check queues both
+      onChain(TXID_C, ['bc1qsomeone-else']);
+      hot.state.utxos.push({ txid: TXID_C, vout: 0, value: 80_000, height: 900_003, address: 'bc1qown-receive' });
+      now += 5 * 60_000;
+      await service.checkVaultsForNewCapsules(targets, 10);
+      expect(store.default.getState().queue.map(c => c.id)).toEqual([`${TXID_B}:1`, `${TXID_C}:0`]);
+
+      // the stuck check returns with the capsules it fetched before the second payment
+      stuck.release();
+      await flush();
+      expect(store.default.getState().queue.map(c => c.id)).toEqual([`${TXID_B}:1`, `${TXID_C}:0`]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('keeps going when one vault fails', async () => {
     const { store, service } = await startApp();
     const hot = fakeVault('hot-1');
