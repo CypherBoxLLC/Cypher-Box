@@ -22,7 +22,7 @@ import {
   Electricity,
   Electrik,
   Hot,
-  Socked,
+  LiquidBitCoin,
   Second,
   Strike,
   StrikeFull,
@@ -395,7 +395,7 @@ export default function ReceivedListNew({ setReceivedListSecondTab, refRBSheet, 
         {
           id: 2,
           name: "Liquid",
-          icon: Socked,
+          icon: LiquidBitCoin,
         },
       ];
     } else if (selectedItem === 5) {
