@@ -331,15 +331,17 @@ export default function SwapAmount() {
             if (error instanceof InvoiceCreationFailedError) {
                 message = String(loc.formatString(loc.cypherbox.payments.common.provider_invoice_failed, { provider: toProvider?.displayName ?? sendTo, error: (error.cause as Error)?.message ?? error.message }));
             } else if (error instanceof PaymentFailedError) {
-                // The Ark server is the only authority on whether a VTXO is
-                // still spendable, and it only tells us when a spend fails, so
-                // this catch is the one moment the correction is available.
+                // The Ark server only says a VTXO is spent when a spend fails.
+                // The Ark send service records that against the coin selection
+                // of the call that failed (services/ark/serverSpentList.ts);
+                // this screen cannot name those inputs, so it only classifies
+                // the error for the message.
                 //
                 // This used to match "unregistered" alone. A VTXO the server
                 // reports as `spent` fell straight through and the raw gRPC
                 // string was rendered to the user, while the phantom balance
                 // survived every subsequent sync. See services/ark/vtxoSpendState.
-                const notSpendable = await recordServerSpentFromError(error);
+                const notSpendable = await recordServerSpentFromError(error, null);
                 if (notSpendable) {
                     const { title, body } = notSpendableMessage(notSpendable);
                     Alert.alert(title, body, [{ text: loc._.ok, style: 'default' }], { cancelable: true });

@@ -2,6 +2,7 @@ import { assertNoActiveArkExit } from './exit';
 import { getArkWalletHandle } from './walletHandle';
 import { offboardTxid, runBroadcastCall } from './indeterminate';
 import loc from '../../../loc';
+import { recordServerSpentFromError } from './vtxos';
 
 /**
  * Cooperative on-chain offboard of SPECIFIC VTXOs (coin control).
@@ -63,9 +64,19 @@ export async function offboardArkVtxos(
 ): Promise<string> {
     assertNoActiveArkExit();
     const handle = requireHandle();
-    const result = await runBroadcastCall(
-        () => handle.offboardVtxos(vtxoIds, address.trim()),
-        loc.cypherbox.services.indeterminate.what_transfer,
-    );
-    return offboardTxid(result);
+    try {
+        const result = await runBroadcastCall(
+            () => handle.offboardVtxos(vtxoIds, address.trim()),
+            loc.cypherbox.services.indeterminate.what_transfer,
+        );
+        return offboardTxid(result);
+    } catch (err) {
+        // The server only reveals a spent capsule when one is submitted. This
+        // call names its inputs, so a refusal naming one of THEM is recorded;
+        // one naming any other capsule is not (see ./serverSpentList.ts).
+        try {
+            await recordServerSpentFromError(err, vtxoIds);
+        } catch { /* recorded nothing; the offboard error below still stands */ }
+        throw err;
+    }
 }

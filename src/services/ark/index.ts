@@ -182,6 +182,9 @@ export {
     syncArkExits,
 } from './exit';
 export type { ArkExitCancelOutcome, ArkExitCancelRefusal } from './exit';
+export { acceptServerSpentId, serverSpentIdsWithWalletEvidence, soonestExpiryBlocks } from './serverSpentList';
+export { recheckArkServerSpentVtxos } from './serverSpentRecheck';
+export type { ServerSpentRecheck } from './serverSpentRecheck';
 export { estimateArkOffboardFee, offboardArkVtxos } from './offboard';
 export type { ArkOffboardFeeView } from './offboard';
 export {

@@ -464,8 +464,15 @@ export type AuthStateType = {
     setArkBalance: (state: number) => void;
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => void;
     setArkVtxos: (state: ArkVtxoView[]) => void;
-    /** Merge server-confirmed-spent ids in. Never removes; spent is permanent. */
+    /** Merge server-reported-spent ids in. */
     addArkServerSpentVtxoIds: (ids: string[]) => void;
+    /**
+     * Drop ids the WALLET itself now records as spent or exited (bark marks the
+     * capsule Spent/Exited, or holds a finished exit record for it). This is
+     * the only removal path: the server's word alone never prunes, in either
+     * direction. See fetchArkVtxos.
+     */
+    removeArkServerSpentVtxoIds: (ids: string[]) => void;
     setArkRefreshingVtxoIds: (ids: string[]) => void;
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => void;
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => void;
@@ -744,22 +751,22 @@ export type AuthStateType = {
 };
 
 /**
- * Union of two `arkServerSpentVtxoIds` lists, `newer` last, lowercased and
- * de-duplicated. Shared by the setter and the hydration merge so both keep
- * the same cap.
+ * Union of two VTXO-id lists, `newer` last, lowercased and de-duplicated.
+ * Shared by the setters and the hydration merge so both keep the same cap.
+ * Used for `arkServerSpentVtxoIds`.
  *
- * Bounded so a long-lived wallet cannot grow this without limit in persisted
+ * Bounded so a long-lived wallet cannot grow these without limit in persisted
  * storage. Oldest entries fall off first; a VTXO that old is long gone from
  * the local DB anyway.
  */
-const ARK_SERVER_SPENT_IDS_CAP = 500;
-function mergeArkServerSpentVtxoIds(older: unknown, newer: unknown): string[] {
+const ARK_VTXO_ID_LIST_CAP = 500;
+function mergeVtxoIdLists(older: unknown, newer: unknown): string[] {
     const merged = new Set<string>();
     for (const list of [older, newer]) {
         if (!Array.isArray(list)) continue;
         for (const id of list) if (typeof id === 'string' && id) merged.add(id.toLowerCase());
     }
-    return Array.from(merged).slice(-ARK_SERVER_SPENT_IDS_CAP);
+    return Array.from(merged).slice(-ARK_VTXO_ID_LIST_CAP);
 }
 
 const createAuthStore = (
@@ -892,8 +899,18 @@ const createAuthStore = (
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
     addArkServerSpentVtxoIds: (ids: string[]) =>
         set((s) => ({
-            arkServerSpentVtxoIds: mergeArkServerSpentVtxoIds(s.arkServerSpentVtxoIds, ids),
+            arkServerSpentVtxoIds: mergeVtxoIdLists(s.arkServerSpentVtxoIds, ids),
         })),
+    removeArkServerSpentVtxoIds: (ids: string[]) =>
+        set((s) => {
+            const drop = new Set(ids.map((id) => id.toLowerCase()));
+            if (drop.size === 0) return {};
+            return {
+                arkServerSpentVtxoIds: s.arkServerSpentVtxoIds.filter(
+                    (id) => !drop.has(id.toLowerCase()),
+                ),
+            };
+        }),
     setArkRefreshingVtxoIds: (ids: string[]) =>
         set((s) => {
             // Stamp ids we have not seen, keep existing stamps (so a re-set of
@@ -1196,7 +1213,7 @@ const useAuthStore = create<AuthStateType>()(
                 // wake can record a server-spent capsule before the store has
                 // loaded, and replacing it would put that capsule back in the
                 // balance.
-                arkServerSpentVtxoIds: mergeArkServerSpentVtxoIds(
+                arkServerSpentVtxoIds: mergeVtxoIdLists(
                     persisted.arkServerSpentVtxoIds,
                     currentState.arkServerSpentVtxoIds,
                 ),

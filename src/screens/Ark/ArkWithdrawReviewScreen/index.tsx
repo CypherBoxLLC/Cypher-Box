@@ -347,10 +347,11 @@ export default function ArkWithdrawReviewScreen({ route }: Props) {
                 );
             } else {
                 // The server refused a capsule, for example one already spent
-                // from another device. A spent one is recorded so the balance
-                // stops counting it. An alert rather than a toast: the
-                // explanation is too long to read before a toast fades.
-                const notSpendable = await recordAndDescribeNotSpendable(err);
+                // from another device. The send service recorded a spent one
+                // against the inputs it used, so the balance stops counting
+                // it. An alert rather than a toast: the explanation is too long
+                // to read before a toast fades.
+                const notSpendable = await recordAndDescribeNotSpendable(err, null);
                 if (notSpendable) {
                     Alert.alert(notSpendable.title, notSpendable.body);
                 } else {

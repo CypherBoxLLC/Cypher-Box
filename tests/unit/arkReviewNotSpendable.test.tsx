@@ -159,7 +159,9 @@ describe('ArkSendReviewScreen', () => {
         mockRecordAndDescribe.mockResolvedValue(SPENT_COPY);
         const tree = await sendWith(SPENT);
         expect(mockExecuteArkSend).toHaveBeenCalledTimes(1);
-        expect(mockRecordAndDescribe).toHaveBeenCalledWith(SPENT);
+        // `null`: the screen cannot name the failed call's inputs; the send
+        // service records against its own coin selection (serverSpentList).
+        expect(mockRecordAndDescribe).toHaveBeenCalledWith(SPENT, null);
         expect(text(tree)).toContain(vss.spent_body);
         expect(text(tree)).not.toMatch(/not spendable|state: spent|bad user input/);
     });
@@ -211,7 +213,9 @@ describe('ArkWithdrawReviewScreen', () => {
         mockRecordAndDescribe.mockResolvedValue(SPENT_COPY);
         await withdrawWith(SPENT);
         expect(mockExecuteArkSend).toHaveBeenCalledTimes(1);
-        expect(mockRecordAndDescribe).toHaveBeenCalledWith(SPENT);
+        // `null`: the screen cannot name the failed call's inputs; the send
+        // service records against its own coin selection (serverSpentList).
+        expect(mockRecordAndDescribe).toHaveBeenCalledWith(SPENT, null);
         expect(alertSpy).toHaveBeenCalledWith(vss.spent_title, vss.spent_body);
         expect(mockToast).not.toHaveBeenCalled();
         // A refusal is a definite outcome, so the control is re-armed.
