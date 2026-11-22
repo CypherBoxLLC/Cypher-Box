@@ -6,7 +6,7 @@ import {
 } from '@secondts/bark-react-native';
 import bolt11 from 'bolt11';
 
-import { makeIndeterminate, runBroadcastCall } from './indeterminate';
+import { makeIndeterminate, offboardTxid, runBroadcastCall } from './indeterminate';
 import { decideChangeRefresh } from './changeRefresh';
 import { assertNoActiveArkExit } from './exit';
 import { ensureArkWalletHandleReady } from './restore';
@@ -274,13 +274,19 @@ async function dispatchLnSend(
     // We initiate with wait=false (dispatch-and-return, matching the old
     // return-at-dispatch contract the retry/settlement loop below was built
     // around) and confirm settlement ourselves via the movement-history poll.
+    //
+    // bark 0.8.0 added a trailing `retryForSecs`: how long the server keeps
+    // trying to pay, capped by its own maximum. undefined leaves the server's
+    // default, which is the behaviour every earlier release had. The retry and
+    // refund loop below is built around that, so it stays the one deciding.
+    const retryForSecs: bigint | undefined = undefined;
     switch (dest.kind) {
         case 'ln-invoice':
-            return handle.payLightningInvoice(dest.value, amount, false);
+            return handle.payLightningInvoice(dest.value, amount, false, retryForSecs);
         case 'ln-offer':
-            return handle.payLightningOffer(dest.value, amount, false);
+            return handle.payLightningOffer(dest.value, amount, false, retryForSecs);
         case 'ln-address':
-            return handle.payLightningAddress(dest.value, amount, comment, false);
+            return handle.payLightningAddress(dest.value, amount, comment, false, retryForSecs);
         default:
             throw new Error('dispatchLnSend called with a non-Lightning destination');
     }
@@ -539,20 +545,28 @@ export async function executeArkSend(
         }
     } else {
         switch (dest.kind) {
-            case 'ark':
-                // 0.11.3 sendArkoorPayment returns void (no vtxo/tx id
-                // surfaced). No caller reads the id for ark-to-ark sends, so
-                // leave it empty.
-                await runBroadcastCall(
+            case 'ark': {
+                // bark 0.8.0 returns the id of the movement that records the
+                // payment (it returned nothing before). No caller reads an id
+                // for ark-to-ark sends, so `id` stays empty; the movement id is
+                // only logged, to link a send to its history row when debugging.
+                const movementId = await runBroadcastCall(
                     () => handle.sendArkoorPayment(dest.value, amount),
                     loc.cypherbox.services.indeterminate.what_payment,
                 );
+                if (__DEV__) console.log('[Ark send] arkoor payment movement id=', movementId);
                 id = '';
                 break;
+            }
             case 'onchain':
-                id = await runBroadcastCall(
-                    () => handle.sendOnchain(dest.value, amount),
-                    loc.cypherbox.services.indeterminate.what_withdrawal,
+                // bark 0.8.0 returns OffboardResult { txid, movementId } here,
+                // not the txid string. offboardTxid reads it without throwing:
+                // this line runs after the withdrawal is already broadcast.
+                id = offboardTxid(
+                    await runBroadcastCall(
+                        () => handle.sendOnchain(dest.value, amount),
+                        loc.cypherbox.services.indeterminate.what_withdrawal,
+                    ),
                 );
                 break;
             case 'unknown':

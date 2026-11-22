@@ -267,7 +267,12 @@ export async function recordServerSpentFromError(
         // hands back bark's raw number, which still counts the phantom.
         if (list && balance) {
             const s = useAuthStore.getState();
-            const filtered = applyExpiredVtxoFilter(balance, list.all, s.arkChainTipHeight);
+            const filtered = applyExpiredVtxoFilter(
+                balance,
+                list.all,
+                s.arkChainTipHeight,
+                s.arkMaxVtxoExitDepth,
+            );
             s.setArkBalance(filtered.totalSats);
             s.setArkBalanceDetail(filtered);
         }

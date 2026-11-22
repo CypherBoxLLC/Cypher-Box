@@ -49,9 +49,19 @@ const RECEIVE_STATE_ORDER = [
 type RawLightningReceive = {
     paymentHash: string;
     invoice: string;
-    amountSats: bigint;
+    /**
+     * Optional since bark 0.8.x: undefined for an amountless invoice that has
+     * not settled (it used to read 0). The app only issues invoices with an
+     * amount, so 0 is the old behaviour and the right fallback.
+     */
+    amountSats?: bigint;
     state: string;
 };
+
+/** Sats as a plain number, 0 when the SDK reports no amount yet. */
+function receiveSats(amountSats: bigint | undefined): number {
+    return amountSats === undefined ? 0 : Number(amountSats);
+}
 
 /**
  * Map an SDK `LightningReceive` onto our view.
@@ -73,7 +83,7 @@ function toReceiveView(r: RawLightningReceive): ArkLightningReceiveView {
     return {
         paymentHash: r.paymentHash,
         invoice: r.invoice,
-        amountSats: Number(r.amountSats),
+        amountSats: receiveSats(r.amountSats),
         state: r.state,
         hasHtlcVtxos: rank >= 1,
         preimageRevealed: rank >= 2,
@@ -140,9 +150,9 @@ export async function tryClaimArkLightningReceives(): Promise<ArkLightningReceiv
             console.log(
                 '[Ark claim] PRE-CLAIM pending receives:',
                 pendingBefore.length,
-                JSON.stringify(pendingBefore.map((r: { paymentHash: string; amountSats: bigint; state: string }) => ({
+                JSON.stringify(pendingBefore.map((r: RawLightningReceive) => ({
                     hash: r.paymentHash.slice(0, 12),
-                    sats: Number(r.amountSats),
+                    sats: receiveSats(r.amountSats),
                     state: r.state,
                 }))),
             );
@@ -157,7 +167,7 @@ export async function tryClaimArkLightningReceives(): Promise<ArkLightningReceiv
             'receives:',
             raw.map(
                 (r) =>
-                    `${Number(r.amountSats)}sats state=${r.state} hash=${r.paymentHash.slice(0, 12)}…`,
+                    `${receiveSats(r.amountSats)}sats state=${r.state} hash=${r.paymentHash.slice(0, 12)}…`,
             ),
         );
         return raw.map((r) => toReceiveView(r));

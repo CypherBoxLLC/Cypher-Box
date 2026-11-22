@@ -153,7 +153,12 @@ const arkProvider: LightningSwapProvider = {
                 fetchChainTipHeight(),
             ]);
             const filteredBalance = balance
-                ? applyExpiredVtxoFilter(balance, vtxosResult?.all, tip)
+                ? applyExpiredVtxoFilter(
+                      balance,
+                      vtxosResult?.all,
+                      tip,
+                      useAuthStore.getState().arkMaxVtxoExitDepth,
+                  )
                 : null;
             const spendable = filteredBalance?.spendableSats ?? 0;
             const fee = Number(feeView.feeSats || 0);
@@ -278,7 +283,12 @@ const arkProvider: LightningSwapProvider = {
                 fetchChainTipHeight(),
             ]);
             const filtered = balance
-                ? applyExpiredVtxoFilter(balance, vtxosResult?.all, tip)
+                ? applyExpiredVtxoFilter(
+                      balance,
+                      vtxosResult?.all,
+                      tip,
+                      useAuthStore.getState().arkMaxVtxoExitDepth,
+                  )
                 : null;
             const spendable = filtered?.spendableSats ?? 0;
             if (spendable <= 0) return balanceSats; // nothing sendable: Max = 0

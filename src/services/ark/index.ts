@@ -40,9 +40,11 @@ export {
     ensureArkOnchainHandle,
     getCachedArkMnemonic,
     getLastArkRecoveryReport,
+    getLastArkRecoveryOutcome,
 } from './walletHandle';
 export { ARK_VAULT_EXISTS, offersArkReset } from './createErrors';
 export type { ArkLiveState } from './createErrors';
+export type { ArkRecoveryOutcome } from './walletHandle';
 
 export { fetchArkBalance, applyExpiredVtxoFilter } from './balance';
 export type { ArkBalanceSummary } from './balance';
@@ -168,6 +170,7 @@ export {
 } from './cancellingState';
 
 export {
+    cancelArkExits,
     claimArkExitsToAddress,
     fetchArkExitVtxos,
     fetchClaimableExitVtxos,
@@ -178,6 +181,7 @@ export {
     startArkEmergencyExit,
     syncArkExits,
 } from './exit';
+export type { ArkExitCancelOutcome, ArkExitCancelRefusal } from './exit';
 export { estimateArkOffboardFee, offboardArkVtxos } from './offboard';
 export type { ArkOffboardFeeView } from './offboard';
 export {
@@ -230,7 +234,7 @@ export {
 } from './dustSweep';
 export type { BuildDustSweepInputs, DustSweepPlan, DustSweepVtxoInput } from './dustSweep';
 
-export { barkStateTag, isActiveExit } from './barkState';
+export { barkStateTag, isActiveExit, isSweptExit } from './barkState';
 
 export {
     readTelemetry as readArkBgRefreshTelemetry,

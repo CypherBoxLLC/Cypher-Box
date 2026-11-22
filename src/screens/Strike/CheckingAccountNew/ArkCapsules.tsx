@@ -48,6 +48,9 @@ import {
     fetchArkNextRequiredRefreshHeight,
     formatBlocksUntil,
 } from "@Cypher/services/ark/expiry";
+// bark 0.8: a waiting delegated refresh reads ongoing=false, so "is a round in
+// flight" goes through this rather than `.ongoing`.
+import { isArkRoundInFlight } from "@Cypher/services/ark/roundFlight";
 // Same reason as the expiry import above: not re-exported through the barrel.
 import {
     deriveVaultConnectivity,
@@ -2067,7 +2070,7 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
             console.warn('[Ark tap-refresh] pendingRoundStates threw:', err?.message ?? err);
             states = [];
         }
-        const ongoing = states.filter((s) => s.ongoing);
+        const ongoing = states.filter((s) => isArkRoundInFlight(s));
 
         if (ongoing.length === 0) {
             // Local row state is stale — no ongoing rounds at the SDK.
@@ -2837,7 +2840,9 @@ export default function ArkCapsules({ matchedRate, currency }: ArkCapsulesProps)
         setArkCancelling(true);
         try {
             const states = await fetchArkPendingRoundStates();
-            const ongoing = states.filter((s) => s.ongoing);
+            // Includes a delegated refresh still waiting for its round (bark
+            // 0.8 DelegatedPending), which can always be cancelled.
+            const ongoing = states.filter((s) => isArkRoundInFlight(s));
             if (ongoing.length === 0) {
                 SimpleToast.show(loc.cypherbox.strike.ark_capsules.no_active_refresh, SimpleToast.SHORT);
                 return;

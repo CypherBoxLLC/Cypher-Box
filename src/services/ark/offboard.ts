@@ -1,6 +1,6 @@
 import { assertNoActiveArkExit } from './exit';
 import { getArkWalletHandle } from './walletHandle';
-import { runBroadcastCall } from './indeterminate';
+import { offboardTxid, runBroadcastCall } from './indeterminate';
 import loc from '../../../loc';
 
 /**
@@ -52,6 +52,10 @@ export async function estimateArkOffboardFee(
 
 /**
  * Offboard the named VTXOs on-chain to `address`. Returns the broadcast txid.
+ *
+ * bark 0.8.0 returns `OffboardResult { txid, movementId }` rather than the txid
+ * string, so the txid is read with `offboardTxid`, which cannot throw after the
+ * offboard has already gone out.
  */
 export async function offboardArkVtxos(
     vtxoIds: string[],
@@ -59,8 +63,9 @@ export async function offboardArkVtxos(
 ): Promise<string> {
     assertNoActiveArkExit();
     const handle = requireHandle();
-    return await runBroadcastCall(
+    const result = await runBroadcastCall(
         () => handle.offboardVtxos(vtxoIds, address.trim()),
         loc.cypherbox.services.indeterminate.what_transfer,
     );
+    return offboardTxid(result);
 }
