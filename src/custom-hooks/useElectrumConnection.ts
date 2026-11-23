@@ -26,7 +26,11 @@ export default function useElectrumConnection(enabled: boolean, networkOff = fal
         let misses = 0;
         let timer: ReturnType<typeof setTimeout>;
         const check = () => {
-            BlueElectrum.serverAnswers()
+            Promise.resolve()
+                .then(() => BlueElectrum.serverAnswers())
+                // a probe that throws (a socket closed badly, the saved server unreadable) is a miss, not the end of
+                // looking: with nothing scheduled after it, a screen stayed on "checking" until it was left
+                .catch(() => false)
                 .then((answered: boolean) => {
                     if (cancelled) return;
                     misses = answered ? 0 : misses + 1;
@@ -34,8 +38,7 @@ export default function useElectrumConnection(enabled: boolean, networkOff = fal
                     else if (misses >= 2) setState('no-answer');
                     // the second look comes soon, so an offline phone doesn't wait long for its answer
                     timer = setTimeout(check, misses === 1 ? 3000 : 10000);
-                })
-                .catch(() => {});
+                });
         };
         check();
         return () => {
