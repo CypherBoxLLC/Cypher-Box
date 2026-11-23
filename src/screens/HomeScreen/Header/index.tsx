@@ -7,6 +7,7 @@ import Ionicons from "react-native-vector-icons/Ionicons";
 import { Text } from "@Cypher/component-library";
 import { dispatchNavigate, looksLikePsbt } from "@Cypher/helpers";
 import { scannedVaultSend } from "@Cypher/helpers/capsuleSpend";
+import { isAntiExfilContainer } from "@Cypher/helpers/antiExfilTransport";
 import { startSigning } from "../../SignOnce/start";
 import loc from "../../../../loc";
 import { arabicFont } from "@Cypher/style-guide";
@@ -235,9 +236,10 @@ export default React.memo(function Header({
         const scanned = pickerLink ?? await openScanner();
         setPickerLink(null);
         if (!scanned) return;
-        // an unsigned transaction is something to sign, whichever wallet was picked to pay with. Outside Offline
-        // Seed-Signer mode the signing screen only signs with the Hot Vault, and points anything else to a signing device
-        if (looksLikePsbt(scanned)) {
+        // an unsigned transaction is something to sign, whichever wallet was picked to pay with, and so is a Cold
+        // Vault's verified-signing request with one inside. Outside Offline Seed-Signer mode the signing screen only
+        // signs with the Hot Vault, and points anything else to a signing device
+        if (looksLikePsbt(scanned) || isAntiExfilContainer(scanned)) {
             startSigning({ psbt: scanned });
             return;
         }

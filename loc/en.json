@@ -3838,16 +3838,35 @@
     },
     "anti_exfil": {
       "setting_title": "Verify my signing phone",
-      "setting_explainer": "When this is on, every spend checks that your signing phone generated the signature honestly, which protects you if that phone is ever tampered with. It adds a couple of extra scan steps each time you sign. Recommended for large, long-term cold storage.",
-      "unsupported_title": "Signature could not be verified",
-      "unsupported_message": "This signature could not be verified. Update Cypher Box on your signing phone to a version that supports verification, or turn verification off in settings.",
+      "setting_explainer": "When this is on, every spend checks that your signing phone generated its signature honestly, which protects you if that phone is ever tampered with. It adds two extra scans each time you sign, and your signing phone needs Cypher Box 0.1.14 or later. Recommended for large, long-term cold storage.",
+      "step_commit": "Scan this with your signing phone to start verified signing.",
+      "step_reveal": "Your signing phone has committed to its signature. Scan this with it to continue.",
+      "scan_open": "Scan the reply from your signing phone",
+      "scan_sign": "Scan the signed transaction from your signing phone",
+      "verifying": "Checking the signatures against what your signing phone committed to…",
+      "verified_ok": "Signatures verified. Your signing phone generated them honestly.",
+      "wrong_reply": "That isn't the reply this step expects. Show this code to your signing phone again, then scan what it shows.",
       "tamper_title": "Signature did not pass the safety check",
-      "tamper_message": "This signature did not pass the safety check. Your signing phone may be tampered with. Do not send this transaction. Do not keep using this phone, and do not reuse its recovery phrase for new funds. Move your coins using a signing phone you trust.",
-      "verify_step_commit": "Scan this with your signing phone to begin verified signing.",
-      "verify_step_reveal": "Signing phone committed. Scan this to continue.",
-      "verify_step_scan_open": "Scan the response from your signing phone.",
-      "verify_step_scan_sign": "Scan the signed transaction from your signing phone.",
-      "verified_ok": "Signature verified. Your signing phone generated it honestly."
+      "tamper_message": "A signature did not match what your signing phone committed to, so this transaction will not be sent. That phone may be tampered with: stop signing with it, and do not reuse its recovery phrase for new funds. Load the recovery phrase on a signing device you trust and move your coins to a new wallet.",
+      "unsupported_title": "Signing phone could not be verified",
+      "unsupported_message": "Your signing phone's reply isn't part of verified signing, so this transaction will not be sent. Update Cypher Box on both phones to the same version. To sign without verification, turn off Verify my signing phone on the transaction screen.",
+      "cannot_start_title": "Verified signing isn't available",
+      "cannot_start_message": "One of this transaction's inputs can't be checked this way, so verified signing can't start. Turn off Verify my signing phone on the transaction screen to sign it the usual way.",
+      "import_blocked_title": "Verify my signing phone is on",
+      "import_blocked_message": "This transaction was signed without verification, so it won't be sent. Sign it again with verified signing, or turn off Verify my signing phone on the transaction screen first.",
+      "signer": {
+        "review_note": "Verified signing is on: your Cold Vault will check that this phone generated the signature honestly.",
+        "open_title": "Show this to your Cold Vault",
+        "open_body": "This phone has committed to its signature. Scan this with the Cold Vault that made the transaction, then scan the reply it shows.",
+        "scan_reply": "Scan the Cold Vault's reply",
+        "signed_body": "Scan this with your Cold Vault. It checks the signature before it lets you send.",
+        "errors": {
+          "newer_version": "This verified-signing request comes from a newer Cypher Box. Update this phone, then scan it again.",
+          "damaged": "This verified-signing request is incomplete or damaged. Start the spend again on your Cold Vault and scan its code again.",
+          "wrong_reply": "That isn't your Cold Vault's reply to this signing. Scan this phone's code on the Cold Vault again, then scan what it shows.",
+          "cannot_sign": "This transaction can't be signed with verification by this key. Sign it without verification: turn off Verify my signing phone on the Cold Vault."
+        }
+      }
     }
   }
 }

@@ -593,12 +593,7 @@ export default function ColdStorage({ route, navigation }: Props) {
           // watch-only wallets with enabled HW wallet support have different flow. we have to show PSBT to user as QR code
           // so he can scan it and sign it. then we have to scan it back from user (via camera and QR code), and ask
           // user whether he wants to broadcast it
-          // "Verify my signing phone" (anti-exfil) is an opt-in, default OFF.
-          // When on, route through the verified-signing flow instead of the
-          // plain PSBT exchange. It is an ADDITIONAL layer: the downstream
-          // confirm/broadcast still runs the existing match check.
-          const hardwareRoute = verifySigningPhone ? 'AntiExfilVerify' : 'HardwareWalletTransaction';
-          navigation.navigate(hardwareRoute, {
+          const signingParams = {
             memo: transactionMemo,
             fromWallet: wallet,
             psbt,
@@ -620,7 +615,15 @@ export default function ColdStorage({ route, navigation }: Props) {
                 destination: changeDestination,
                 depositAddress: changeDepositAddress,
             } : null,
-          });
+          };
+          // "Verify my signing phone" (anti-exfil) is an opt-in, default OFF. When on, the spend goes through the
+          // verified exchange with the signing phone instead of the plain QR screen, with the same params. It is an
+          // ADDITIONAL layer: the confirm screen both end on still runs the existing match check before the swipe.
+          if (verifySigningPhone) {
+            navigation.navigate('AntiExfilVerify', signingParams);
+          } else {
+            navigation.navigate('HardwareWalletTransaction', signingParams);
+          }
           setIsLoading(false);
           return;
         }
@@ -963,10 +966,11 @@ export default function ColdStorage({ route, navigation }: Props) {
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
                 <Text style={styles.title} center>{labels.title}</Text>
+                {/* Cold Vault only: the signing phone proves each signature honest before anything is sent (screens/AntiExfilVerify) */}
                 {wallet?.type === WatchOnlyWallet.type && (
-                    <View style={{ marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#333', backgroundColor: '#1a1a1a' }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <Text bold style={{ fontSize: 14, color: colors.white, flex: 1, marginRight: 12 }}>{loc.cypherbox.anti_exfil.setting_title}</Text>
+                    <View style={styles.verifySigner}>
+                        <View style={styles.verifySignerRow}>
+                            <Text bold style={styles.verifySignerTitle}>{loc.cypherbox.anti_exfil.setting_title}</Text>
                             <Switch
                                 value={verifySigningPhone}
                                 onValueChange={(v: boolean) => setVerifySigningPhone(v)}
@@ -975,7 +979,7 @@ export default function ColdStorage({ route, navigation }: Props) {
                                 trackColor={{ false: '#666666', true: '#FF65D4' }}
                             />
                         </View>
-                        <Text style={{ fontSize: 11, color: '#aaa', lineHeight: 16, marginTop: 8 }}>{loc.cypherbox.anti_exfil.setting_explainer}</Text>
+                        <Text style={styles.verifySignerExplainer}>{loc.cypherbox.anti_exfil.setting_explainer}</Text>
                     </View>
                 )}
                 {/* <SavingVault

@@ -5,7 +5,12 @@ import { Text } from "@Cypher/component-library";
 import { colors } from "@Cypher/style-guide";
 import loc from "../../loc";
 
-export type TamperAlarmVariant = "tamper" | "unsupported";
+/**
+ * Why verified signing stopped: a signature that doesn't open to what the signing phone committed to ("tamper"),
+ * a reply from a Cypher Box this one can't read ("unsupported"), or a transaction the exchange can't cover at all
+ * ("cannot_start").
+ */
+export type TamperAlarmVariant = "tamper" | "unsupported" | "cannot_start";
 
 interface Props {
     visible: boolean;
@@ -15,16 +20,22 @@ interface Props {
 }
 
 /**
- * Full-screen, interaction-blocking alarm shown when anti-exfil verification
- * fails ("tamper") or the signing phone did not support verification
- * ("unsupported"). It never offers a way to continue the spend: the only
- * action is to acknowledge and back out. The caller fails closed regardless of
- * what the user taps here.
+ * Full-screen, interaction-blocking alarm shown when verified signing (anti-exfil) fails. It never offers a way to
+ * continue the spend: the only action is to acknowledge and back out. The caller fails closed regardless of what the
+ * user taps here. Red for a failed check, black for the two cases where nothing was checked.
  */
 export default function AntiExfilTamperAlarm({ visible, variant, onAcknowledge }: Props) {
     const isTamper = variant === "tamper";
-    const title = isTamper ? loc.cypherbox.anti_exfil.tamper_title : loc.cypherbox.anti_exfil.unsupported_title;
-    const message = isTamper ? loc.cypherbox.anti_exfil.tamper_message : loc.cypherbox.anti_exfil.unsupported_message;
+    const title = isTamper
+        ? loc.cypherbox.anti_exfil.tamper_title
+        : variant === "unsupported"
+        ? loc.cypherbox.anti_exfil.unsupported_title
+        : loc.cypherbox.anti_exfil.cannot_start_title;
+    const message = isTamper
+        ? loc.cypherbox.anti_exfil.tamper_message
+        : variant === "unsupported"
+        ? loc.cypherbox.anti_exfil.unsupported_message
+        : loc.cypherbox.anti_exfil.cannot_start_message;
 
     return (
         <Modal visible={visible} animationType="fade" transparent={false} onRequestClose={onAcknowledge}>

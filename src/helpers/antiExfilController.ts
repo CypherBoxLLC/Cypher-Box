@@ -137,6 +137,8 @@ export function hostRevealStep(open: AntiExfilMessage, session: HostSession): { 
   if (open.sessionId !== session.id) throw new Error('antiExfil: open message is from a different session');
   const openings = open.openings || [];
   if (openings.length !== session.inputs.length) throw new Error('antiExfil: opening count mismatch');
+  // each opening is a compressed point; anything else is refused here, before rho leaves the host
+  if (!openings.every(o => /^0[23][0-9a-f]{64}$/i.test(o))) throw new Error('antiExfil: malformed opening');
 
   const perInput = session.perInput.map((p, i) => ({ ...p, openingHex: openings[i] }));
   const next: HostSession = { ...session, perInput, stage: 'revealed' };
@@ -154,6 +156,12 @@ export function hostRevealStep(open: AntiExfilMessage, session: HostSession): { 
  * and revealed rho. Fails closed: `verdict` is 'ok' only when every input
  * verifies. Returns the signed PSBT base64 (for the existing combine/broadcast
  * path) and the per-input verdicts.
+ *
+ * The openings checked are the ones the signer committed to in hop 2, which
+ * the host recorded before revealing rho. The sign message echoes openings
+ * too, but they carry no weight: a signer that could substitute an opening
+ * after learning rho could grind the final nonce and leak through it after
+ * all. An echo that differs from the record is itself a tamper verdict.
  */
 export function hostVerifyStep(
   sign: AntiExfilMessage,
@@ -173,15 +181,24 @@ export function hostVerifyStep(
     if (!found) throw new Error(`antiExfil: session input ${idx} missing from retained PSBT`);
     return found;
   });
-  // Prefer the signer-echoed openings, falling back to the host's recorded ones.
-  const openingsHex = session.perInput.map((p, i) => (sign.openings && sign.openings[i]) || p.openingHex || '');
+  // The hop-2 record is the authority; a missing record cannot verify anything.
+  const openingsHex = session.perInput.map(p => p.openingHex || '');
   const rhosHex = session.perInput.map(p => p.rhoHex);
+  const echoed = sign.openings || [];
+  const echoChanged = session.perInput
+    .map((p, i) => ({ index: p.index, changed: echoed[i] !== undefined && echoed[i].toLowerCase() !== (p.openingHex || '').toLowerCase() }))
+    .filter(e => e.changed);
 
   const result = hostVerifyPsbt(unsigned, signed, ordered, openingsHex, rhosHex, uncovered);
+  const perInput = result.perInput.map(p => {
+    const changed = echoChanged.find(e => e.index === p.index);
+    return changed ? { index: p.index, ok: false, reason: 'opening changed after commit' } : p;
+  });
+  const ok = result.ok && echoChanged.length === 0;
   return {
-    verdict: result.ok ? 'ok' : 'tamper',
-    perInput: result.perInput,
-    signedPsbtBase64: result.ok ? sign.psbt : undefined,
+    verdict: ok ? 'ok' : 'tamper',
+    perInput,
+    signedPsbtBase64: ok ? sign.psbt : undefined,
   };
 }
 

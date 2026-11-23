@@ -14,7 +14,9 @@
  * unverified signature.
  */
 import * as bitcoin from 'bitcoinjs-lib';
+import * as necc from '@noble/secp256k1';
 import { hostVerify, signerCommit, signerSign } from './antiExfil';
+import { auditSignatures } from '../../class/signatureAudit';
 
 const { script: bscript, Transaction, Psbt } = bitcoin;
 
@@ -134,12 +136,22 @@ export function signerBuildOpenings(
   });
 }
 
+// bitcoinjs's shape for a signature check: strict (low-S) ECDSA under the input's key and sighash.
+const validator = (pubkey: Buffer, msghash: Buffer, signature: Buffer): boolean =>
+  necc.verify(toU8(signature), toU8(msghash), toU8(pubkey), { strict: true });
+
 /**
  * Signer, hop 4: with the revealed `rho` per input, sign the PSBT in place
- * using exactly the committed nonce. Returns the openings again (echoed back to
- * the host) so the host can verify even if it lost its copy. The PSBT is signed
- * via a custom bitcoinjs signer so the sighash bitcoinjs computes is the one we
- * sign, and the partialSig is inserted and encoded the normal way.
+ * using exactly the committed nonce. Returns the openings again, echoed back to
+ * the host for diagnostics only: the host verifies against the openings it
+ * recorded in hop 2, never against this echo. The PSBT is signed via a custom
+ * bitcoinjs signer so the sighash bitcoinjs computes is the one we sign, and
+ * the partialSig is inserted and encoded the normal way.
+ *
+ * The same two checks the plain signing path runs afterwards (helpers/signOnce
+ * signWithRoot) run here too: every signature just added verifies under its
+ * key, and the nonce-reuse canary (class/signatureAudit) sees it. Both throw,
+ * so a signature that fails them never reaches the host.
  */
 export function signerSignPsbt(
   psbt: bitcoin.Psbt,
@@ -151,6 +163,7 @@ export function signerSignPsbt(
     throw new Error('antiExfil: rho count does not match signable inputs');
   }
   const openings: string[] = [];
+  const added: { pubkey: Buffer; signature: Buffer }[] = [];
   inputs.forEach((inp, i) => {
     const d = derive(inp.path, inp.pubkey);
     if (!d) throw new Error(`antiExfil: no private key for input ${inp.index}`);
@@ -166,8 +179,17 @@ export function signerSignPsbt(
     };
     psbt.signInput(inp.index, customSigner as any);
     if (!capturedOpening) throw new Error(`antiExfil: signer produced no opening for input ${inp.index}`);
+    const pubkey = Buffer.from(inp.pubkey);
+    if (!psbt.validateSignaturesOfInput(inp.index, validator, pubkey)) {
+      throw new Error(`antiExfil: signature for input ${inp.index} does not verify`);
+    }
+    const partial = (psbt.data.inputs[inp.index].partialSig || []).find(ps => Buffer.from(ps.pubkey).equals(pubkey));
+    if (!partial) throw new Error(`antiExfil: signature for input ${inp.index} was not recorded`);
+    added.push({ pubkey, signature: Buffer.from(partial.signature) });
     openings.push(Buffer.from(capturedOpening).toString('hex'));
   });
+  // Nonce-reuse canary over the signatures this key just added, each verified above.
+  auditSignatures(added);
   return openings;
 }
 
