@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import SimpleToast from "react-native-simple-toast";
 import { Icon } from "react-native-elements";
 import ReactNativeModal from "react-native-modal";
@@ -24,6 +24,9 @@ import { startsWithLn } from "../Send";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { FEATURE_ARK_ENABLED } from "@Cypher/services/ark";
 import { isCoinosAllowed } from "@Cypher/services/featureFlags";
+import { CoinosRequestError, describeCoinosFailure } from "@Cypher/services/coinos/apiResponse";
+import { isCoinosWithdrawIndeterminate } from "@Cypher/services/coinos/withdrawGuard";
+import { describeWithdrawRefusal } from "@Cypher/services/coinos/withdrawRefusal";
 import {
     swap as runLightningSwap,
     InvoiceCreationFailedError,
@@ -678,6 +681,92 @@ export default function ReviewPayment({ navigation, route }: Props) {
         }
     }
 
+    /**
+     * A fee estimate CoinOS refused arrives as a CoinosRequestError (the API
+     * reads the status now): show its reason under the screen's own sentence,
+     * long enough to read. Any other error keeps its message, as before.
+     */
+    const showCoinosFeeFailure = (error: any, fallback: string) => {
+        if (error instanceof CoinosRequestError) {
+            const text = describeCoinosFailure(error, fallback) ?? loc.cypherbox.services.coinos_api.authorization_expired;
+            SimpleToast.show(text, SimpleToast.LONG);
+            return;
+        }
+        SimpleToast.show(error?.message ? error.message : fallback, SimpleToast.SHORT);
+    };
+
+    /**
+     * What happened to a CoinOS on-chain send that did not go through. Three
+     * cases, none of them a "try again" toast:
+     *  - outcome unknown (lost reply, gateway error, unreadable success body):
+     *    an alert that says to check CoinOS history, never to retry blind;
+     *  - CoinOS refused with a reason: the reason in full, then what to do. For
+     *    the hold on funds that arrived over Lightning the alert offers to send
+     *    the part of the balance that is free right now;
+     *  - anything else: the screen's existing failure toast.
+     */
+    const presentCoinosSendFailure = (error: unknown, requestedSats: number, extraParams: Record<string, unknown>) => {
+        if (isCoinosWithdrawIndeterminate(error)) {
+            Alert.alert(
+                loc.cypherbox.payments.review_payment.coinos_outcome_unknown_title,
+                (error as Error)?.message || loc.cypherbox.services.coinos_api.withdrawal_may_have_been_sent,
+                [{ text: loc._.ok }],
+            );
+            return;
+        }
+        if (error instanceof CoinosRequestError) {
+            const spec = describeWithdrawRefusal(error, {
+                balanceSats: balance,
+                feeSats: (estimatedFee || 0) + (networkFee || 0),
+                requestedSats,
+            });
+            const capped = spec.cappedSats;
+            const buttons = capped != null
+                ? [
+                    {
+                        text: String(loc.formatString(loc.cypherbox.payments.review_payment.coinos_withdraw_capped_button, { amount: capped.toLocaleString() })),
+                        onPress: () => { void sendCoinosOnchain(capped, extraParams); },
+                    },
+                    { text: loc.cypherbox.strike.ark_capsules.not_now, style: 'cancel' as const },
+                ]
+                : [{ text: loc._.ok }];
+            Alert.alert(spec.title, spec.message, buttons);
+            return;
+        }
+        SimpleToast.show(
+            to.startsWith('bc') ? loc.cypherbox.payments.common.send_bitcoin_failed : loc.cypherbox.payments.common.send_liquid_failed,
+            SimpleToast.SHORT,
+        );
+    };
+
+    /**
+     * CoinOS on-chain send, bitcoin or liquid destination. sendBitcoinPayment
+     * returns only a JSON success body and throws for everything else, so the
+     * catch is where every refusal lands. `amountSats` can be smaller than the
+     * amount on screen: the hold alert's "withdraw instead" button re-runs this
+     * with the capped amount, and the success screen is then told what went.
+     */
+    const sendCoinosOnchain = async (amountSats: number, extraParams: Record<string, unknown>) => {
+        setIsSendLoading(true);
+        try {
+            const sendResponse = await sendBitcoinPayment(amountSats, to, selectedFee as number, note);
+            const jsonSend = JSON.parse(sendResponse);
+            console.log('jsonSend: ', jsonSend)
+            const shownSats = Number(isSats ? value : converted);
+            let amountParams: { value: any; converted: any } = { value, converted };
+            if (amountSats !== shownSats) {
+                const fiat = ((amountSats / SATS) * (matchedRate || 0)).toFixed(2);
+                amountParams = isSats ? { value: String(amountSats), converted: fiat } : { value: fiat, converted: String(amountSats) };
+            }
+            dispatchNavigate('TransactionBroadCast', { matchedRate, currency, type, ...amountParams, isSats, to, item: jsonSend, ...extraParams });
+        } catch (error) {
+            console.error('Error Send to bitcoin:', error);
+            presentCoinosSendFailure(error, amountSats, extraParams);
+        } finally {
+            setIsSendLoading(false);
+        }
+    };
+
     const handleFeeEstimate = async (fee: string) => {
         // recommendedFee self-heals from a mount-time fetch, but if that
         // failed (offline, mempool.space down) it can still be nullish here.
@@ -720,7 +809,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 console.log('jsonObject: ', jsonObject);
             } catch (error) {
                 console.error('Error Send to bitcoin:', error);
-                SimpleToast.show(error?.message ? error?.message : loc.cypherbox.payments.common.fee_estimate_bitcoin_failed, SimpleToast.SHORT);
+                showCoinosFeeFailure(error, loc.cypherbox.payments.common.fee_estimate_bitcoin_failed);
             } finally {
                 setModalVisible(false)
                 setFeeLoading(false);
@@ -758,7 +847,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 }
             } catch (error) {
                 console.error('Error Send to liquid:', error);
-                SimpleToast.show(error?.message ? error?.message : loc.cypherbox.payments.common.fee_estimate_liquid_failed, SimpleToast.SHORT);
+                showCoinosFeeFailure(error, loc.cypherbox.payments.common.fee_estimate_liquid_failed);
             } finally {
                 setModalVisible(false)
                 setFeeLoading(false);
@@ -1200,30 +1289,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 }
 
                 console.log('selectedFee: ', selectedFee)
-                try {
-                    const sendResponse = await sendBitcoinPayment(remainingAmount, to, selectedFee, note);
-
-                    let jsonSend = null
-                    console.log('sendResponse: ', sendResponse)
-                    if (sendResponse?.startsWith('{')) { // as estimatedFee is a string so this condition is helpful
-                        jsonSend = JSON.parse(sendResponse);
-
-                        console.log('jsonSend: ', jsonSend)
-                        //send 0.1% fee to bamskii
-                        // const response = await sendCoinsViaUsername("bamskki@coinos.io", feeForBamskki, '');
-                        // console.log('response username: ', response, typeof response)
-                        dispatchNavigate('TransactionBroadCast', { matchedRate, currency, type, value, converted, isSats, to, item: jsonSend });
-
-                    } else {
-                        SimpleToast.show(sendResponse, SimpleToast.SHORT);
-                        return;
-                    }
-                } catch (error) {
-                    console.error('Error Send to bitcoin:', error);
-                    SimpleToast.show(loc.cypherbox.payments.common.send_bitcoin_failed, SimpleToast.SHORT);
-                } finally {
-                    setIsSendLoading(false);
-                }
+                await sendCoinosOnchain(remainingAmount, {});
             } else {
                 if (selectedStrikeFee == null) {
                     SimpleToast.show(loc.cypherbox.payments.common.select_fee_rate, SimpleToast.SHORT);
@@ -1333,28 +1399,7 @@ export default function ReviewPayment({ navigation, route }: Props) {
                 return;
             }
 
-            try {
-                const sendResponse: any = await sendBitcoinPayment(remainingAmount, to, selectedFee, note);
-
-                let jsonSend = null
-                console.log('sendResponse: ', sendResponse)
-                if (sendResponse?.startsWith('{') || (typeof sendResponse == 'object' && sendResponse?.txid)) { // as estimatedFee is a string so this condition is helpful
-                    jsonSend = JSON.parse(sendResponse);
-
-                    //send 0.1% fee to bamskii
-                    // const response = await sendCoinsViaUsername("bamskki@coinos.io", feeForBamskki, '');
-                    // console.log('response username: ', response)
-                    dispatchNavigate('TransactionBroadCast', { matchedRate, currency, type, value, converted, isSats, to, item: jsonSend, receiveType });
-                } else {
-                    SimpleToast.show(sendResponse, SimpleToast.SHORT);
-                    return;
-                }
-            } catch (error) {
-                console.error('Error Send to liquid:', error);
-                SimpleToast.show(loc.cypherbox.payments.common.send_liquid_failed, SimpleToast.SHORT);
-            } finally {
-                setIsSendLoading(false);
-            }
+            await sendCoinosOnchain(remainingAmount, { receiveType });
         }
     };
 
