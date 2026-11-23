@@ -39,6 +39,7 @@ interface Style {
     keychainRowInfo: ViewStyle;
     keychainRowDate: TextStyle;
     keychainRowId: TextStyle;
+    keychainRowWarning: TextStyle;
     keychainRowCta: TextStyle;
     keychainRowDelete: ViewStyle;
     keychainRowDeleteText: TextStyle;
@@ -220,6 +221,13 @@ export default StyleSheet.create<Style>({
         color: 'rgba(255, 255, 255, 0.55)',
         fontFamily: 'Archivo-Regular',
         fontSize: 11,
+    },
+    keychainRowWarning: {
+        color: '#E8A33D',
+        fontFamily: 'Archivo-Regular',
+        fontSize: 11,
+        lineHeight: 15,
+        marginTop: 3,
     },
     keychainRowCta: {
         color: colors.green,

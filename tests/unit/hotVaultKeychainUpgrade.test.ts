@@ -44,7 +44,7 @@ jest.mock('../../src/stores/authStore', () => ({
 }));
 
 import loc from '../../loc';
-import { dropUnprotectedHotVaultBackups } from '../../src/services/hotVaultKeychain';
+import { dropUnprotectedHotVaultBackups, getHotVaultBackupProtection } from '../../src/services/hotVaultKeychain';
 import { startHotVaultKeychainCheck } from '../../src/services/hotVaultKeychainUpgrade';
 
 const flush = async () => {
@@ -148,5 +148,32 @@ describe('startHotVaultKeychainCheck', () => {
         await flush();
         expect(mockReset).not.toHaveBeenCalled();
         expect(mockSetFlag).not.toHaveBeenCalled();
+    });
+});
+
+describe('getHotVaultBackupProtection', () => {
+    it('reports a fingerprint-bound copy as gated', async () => {
+        mockCiphers[`${SEED}:w1`] = 'KeystoreRSAECB';
+        expect(await getHotVaultBackupProtection('w1')).toBe('gated');
+    });
+
+    it('reports a copy that opens without the fingerprint as ungated', async () => {
+        mockCiphers[`${SEED}:w1`] = 'KeystoreAESCBC';
+        expect(await getHotVaultBackupProtection('w1')).toBe('ungated');
+    });
+
+    it('reports unknown when the cipher cannot be read', async () => {
+        mockCiphers[`${SEED}:w1`] = new Error('prefs unreadable');
+        expect(await getHotVaultBackupProtection('w1')).toBe('unknown');
+    });
+
+    it('reports unknown when there is no record', async () => {
+        expect(await getHotVaultBackupProtection('missing')).toBe('unknown');
+    });
+
+    it('reports gated on iOS without reading the cipher', async () => {
+        mockPlatform.OS = 'ios';
+        mockCiphers[`${SEED}:w1`] = 'KeystoreAESCBC';
+        expect(await getHotVaultBackupProtection('w1')).toBe('gated');
     });
 });

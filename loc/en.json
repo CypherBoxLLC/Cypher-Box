@@ -2619,6 +2619,7 @@
         "remove_failed_message_android": "The Keystore entry may still be present. Try again, or remove it from the vault’s Settings.",
         "backed_up_legacy": "Backed up (legacy)",
         "backed_up": "Backed up {date}",
+        "not_fingerprint_protected": "Not protected by your fingerprint. Recover it to save a protected copy.",
         "keychain_title": "Recover from iPhone Keychain",
         "keychain_title_android": "Recover from Android Keystore",
         "no_keychain_backup": "No Keychain backup found on this device. To use this, create a hot vault with \"Save to iPhone Keychain\" enabled, or turn it on later in vault settings.",
