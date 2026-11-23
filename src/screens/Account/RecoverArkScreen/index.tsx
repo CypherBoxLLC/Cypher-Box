@@ -22,6 +22,7 @@ import {
     hasArkDatadir,
     isTransientArkOpenError,
     openArkWallet,
+    isGoogleDriveAvailable,
     isGoogleDriveConnected,
     lookupArkBackupInLocalDocuments,
     lookupArkBackupInSafFolder,
@@ -626,6 +627,12 @@ export default function RecoverArkScreen() {
 
     const handleRestoreFromGoogleDrive = async () => {
         if (submitting || restoring) return;
+        if (!isGoogleDriveAvailable()) {
+            // no Google sign-in on this phone (no Google Play services): say so, rather than let the library show
+            // Google's "won't run without Google Play services" dialog
+            setErrorMsg(loc.cypherbox.services.google_drive.no_play_services_restore);
+            return;
+        }
         const resolved = await resolveMnemonicForRestore();
         if (!resolved) return;
         const { mnemonic } = resolved;

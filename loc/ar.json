@@ -2188,6 +2188,7 @@
         "drive_connected": "تم ربط Google Drive.",
         "drive_connect_failed": "تعذّر ربط Drive",
         "drive_connect_failed_detail": "تعذّر ربط Drive{code}: {msg}",
+        "needs_play_services": "يحتاج إلى خدمات Google Play",
         "drive_disconnect_title": "فصل Google Drive؟",
         "drive_disconnect_message": "سيبقى ملف النسخة الاحتياطية الحالي في Drive. الفصل يوقف عمليات الرفع المستقبلية فقط. يمكنك إعادة الربط في أي وقت.",
         "disconnect": "فصل",
@@ -3189,7 +3190,9 @@
         "quota": "رفض Google Drive الرفع (الحصة أو الأذونات). احفظ ملف النسخة الاحتياطية يدويًا بدلًا من ذلك.",
         "server": "يواجه Google Drive مشكلات حاليًا. أعد المحاولة بعد قليل، أو احفظ ملف النسخة الاحتياطية يدويًا.",
         "unknown": "فشل النسخ الاحتياطي إلى Google Drive. احفظ ملف النسخة الاحتياطية يدويًا أدناه.",
-        "access_expired": "انتهت صلاحية الوصول إلى Google Drive. أعد ربط Google Drive وحاول مرة أخرى."
+        "access_expired": "انتهت صلاحية الوصول إلى Google Drive. أعد ربط Google Drive وحاول مرة أخرى.",
+        "no_play_services": "يحتاج Google Drive إلى خدمات Google Play، وهي غير موجودة على هذا الهاتف. احفظ النسخة الاحتياطية في مجلد بدلاً من ذلك.",
+        "no_play_services_restore": "يحتاج Google Drive إلى خدمات Google Play، وهي غير موجودة على هذا الهاتف. استعد من ملف نسخة احتياطية أو من كلماتك الاثنتي عشرة بدلاً من ذلك."
       },
       "saf_backup": {
         "permission_revoked": "لم يعد لدى Cypher Box إذن بالكتابة في مجلد النسخ الاحتياطي الذي اخترته. اضغط على «اختيار مجلد» لمنح الإذن مجددًا.",

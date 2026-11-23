@@ -108,6 +108,7 @@ const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive.appdata'];
  * error, etc.
  */
 export type DriveErrorClass =
+    | 'no-play-services'
     | 'auth-not-configured'
     | 'auth-cancelled'
     | 'auth-token-missing'
@@ -131,6 +132,11 @@ export function classifyDriveError(err: unknown): DriveErrorClass {
     const msg = String((err as any)?.message ?? err ?? '').toLowerCase();
     const code = String((err as any)?.code ?? '');
 
+    // The sign-in library's code for a phone without Google Play services (GrapheneOS and other Google-free
+    // Android builds), and the message `noPlayServicesError` throws before the library is asked.
+    if (code === 'PLAY_SERVICES_NOT_AVAILABLE' || msg.includes('play services not available') || msg.includes('google play services')) {
+        return 'no-play-services';
+    }
     if (code === 'DEVELOPER_ERROR' || msg.includes('developer_error') || msg.includes('developer error')) {
         return 'auth-not-configured';
     }
@@ -165,6 +171,8 @@ export function classifyDriveError(err: unknown): DriveErrorClass {
  */
 export function messageForDriveError(cls: DriveErrorClass): string {
     switch (cls) {
+        case 'no-play-services':
+            return loc.cypherbox.services.google_drive.no_play_services;
         case 'auth-not-configured':
             return loc.cypherbox.services.google_drive.auth_not_configured;
         case 'auth-cancelled':
@@ -264,6 +272,31 @@ export async function isGoogleDriveConnected(): Promise<boolean> {
 }
 
 /**
+ * Whether Google Drive backup can work on this phone at all: Android with Google Play services present. A phone
+ * without them (GrapheneOS and other Google-free Android builds) has no Google sign-in, so the screens hide the
+ * Drive option and recommend the folder backup instead. The probe is react-native-device-info's, the same one
+ * blue_modules/notifications.js uses to decide whether push can work.
+ */
+export function isGoogleDriveAvailable(): boolean {
+    if (Platform.OS !== 'android') return false;
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { hasGmsSync } = require('react-native-device-info');
+        return typeof hasGmsSync === 'function' ? !!hasGmsSync() : true;
+    } catch {
+        return true;
+    }
+}
+
+/** The error the Drive helpers throw on a phone without Google Play services: the library's own code, with a
+ * sentence that says what to do instead of the library's bare "Play services not available". */
+function noPlayServicesError(): Error & { code: string } {
+    const err = new Error(loc.cypherbox.services.google_drive.no_play_services) as Error & { code: string };
+    err.code = 'PLAY_SERVICES_NOT_AVAILABLE';
+    return err;
+}
+
+/**
  * Trigger the Google Sign-In flow. Resolves true on success, false on
  * user-cancelled. THROWS on real failures (Play Services missing,
  * config error, network) so the caller can surface a real error
@@ -279,7 +312,13 @@ export async function connectGoogleDrive(): Promise<boolean> {
     if (!GoogleSignin) {
         throw new Error('Google Sign-In native module not available on this build');
     }
-    await GoogleSignin.hasPlayServices?.({ showPlayServicesUpdateDialog: true });
+    if (!isGoogleDriveAvailable()) {
+        // Never let the library ask: on a phone without Google Play services its dialog says the app "won't run
+        // without Google Play services", which is false, and offers a Play Store that isn't there.
+        throw noPlayServicesError();
+    }
+    // No update dialog either: an outdated Play services is reported through `classifyDriveError` instead.
+    await GoogleSignin.hasPlayServices?.({ showPlayServicesUpdateDialog: false });
     const result = await GoogleSignin.signIn();
     // v13: discriminated union response. v8/v10: direct user object.
     if (result && typeof result === 'object' && 'type' in result) {

@@ -2190,6 +2190,7 @@
         "drive_connected": "Google Drive connected.",
         "drive_connect_failed": "Drive connect failed",
         "drive_connect_failed_detail": "Drive connect failed{code}: {msg}",
+        "needs_play_services": "Needs Google Play services",
         "drive_disconnect_title": "Disconnect Google Drive?",
         "drive_disconnect_message": "Your existing backup file will stay in Drive. Disconnecting only stops future uploads. You can reconnect any time.",
         "disconnect": "Disconnect",
@@ -3191,7 +3192,9 @@
         "quota": "Google Drive rejected the upload (quota or permission). Save the backup file manually instead.",
         "server": "Google Drive is having issues right now. Retry in a moment, or save the backup file manually.",
         "unknown": "Google Drive backup failed. Save the backup file manually below.",
-        "access_expired": "Google Drive access has expired. Reconnect Google Drive and try again."
+        "access_expired": "Google Drive access has expired. Reconnect Google Drive and try again.",
+        "no_play_services": "Google Drive needs Google Play services, which this phone does not have. Save the backup to a folder instead.",
+        "no_play_services_restore": "Google Drive needs Google Play services, which this phone does not have. Restore from a backup file or from your 12 words instead."
       },
       "saf_backup": {
         "permission_revoked": "Cypher Box no longer has permission to write to your chosen backup folder. Tap 'Pick folder' to re-grant access.",
