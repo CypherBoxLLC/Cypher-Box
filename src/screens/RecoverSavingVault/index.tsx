@@ -9,6 +9,7 @@ import { BlueStorageContext } from '../../../blue_modules/storage-context';
 import useAuthStore from "@Cypher/stores/authStore";
 import { dispatchReset } from '@Cypher/helpers/navigation';
 import {
+    backupHotVaultSeedWithMeta,
     getHotVaultSeedFromKeychain,
     listHotVaultKeychainBackupsWithMeta,
     resetHotVaultBackupFully,
@@ -370,12 +371,28 @@ export default function RecoverSavingVault({ route }: Props) {
      * Fast path: we know they came from our own Keychain, so the wallet is an
      * HDSegwitBech32Wallet and startImport's multi-type scan is skipped.
      */
-    const restoreCheckedBackup = () => {
+    const restoreCheckedBackup = async () => {
         const checked = checkedWords.current;
         if (!checked || importing.current) return;
         checkRun.current += 1;
         checkedWords.current = null;
-        fastImportHotVault(checked.mnemonic, checked.walletID, undefined, checked.ref);
+        // A copy that opens without the fingerprint (Android, an older build on a
+        // phone with no strong biometric) is re-saved under the gated protection on
+        // first recovery, and the old un-gated copy removed. If the phone still has
+        // no fingerprint the re-save reports no-biometric-gate and the old copy is
+        // kept as the only copy; the row already warned.
+        let restoredRef = checked.ref;
+        const summary = keychainBackups.find(s => s.ref === checked.ref);
+        if (summary?.protection === 'ungated') {
+            const upgraded = await backupHotVaultSeedWithMeta(checked.walletID, checked.mnemonic, {
+                createdAt: summary.meta?.createdAt ?? Date.now(),
+            });
+            if (upgraded.ok) {
+                restoredRef = upgraded.ref;
+                await resetHotVaultBackupFully(checked.ref);
+            }
+        }
+        fastImportHotVault(checked.mnemonic, checked.walletID, undefined, restoredRef);
     };
 
     /**
@@ -575,7 +592,7 @@ export default function RecoverSavingVault({ route }: Props) {
                 </Text>
 
                 {keychainBackups.map(summary => {
-                    const { ref, meta } = summary;
+                    const { ref, meta, protection } = summary;
                     const isDeleting = pendingDeleteID === ref;
                     const isUnlocking = unlockingID === ref;
                     // One backup at a time: while any unlock or removal runs, every other row waits.
@@ -605,6 +622,11 @@ export default function RecoverSavingVault({ route }: Props) {
                                         )}
                                     </TouchableOpacity>
                                 )}
+                                {protection === 'ungated' ? (
+                                    <Text style={[styles.keychainRowWarning, { textAlign: 'center', marginHorizontal: 16 }]}>
+                                        {loc.cypherbox.vault.recover_saving_vault.not_fingerprint_protected}
+                                    </Text>
+                                ) : null}
                                 {renderBackupCheck(ref)}
                             </View>
                         );
@@ -632,6 +654,11 @@ export default function RecoverSavingVault({ route }: Props) {
                                         {ref.length === 64 ? (
                                             <Text style={styles.keychainRowId}>
                                                 {loc.formatString(loc.cypherbox.vault.recover_saving_vault.vault_id, { id: ref.slice(0, 12) })}
+                                            </Text>
+                                        ) : null}
+                                        {protection === 'ungated' ? (
+                                            <Text style={styles.keychainRowWarning}>
+                                                {loc.cypherbox.vault.recover_saving_vault.not_fingerprint_protected}
                                             </Text>
                                         ) : null}
                                     </View>

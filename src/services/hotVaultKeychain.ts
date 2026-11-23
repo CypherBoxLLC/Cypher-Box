@@ -416,12 +416,43 @@ export async function listHotVaultKeychainBackups(): Promise<string[]> {
     }
 }
 
+/**
+ * Whether a backup's seed is bound to the fingerprint, read from the entry's
+ * stored cipher WITHOUT opening it (no prompt), the same technique as
+ * dropUnprotectedHotVaultBackups.
+ *
+ * Only Android can hold an un-gated copy: before the cipher was checked (0.1.12
+ * and earlier) a phone with no strong biometric stored the seed with
+ * KeystoreAESCBC, which reads back with no fingerprint. A copy of a deleted vault
+ * is kept on purpose (it may be the only copy), so such a copy can still be here.
+ * iOS entries always carry their access control, so they are always 'gated'.
+ * 'unknown' when the cipher can't be read; callers must not treat that as
+ * un-gated.
+ */
+export type HotVaultProtection = 'gated' | 'ungated' | 'unknown';
+
+export async function getHotVaultBackupProtection(ref: string): Promise<HotVaultProtection> {
+    if (Platform.OS !== 'android') return 'gated';
+    try {
+        const found = await Keychain.hasInternetCredentials(serviceFor(ref));
+        const storage = found && typeof found === 'object' && typeof (found as { storage?: unknown }).storage === 'string'
+            ? (found as { storage: string }).storage
+            : null;
+        if (storage === null) return 'unknown';
+        return storage === RSA_STORAGE ? 'gated' : 'ungated';
+    } catch {
+        return 'unknown';
+    }
+}
+
 export interface HotVaultBackupSummary {
     // The backup handle (service suffix): random for a new backup, the walletID
     // for a legacy one. The real walletID of a new backup is known only after the
     // gated seed read; recovery carries it out of getHotVaultSeedFromKeychain.
     ref: string;
     meta: HotVaultMeta | null;
+    // Whether the seed is behind the fingerprint (Android only can be 'ungated').
+    protection: HotVaultProtection;
 }
 
 /**
@@ -442,6 +473,7 @@ export async function listHotVaultKeychainBackupsWithMeta(): Promise<HotVaultBac
         refs.map(async ref => ({
             ref,
             meta: await getHotVaultMeta(ref),
+            protection: await getHotVaultBackupProtection(ref),
         })),
     );
     return summaries.sort((a, b) => {
