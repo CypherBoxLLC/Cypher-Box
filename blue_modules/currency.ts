@@ -4,6 +4,7 @@ import * as RNLocalize from 'react-native-localize';
 import BigNumber from 'bignumber.js';
 import { FiatUnit, FiatUnitType, getFiatRate } from '../models/fiatUnit';
 import WidgetCommunication from './WidgetCommunication';
+import { isSeedSignerLocked } from '../src/services/seedSignerLock';
 
 const PREFERRED_CURRENCY_STORAGE_KEY = 'preferredCurrency';
 const EXCHANGE_RATES_STORAGE_KEY = 'exchangeRates';
@@ -68,6 +69,9 @@ async function _restoreSavedPreferredFiatCurrencyFromStorage(): Promise<void> {
 
 async function updateExchangeRate(): Promise<void> {
   if (skipUpdateExchangeRate) return;
+  // an Offline Seed-Signer shows no fiat and makes no request of its own: BlueApp.js asks for a rate as it loads
+  // and every screen that formats fiat asks again, and none of that may reach a rate API from a signer
+  if (isSeedSignerLocked()) return;
   if (Date.now() - lastTimeUpdateExchangeRateWasCalled <= 10000) {
     // simple debounce so there's no race conditions
     return;
