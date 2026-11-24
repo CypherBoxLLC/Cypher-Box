@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Alert, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
+import { Alert, Platform, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { generateCheckedArkMnemonic } from "../../../class/seedHealth";
 import safetyErrorText from "../../helpers/safetyErrorText";
@@ -394,7 +394,9 @@ export default function CheckingAccountLogin() {
             <View style={[styles.sectionDivider, styles.sectionDividerSigner]} />
           </View>
           <Text style={styles.sectionSubtitle}>
-            {loc.cypherbox.account.checking_login.cold_signing_subtitle}
+            {Platform.OS === "ios"
+              ? loc.cypherbox.account.checking_login.cold_signing_subtitle_ios
+              : loc.cypherbox.account.checking_login.cold_signing_subtitle}
           </Text>
           <LoginOption
             label={loc.cypherbox.seed_signer.title}

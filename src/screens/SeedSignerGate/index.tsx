@@ -50,7 +50,9 @@ export default function SeedSignerGate() {
         <ScreenLayout showToolbar isBackButton disableScroll>
             <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
                 <Text style={styles.title}>{loc.cypherbox.seed_signer.title}</Text>
-                <Text style={styles.body}>{loc.cypherbox.seed_signer.gate.body}</Text>
+                <Text style={styles.body}>
+                    {Platform.OS === 'ios' ? loc.cypherbox.seed_signer.gate.body_ios : loc.cypherbox.seed_signer.gate.body}
+                </Text>
                 <Text style={styles.oneWay}>{loc.cypherbox.seed_signer.gate.one_way}</Text>
 
                 <Text style={styles.heading}>{loc.cypherbox.seed_signer.gate.before_title}</Text>

@@ -1103,7 +1103,8 @@
         "strike_region_notice": "Strike is not available in Cypher Box in your region. If Strike serves your country, you can use the Strike app directly, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address.",
         "coinos_region_notice": "CoinOS is not available in your region. You can use it directly at coinos.io, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address.",
         "cold_signing_header": "COLD SIGNING  ·  OFFLINE PHONE",
-        "cold_signing_subtitle": "Turn an isolated phone that stays offline (a Pixel is recommended) into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign."
+        "cold_signing_subtitle": "Turn an isolated phone that stays offline (any Android phone works) into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign.",
+        "cold_signing_subtitle_ios": "Turn an isolated phone that stays offline into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign."
       },
       "checking_intro": {
         "title": "Lightning Account",
@@ -3443,7 +3444,8 @@
         "lead": "Signs for a watch & broadcast only wallet that has this seed's public key: a Cypher Box Cold Vault, Sparrow or another app. You'll see what a transaction does before anything is signed."
       },
       "gate": {
-        "body": "Turns an isolated phone that stays offline (a Pixel is recommended) into a cold signing device for a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in to sign.",
+        "body": "Turns an isolated phone that stays offline (any Android phone works) into a cold signing device for a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in to sign.",
+        "body_ios": "Turns an isolated phone that stays offline into a cold signing device for a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in to sign.",
         "one_way": "There's no way back. Once it's on, this app is a seed-signer and nothing else, every time it opens. To use Cypher Box as a normal wallet again, you'll have to delete it and install it fresh.",
         "before_title": "Before you turn it on",
         "dedicated": "• Use a dedicated phone: factory-reset it and install nothing else.",
