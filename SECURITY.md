@@ -15,6 +15,10 @@ updates until resolved.
 We pay bounties for valid vulnerability reports. Amounts are determined by
 severity and impact; reach out to info@cypherbox.io to discuss.
 
+Monetary rewards are currently limited to High and Critical severity findings.
+Low and Medium reports are still welcome, and we credit them and fix what they
+surface, but they are not eligible for a monetary reward at this time.
+
 Safe harbour: we will not pursue legal action against good-faith research
 that respects user funds and data and discloses responsibly.
 
