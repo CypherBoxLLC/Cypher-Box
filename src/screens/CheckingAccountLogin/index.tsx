@@ -417,7 +417,9 @@ export default function CheckingAccountLogin() {
             <View style={[styles.sectionDivider, styles.sectionDividerSigner]} />
           </View>
           <Text style={styles.sectionSubtitle}>
-            {loc.cypherbox.account.checking_login.cold_signing_subtitle}
+            {Platform.OS === "ios"
+              ? loc.cypherbox.account.checking_login.cold_signing_subtitle_ios
+              : loc.cypherbox.account.checking_login.cold_signing_subtitle}
           </Text>
           <LoginOption
             label={loc.cypherbox.seed_signer.title}
