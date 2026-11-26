@@ -151,6 +151,21 @@ export type AuthStateType = {
      */
     arkServerSpentVtxoIds: string[];
     /**
+     * Capsules the user started a unilateral exit for ON THIS DEVICE, by id.
+     *
+     * Written by startArkEmergencyExit; an id leaves once bark's exit record
+     * for it is terminal. bark 0.9.0's `sync` routes capsules that another
+     * party force-exited on-chain into the exit flow by itself, so an active
+     * exit record whose id is NOT here is an exit the user never asked for.
+     * This list is how the app tells the two apart (services/ark/forcedExit).
+     */
+    arkExitStartedVtxoIds: string[];
+    /**
+     * Forced-exit capsules the user has already been told about, by id, so
+     * the notice fires once per capsule rather than once per sync tick.
+     */
+    arkForcedExitNoticedVtxoIds: string[];
+    /**
      * When each id in `arkRefreshingVtxoIds` was first marked as refreshing,
      * epoch ms. Maintained by `setArkRefreshingVtxoIds`, which stamps ids it
      * has not seen before and drops stamps for ids that leave the list.
@@ -464,8 +479,18 @@ export type AuthStateType = {
     setArkBalance: (state: number) => void;
     setArkBalanceDetail: (state: ArkBalanceSummary | null) => void;
     setArkVtxos: (state: ArkVtxoView[]) => void;
-    /** Merge server-confirmed-spent ids in. Never removes; spent is permanent. */
+    /** Merge server-reported-spent ids in. */
     addArkServerSpentVtxoIds: (ids: string[]) => void;
+    /**
+     * Drop ids the WALLET itself now records as spent or exited (bark marks the
+     * capsule Spent/Exited, or holds a finished exit record for it). This is
+     * the only removal path: the server's word alone never prunes, in either
+     * direction. See fetchArkVtxos.
+     */
+    removeArkServerSpentVtxoIds: (ids: string[]) => void;
+    addArkExitStartedVtxoIds: (ids: string[]) => void;
+    setArkExitStartedVtxoIds: (ids: string[]) => void;
+    addArkForcedExitNoticedVtxoIds: (ids: string[]) => void;
     setArkRefreshingVtxoIds: (ids: string[]) => void;
     setArkRefreshStuck: (state: ArkRefreshStuckInfo | null) => void;
     setArkPendingRoundFirstSeen: (state: Record<string, number>) => void;
@@ -744,22 +769,23 @@ export type AuthStateType = {
 };
 
 /**
- * Union of two `arkServerSpentVtxoIds` lists, `newer` last, lowercased and
- * de-duplicated. Shared by the setter and the hydration merge so both keep
- * the same cap.
+ * Union of two VTXO-id lists, `newer` last, lowercased and de-duplicated.
+ * Shared by the setters and the hydration merge so both keep the same cap.
+ * Used for `arkServerSpentVtxoIds`, `arkExitStartedVtxoIds` and
+ * `arkForcedExitNoticedVtxoIds`.
  *
- * Bounded so a long-lived wallet cannot grow this without limit in persisted
+ * Bounded so a long-lived wallet cannot grow these without limit in persisted
  * storage. Oldest entries fall off first; a VTXO that old is long gone from
  * the local DB anyway.
  */
-const ARK_SERVER_SPENT_IDS_CAP = 500;
-function mergeArkServerSpentVtxoIds(older: unknown, newer: unknown): string[] {
+const ARK_VTXO_ID_LIST_CAP = 500;
+function mergeVtxoIdLists(older: unknown, newer: unknown): string[] {
     const merged = new Set<string>();
     for (const list of [older, newer]) {
         if (!Array.isArray(list)) continue;
         for (const id of list) if (typeof id === 'string' && id) merged.add(id.toLowerCase());
     }
-    return Array.from(merged).slice(-ARK_SERVER_SPENT_IDS_CAP);
+    return Array.from(merged).slice(-ARK_VTXO_ID_LIST_CAP);
 }
 
 const createAuthStore = (
@@ -791,6 +817,8 @@ const createAuthStore = (
     arkVtxos: [],
     arkRefreshingVtxoIds: [],
     arkServerSpentVtxoIds: [],
+    arkExitStartedVtxoIds: [],
+    arkForcedExitNoticedVtxoIds: [],
     arkRefreshingVtxoSince: {},
     arkRefreshStuck: null,
     arkPendingRoundFirstSeen: {},
@@ -892,7 +920,25 @@ const createAuthStore = (
     setArkVtxos: (state: ArkVtxoView[]) => set({ arkVtxos: state }),
     addArkServerSpentVtxoIds: (ids: string[]) =>
         set((s) => ({
-            arkServerSpentVtxoIds: mergeArkServerSpentVtxoIds(s.arkServerSpentVtxoIds, ids),
+            arkServerSpentVtxoIds: mergeVtxoIdLists(s.arkServerSpentVtxoIds, ids),
+        })),
+    removeArkServerSpentVtxoIds: (ids: string[]) =>
+        set((s) => {
+            const drop = new Set(ids.map((id) => id.toLowerCase()));
+            if (drop.size === 0) return {};
+            return {
+                arkServerSpentVtxoIds: s.arkServerSpentVtxoIds.filter(
+                    (id) => !drop.has(id.toLowerCase()),
+                ),
+            };
+        }),
+    addArkExitStartedVtxoIds: (ids: string[]) =>
+        set((s) => ({ arkExitStartedVtxoIds: mergeVtxoIdLists(s.arkExitStartedVtxoIds, ids) })),
+    setArkExitStartedVtxoIds: (ids: string[]) =>
+        set({ arkExitStartedVtxoIds: mergeVtxoIdLists([], ids) }),
+    addArkForcedExitNoticedVtxoIds: (ids: string[]) =>
+        set((s) => ({
+            arkForcedExitNoticedVtxoIds: mergeVtxoIdLists(s.arkForcedExitNoticedVtxoIds, ids),
         })),
     setArkRefreshingVtxoIds: (ids: string[]) =>
         set((s) => {
@@ -1064,6 +1110,9 @@ const createAuthStore = (
             arkExitClaimBatchSince: null,
             arkExitDrained: false,
             arkExitStartedSats: null,
+            // Reset with the other exit flags. arkForcedExitNoticedVtxoIds is
+            // kept on purpose: a notice already shown should not fire again.
+            arkExitStartedVtxoIds: [],
             arkUseHotVaultSeed: false,
             // arkExitDestinationAddress and arkExitFeeReserveSats are
             // deliberately NOT reset here. Both are user-chosen exit-funding
@@ -1196,9 +1245,15 @@ const useAuthStore = create<AuthStateType>()(
                 // wake can record a server-spent capsule before the store has
                 // loaded, and replacing it would put that capsule back in the
                 // balance.
-                arkServerSpentVtxoIds: mergeArkServerSpentVtxoIds(
+                arkServerSpentVtxoIds: mergeVtxoIdLists(
                     persisted.arkServerSpentVtxoIds,
                     currentState.arkServerSpentVtxoIds,
+                ),
+                // Same reasoning: a forced-exit notice shown before the store
+                // loaded must stay recorded, or it is shown again.
+                arkForcedExitNoticedVtxoIds: mergeVtxoIdLists(
+                    persisted.arkForcedExitNoticedVtxoIds,
+                    currentState.arkForcedExitNoticedVtxoIds,
                 ),
                 // Saved before the off-device backup was tracked (0.1.12 and
                 // earlier): start from what the saved vault says about its

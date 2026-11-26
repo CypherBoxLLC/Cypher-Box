@@ -2,6 +2,8 @@ import { getArkWalletHandle } from './walletHandle';
 import { barkStateTag, isActiveExit } from './barkState';
 import useAuthStore from '@Cypher/stores/authStore';
 import { applyExpiredVtxoFilter, fetchArkBalance } from './balance';
+import { forcedExitIds } from './forcedExit';
+import { acceptServerSpentId, serverSpentIdsWithWalletEvidence } from './serverSpentList';
 import {
     isPermanentlyGone,
     notSpendableMessage,
@@ -53,6 +55,12 @@ export type ArkVtxoView = {
      * balance, the same way it does for `exiting`.
      */
     serverSpent?: boolean;
+    /**
+     * True when `exiting` is true but the exit was NOT started on this device
+     * (bark 0.9.0 routes capsules another party force-exited on-chain into the
+     * exit flow by itself). Renders with its own label; see ./forcedExit.ts.
+     */
+    exitForced?: boolean;
 };
 
 export type ArkVtxoList = {
@@ -80,9 +88,14 @@ export type ArkVtxoList = {
  * the refresh paths maintain across the delegated round.
  */
 export function isVtxoMidRound(
-    v: Pick<ArkVtxoView, 'id' | 'state'>,
+    v: Pick<ArkVtxoView, 'id' | 'state'> & { exiting?: boolean },
     refreshingIds: readonly string[] | ReadonlySet<string>,
 ): boolean {
+    // A capsule mid unilateral exit is not in a round, even when it reads
+    // Locked: the app locks a forced-exit capsule in bark to keep it out of
+    // coin selection (forcedExitLock.ts). Counting it as refreshing would put
+    // it in the "refreshing" total and hold the stuck-round detection.
+    if (v.exiting) return false;
     if (v.state.toLowerCase() === 'locked') return true;
     return refreshingIds instanceof Set
         ? refreshingIds.has(v.id)
@@ -151,8 +164,11 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
     // UI/balance offers coins that are mid-exit (see `exiting` docs above).
     // Best-effort: an empty set on failure just means no lock this tick.
     let activeExitIds = new Set<string>();
+    let forcedIds = new Set<string>();
+    let exitRecords: { vtxoId: string; state: unknown }[] = [];
     try {
         const exits = await handle.getExitVtxos();
+        exitRecords = (exits ?? []) as { vtxoId: string; state: unknown }[];
         activeExitIds = new Set(
             (exits ?? [])
                 // bark 0.6.1: exit `state` is a tagged-enum object now; use the
@@ -161,7 +177,31 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
                 .filter((e: any) => isActiveExit(e))
                 .map((e: any) => String(e.vtxoId)),
         );
+        // Which of those the user never asked for (bark 0.9.0 force-exit scan).
+        const st = useAuthStore.getState();
+        forcedIds = forcedExitIds(exits ?? [], {
+            startedIds: st.arkExitStartedVtxoIds ?? [],
+            exitStartedAt: st.arkExitStartedAt ?? null,
+        });
     } catch { /* handle busy or exit subsystem unavailable — no lock */ }
+
+    // Prune the server-spent list on the WALLET's evidence, and only that: an
+    // id leaves once bark itself marks the capsule Spent/Exited or holds a
+    // finished exit record for it. Local reads, no network, so it runs on
+    // every fetch. Nothing the server says removes an id (see
+    // ./serverSpentList.ts).
+    {
+        const st = useAuthStore.getState();
+        const confirmed = serverSpentIdsWithWalletEvidence(
+            st.arkServerSpentVtxoIds ?? [],
+            raw.map((v) => ({ id: String(v.id), stateTag: barkStateTag(v.state) })),
+            exitRecords,
+        );
+        if (confirmed.length > 0) {
+            console.log('[Ark vtxos] wallet confirms', confirmed.length, 'server-spent capsule(s); pruning the list');
+            st.removeArkServerSpentVtxoIds(confirmed);
+        }
+    }
 
     // Drop anything the SERVER has already told us is spent.
     //
@@ -192,6 +232,7 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
         // downstream `.toLowerCase()` comparison keeps working.
         state: barkStateTag(v.state),
         exiting: activeExitIds.has(v.id),
+        exitForced: forcedIds.has(String(v.id).toLowerCase()),
         serverSpent: serverSpent.has(String(v.id).toLowerCase()),
     }));
 
@@ -227,12 +268,21 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
 }
 
 /**
- * Record a server-confirmed-spent VTXO and correct the wallet's view of itself.
+ * Record a server-reported-spent VTXO and correct the wallet's view of itself.
  *
- * Call this from EVERY path that can spend or refresh a VTXO. The server is the
- * only authority on spentness and it only tells us when we try to use one, so a
- * failed spend is the single moment this correction is available. Dropping it
- * on the floor is how a phantom balance survives for days.
+ * Call this from EVERY path that can spend or refresh a VTXO. The server only
+ * tells us a capsule is spent when we try to use one, so a failed spend is the
+ * single moment this correction is available. Dropping it on the floor is how
+ * a phantom balance survives for days.
+ *
+ * `inputVtxoIds` is the list of capsules the FAILED CALL was given: the ids the
+ * caller passed, or bark's own coin selection from the fee estimate when bark
+ * picked. The named capsule is recorded only if it is in that list. A response
+ * that names any other capsule, or a caller that cannot name its inputs
+ * (`null`), still gets the classification back for the user's message, but
+ * the list is not touched: the server's word about an unrelated capsule must
+ * not make it vanish (see ./serverSpentList.ts). Services record, screens
+ * describe: the service that made the call is the one that knows its inputs.
  *
  * Returns the parsed classification so the caller can show the right message,
  * or null when the error was something else entirely.
@@ -242,11 +292,21 @@ export async function fetchArkVtxos(): Promise<ArkVtxoList | null> {
  */
 export async function recordServerSpentFromError(
     err: unknown,
+    inputVtxoIds: readonly string[] | null,
 ): Promise<NotSpendableVtxo | null> {
     const parsed = parseNotSpendableError(err);
     if (!parsed) return null;
 
     if (!isPermanentlyGone(parsed) || !parsed.vtxoId) return parsed;
+
+    if (!acceptServerSpentId(parsed.vtxoId, inputVtxoIds)) {
+        console.warn(
+            '[Ark vtxos] server names a spent vtxo that was not an input of the failed call; NOT recording it:',
+            parsed.vtxoId,
+            inputVtxoIds == null ? '(caller named no inputs)' : `(inputs: ${inputVtxoIds.length})`,
+        );
+        return parsed;
+    }
 
     console.warn(
         '[Ark vtxos] server reports vtxo spent, pruning from spendable set:',
@@ -285,9 +345,11 @@ export async function recordServerSpentFromError(
 
 /**
  * The message for a spend the Ark server refused over a capsule, or null when
- * the failure was something else. Records a server-spent capsule on the way,
- * exactly as recordServerSpentFromError does, so a catch block needs this one
- * call.
+ * the failure was something else. Records a server-spent capsule on the way
+ * when `inputVtxoIds` names it, exactly as recordServerSpentFromError does, so
+ * a catch block needs this one call. Screens that cannot name the failed
+ * call's inputs pass `null`: the service that made the call has already
+ * recorded against its own inputs, and this then only chooses the copy.
  *
  * Never throws: its callers are catch blocks that still owe the user a
  * message. If recording fails, the copy is chosen as for an unrecorded
@@ -295,14 +357,36 @@ export async function recordServerSpentFromError(
  */
 export async function recordAndDescribeNotSpendable(
     err: unknown,
+    inputVtxoIds: readonly string[] | null,
 ): Promise<{ title: string; body: string } | null> {
     let parsed: NotSpendableVtxo | null;
     try {
-        parsed = await recordServerSpentFromError(err);
+        parsed = await recordServerSpentFromError(err, inputVtxoIds);
     } catch (e: any) {
         console.warn('[Ark vtxos] recording a not-spendable error failed:', e?.message ?? e);
         const unrecorded = parseNotSpendableError(err);
         parsed = unrecorded ? { ...unrecorded, vtxoId: null } : null;
     }
     return parsed ? notSpendableMessage(parsed) : null;
+}
+
+/**
+ * The capsules an amount-based bark call could have used as inputs: everything
+ * bark lists as Spendable. For calls where bark picks the inputs itself and no
+ * fee estimate names them (`maintenanceDelegated`), this is the tightest honest
+ * bound for recordServerSpentFromError's input rule. Returns null when the
+ * wallet cannot be read, which the recorder treats as "record nothing".
+ */
+export async function spendableVtxoIdsForInputs(): Promise<string[] | null> {
+    const handle = getArkWalletHandle();
+    if (!handle) return null;
+    try {
+        const raw = await handle.allVtxos();
+        return (raw ?? [])
+            .filter((v) => barkStateTag(v.state).toLowerCase() === 'spendable')
+            .map((v) => String(v.id));
+    } catch (e: any) {
+        console.warn('[Ark vtxos] could not read spendable ids for the input rule:', e?.message ?? e);
+        return null;
+    }
 }

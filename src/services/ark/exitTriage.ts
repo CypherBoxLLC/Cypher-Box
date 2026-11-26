@@ -205,6 +205,10 @@ export type ExitTriageVtxo = {
     /** Server recovery-mailbox flag. Does NOT affect exitability: measured
      *  2026-08-19, all 117 unregistered capsules carry a full exit chain. */
     registered?: boolean;
+    /** The Ark server has called this capsule spent (`arkServerSpentVtxoIds`)
+     *  while bark still lists it as Spendable. Nothing on-chain confirms it.
+     *  See ./serverSpentList.ts. */
+    serverSpent?: boolean;
 };
 
 /** Why a capsule holding value is not in the exit set. Every one of these is
@@ -213,6 +217,13 @@ export type ExitTriageVtxo = {
  *  the user has never seen them, and listing them would bury the exclusions
  *  that matter. The measured wallet carries 188 of them against 8 live ones. */
 export type ExitExclusionReason =
+    /** The Ark server says this capsule is already spent, but the wallet has
+     *  no on-chain confirmation of that. Left out of the exit set, but shown
+     *  with its amount and expiry rather than dropped: the server's word
+     *  alone must not make a capsule vanish from the one path that does not
+     *  need the server. Reported by MrHodl. Not overridable here; the
+     *  Re-check action re-asks the server and the chain. */
+    | 'server-says-spent'
     /** Structural: the SDK reports no exit chain for this capsule. */
     | 'no-exit-chain'
     /** Temporal: the server can sweep it before the exit clears its CSV. */
@@ -963,6 +974,16 @@ export function triageArkExit(input: TriageArkExitInput): ExitTriageResult {
             skippedTerminalCount++;
             continue;
         }
+        // Server-reported spend with no on-chain confirmation. Checked FIRST
+        // among the disclosed exclusions so the reason the user reads is the
+        // one that matters: a capsule the server calls spent is excluded for
+        // that, whatever its economics. It keeps its expiry (blocksUntilExpiry
+        // above) so the warning still shows. It used to be filtered out before
+        // triage ever saw it, which is the silent drop this reason replaces.
+        if (v.serverSpent) {
+            exclude('server-says-spent');
+            continue;
+        }
         if (perVb <= 0 || (Number(v.exitTxWeightWu) <= 0 && Number(v.exitDepth) <= 0)) {
             exclude('no-exit-chain');
             continue;
@@ -1136,6 +1157,8 @@ export function describeExitNote(note: ExitTriageNote): string {
 
 export function describeExitExclusion(reason: ExitExclusionReason | undefined): string {
     switch (reason) {
+        case 'server-says-spent':
+            return loc.cypherbox.services.exit_triage.exclusion_server_says_spent;
         case 'no-exit-chain':
             return loc.cypherbox.services.exit_triage.exclusion_no_exit_chain;
         case 'too-close-to-expiry':

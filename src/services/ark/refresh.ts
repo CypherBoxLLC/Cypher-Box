@@ -3,7 +3,10 @@ import { computeRefreshingSweep } from './refreshingStaleness';
 import { ensureArkWalletHandleReady } from './restore';
 import { assertNoActiveArkExitAsync } from './exit';
 import { fetchArkBalance } from './balance';
-import { fetchArkVtxos, recordServerSpentFromError } from './vtxos';
+import { fetchArkVtxos, recordServerSpentFromError, spendableVtxoIdsForInputs } from './vtxos';
+import { assertNotForcedExitVtxos, forcedExitIdsFromStore } from './forcedExitGuard';
+import { lockForcedExitVtxos } from './forcedExitLock';
+import { classifyExitRecords } from './forcedExit';
 import { writeArkAutoBackup } from './backup';
 import { scheduleArkRefreshReminder } from './backgroundNotifications';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
@@ -70,11 +73,18 @@ export class ArkRefreshInFlightError extends Error {
  * refresh goes through. An unnamed one cannot be left out next time, so it
  * still counts.
  *
+ * `inputVtxoIds` is what the refused call was given, or bark's Spendable set
+ * when bark picked the capsules itself (maintenance). A refusal naming any
+ * other capsule is not recorded; see ./serverSpentList.ts.
+ *
  * Never throws, so the caller's catch still rethrows the original error.
  */
-async function recordRefusedSpentCapsule(err: unknown): Promise<boolean> {
+async function recordRefusedSpentCapsule(
+    err: unknown,
+    inputVtxoIds: readonly string[] | null,
+): Promise<boolean> {
     try {
-        const parsed = await recordServerSpentFromError(err);
+        const parsed = await recordServerSpentFromError(err, inputVtxoIds);
         return parsed?.state === 'spent' && !!parsed.vtxoId;
     } catch {
         return false;
@@ -132,6 +142,10 @@ export async function refreshArkVtxos(
     // they suggested (`lockVtxos` / `unlockVtxos`), but nothing here uses it
     // yet, so the client guard is still the only thing standing here.
     await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.refreshing_capsules);
+    // A forced exit (bark 0.9.0) does not raise that guard; its capsules are
+    // refused one by one instead. bark's refreshVtxos takes the ids as given,
+    // with no state filter, so this is the only thing stopping one.
+    assertNotForcedExitVtxos(vtxoIds, loc.cypherbox.services.ark_exit.refreshing_capsules);
 
     // Serialize rounds: one refresh at a time, per wallet. The in-process
     // flag catches same-process races; the pendingRoundStates probe catches
@@ -215,7 +229,7 @@ export async function refreshArkVtxos(
         // named as already spent (see recordRefusedSpentCapsule).
         // useArkSync escalates once the streak crosses its threshold while
         // a VTXO is near expiry.
-        if (!(await recordRefusedSpentCapsule(err))) {
+        if (!(await recordRefusedSpentCapsule(err, vtxoIds))) {
             const store = useAuthStore.getState();
             store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
         }
@@ -310,6 +324,7 @@ export async function refreshArkVtxosDelegated(
     // Same exit guard as the self-signed path: a delegated round is still a
     // cooperative spend of the VTXO. See refreshArkVtxos.
     await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.refreshing_capsules);
+    assertNotForcedExitVtxos(vtxoIds, loc.cypherbox.services.ark_exit.refreshing_capsules);
 
     // Cross-caller submission guard. `refreshSubmissionInFlight` is shared
     // with the self-signed path and now also with delegated maintenance, so
@@ -401,7 +416,7 @@ export async function refreshArkVtxosDelegated(
             throw new ArkRefreshInFlightError(1);
         }
         // Same streak rule as the self-signed path above.
-        if (!(await recordRefusedSpentCapsule(err))) {
+        if (!(await recordRefusedSpentCapsule(err, vtxoIds))) {
             const store = useAuthStore.getState();
             store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
         }
@@ -486,6 +501,32 @@ export async function maintenanceArkDelegated(): Promise<void> {
     // the guard is the async one that asks bark's DB rather than trusting a
     // possibly-unhydrated store.
     await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.background_refresh);
+    // A forced exit (bark 0.9.0) leaves that guard down and keeps its capsules
+    // out of bark's coin selection with a lock instead. maintenance lets bark
+    // pick, so it may only run once every forced capsule is confirmed locked.
+    // Read bark's exit records too, not only the store rows: this path also
+    // runs from the headless background wake, before the store has hydrated,
+    // and there every active exit record counts as not started here.
+    const forcedIds = new Set(forcedExitIdsFromStore());
+    try {
+        const s = useAuthStore.getState();
+        const { forced } = classifyExitRecords((await handle.getExitVtxos()) ?? [], {
+            startedIds: s.arkExitStartedVtxoIds ?? [],
+            exitStartedAt: s.arkExitStartedAt ?? null,
+        });
+        for (const e of forced) forcedIds.add(String(e.vtxoId).toLowerCase());
+    } catch {
+        // No exit records readable: the store rows above are all we have.
+    }
+    if (forcedIds.size > 0) {
+        const { failed } = await lockForcedExitVtxos([...forcedIds]);
+        if (failed.length > 0) {
+            throw new Error(String(loc.formatString(
+                loc.cypherbox.services.ark_exit.unavailable_during_exit,
+                { action: loc.cypherbox.services.ark_exit.background_refresh },
+            )));
+        }
+    }
 
     // Same cross-caller guard as refreshArkVtxosDelegated: the background wake
     // must not submit a maintenance round while another submission is mid-
@@ -531,7 +572,9 @@ export async function maintenanceArkDelegated(): Promise<void> {
         // Recorded so the balance stops counting it. bark picks these capsules
         // itself, so it may pick the same one on the next wake: this stays a
         // real failure for the background caller, which keeps counting it.
-        await recordRefusedSpentCapsule(err);
+        // bark's Spendable set is the only honest bound on what it could have
+        // used, since no fee estimate names maintenance's inputs.
+        await recordRefusedSpentCapsule(err, await spendableVtxoIdsForInputs());
         throw err;
     } finally {
         refreshSubmissionInFlight = false;

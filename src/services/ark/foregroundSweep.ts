@@ -284,7 +284,7 @@ export async function maybeSweepDustArkVtxos(
             // the spendable set so the next plan is built without it, and this
             // is a correction rather than a transient fault, so it must not
             // touch the backoff.
-            const serverSpent = await recordServerSpentFromError(err);
+            const serverSpent = await recordServerSpentFromError(err, plan.ids);
             if (serverSpent?.state === 'spent') {
                 console.warn('[Ark dust sweep] dropped a server-spent vtxo from the plan:', serverSpent.vtxoId);
             } else if (err instanceof ArkRefreshInFlightError) {
@@ -508,7 +508,7 @@ export async function maybeSweepDueArkVtxos(
         // the spendable set so the next plan is built without it, and this
         // is a correction rather than a transient fault, so it must not
         // touch the backoff.
-        const serverSpent = await recordServerSpentFromError(err);
+        const serverSpent = await recordServerSpentFromError(err, ids);
         if (serverSpent?.state === 'spent') {
             console.warn('[Ark sweep] dropped a server-spent vtxo from the plan:', serverSpent.vtxoId);
         } else if (err instanceof ArkRefreshInFlightError) {

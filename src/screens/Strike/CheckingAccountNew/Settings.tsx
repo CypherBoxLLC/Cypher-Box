@@ -49,6 +49,8 @@ import {
   estimateArkOnchainRecover,
   recoverArkOnchainBoard,
   fetchArkExitVtxos,
+  forcedExitIds,
+  recheckArkServerSpentVtxos,
   summariseExitPhase,
   AVG_BLOCK_MINUTES,
   fetchPendingExitsTotalSats,
@@ -380,6 +382,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     walletID,
     coldStorageWalletID,
     arkBalanceDetail,
+    arkVtxos,
     arkExitInProgress,
     arkExitBatteryNoticeDismissed,
     setArkExitBatteryNoticeDismissed,
@@ -1083,6 +1086,14 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // so the exit can never deliver them. Terminal, so they drop out of the
   // pending total above; this says where they went. Same poll, no new request.
   const [exitSweptSats, setExitSweptSats] = useState(0);
+  // Sats in ACTIVE exit records this device never started (bark 0.9.0 routes
+  // capsules another party force-exited on-chain into the exit flow by
+  // itself; services/ark/forcedExit.ts). Same poll, no new request. The panel
+  // names them so "Emergency exit in progress" does not read as the user's
+  // own doing.
+  const [exitForcedSats, setExitForcedSats] = useState(0);
+  // Re-check of the server-spent list in flight (services/ark/serverSpentRecheck).
+  const [recheckingSpent, setRecheckingSpent] = useState(false);
   // Cancel-exit request in flight (bark 0.8 `cancelExit`). One at a time.
   const [exitCanceling, setExitCanceling] = useState(false);
 
@@ -1105,6 +1116,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     excludedCount: number;
     excludedSats: number;
     feeRateSatPerVb: number;
+    /** Capsules the Ark server calls spent with nothing on-chain confirming
+     *  it. Shown on the card with a Re-check, never silently dropped. */
+    serverSaysSpent: { count: number; sats: number; soonestExpiryBlocks: number | null };
   } | null>(null);
   const [exitFundingOpen, setExitFundingOpen] = useState(false);
   // Opens on Convert, the path a user can complete with what they already
@@ -1123,6 +1137,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const [reserveTargetInput, setReserveTargetInput] = useState('');
 
   const onchainReserveSats: number = arkBalanceDetail?.onchainBoardingSats ?? 0;
+  // An exit the user did not start (bark 0.9.0 force-exit scan). It runs with
+  // the exit flag DOWN so the rest of the wallet keeps working (services/ark/
+  // forcedExit.ts), so the status panel has to key on the capsules themselves.
+  const forcedExitActive = ((arkVtxos ?? []) as { exiting?: boolean; exitForced?: boolean }[]).some(
+    (v) => !!v.exiting && !!v.exitForced,
+  );
+  const exitPanelActive = arkExitInProgress || forcedExitActive;
   // Reserve target: the GREATER of what the user armed and what an exit is
   // currently estimated to cost. Drives the gate, the funded state and the
   // shortfall. While recommended is still null (first compute) and nothing is
@@ -1192,10 +1213,11 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // Cheap call (reads local SQLite), useful to show shrinking sats as
   // batches confirm + claim. Stops as soon as the flag flips back to false.
   useEffect(() => {
-    if (!arkExitInProgress) {
+    if (!exitPanelActive) {
       setPendingExitSats(null);
       setExitPhase(null);
       setExitSweptSats(0);
+      setExitForcedSats(0);
       return;
     }
     let cancelled = false;
@@ -1267,8 +1289,18 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         const sweptSats = vtxos
           .filter((v) => isSweptExit(v))
           .reduce((acc, v) => acc + Number(v.amountSats ?? 0), 0);
+        // Active records the user did not start here (see exitForcedSats).
+        const st = useAuthStore.getState();
+        const forced = forcedExitIds(vtxos, {
+          startedIds: st.arkExitStartedVtxoIds ?? [],
+          exitStartedAt: st.arkExitStartedAt ?? null,
+        });
+        const forcedSats = active
+          .filter((v) => forced.has(String(v.vtxoId).toLowerCase()))
+          .reduce((acc, v) => acc + Number(v.amountSats ?? 0), 0);
 
         if (!cancelled) {
+          setExitForcedSats(forcedSats);
           setExitSweptSats(sweptSats);
           setPendingExitSats(Math.max(activeSats, pendingTotal));
           setExitPhase(
@@ -1293,7 +1325,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       cancelled = true;
       clearInterval(id);
     };
-  }, [arkExitInProgress]);
+  }, [exitPanelActive]);
 
   // Compute the recommended exit-fee reserve when the actions tab is showing
   // and no exit is in flight. computeExitFeeReserveSats runs the JS-thread-
@@ -1312,6 +1344,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             excludedCount: r.excludedCount,
             excludedSats: r.excludedSats,
             feeRateSatPerVb: r.feeRateSatPerVb,
+            serverSaysSpent: r.serverSaysSpent,
           });
           // Persist it: auto-board runs in the sync loop with no access to this
           // screen, and without the estimate it would hold only the armed
@@ -1518,11 +1551,12 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       );
     } catch (e: any) {
       // The server refused a capsule, for example one already spent from
-      // another device. A spent one is recorded so the balance stops counting
-      // it, and the user reads the app's words, not the raw server string. A
-      // dropped connection arrives as the flagged indeterminate error, whose
-      // text names no capsule, so it still takes the branch below.
-      const notSpendable = await recordAndDescribeNotSpendable(e);
+      // another device. convertToExitFees recorded a spent one against the
+      // inputs it used, so the balance stops counting it; here the user reads
+      // the app's words, not the raw server string. A dropped connection
+      // arrives as the flagged indeterminate error, whose text names no
+      // capsule, so it still takes the branch below.
+      const notSpendable = await recordAndDescribeNotSpendable(e, null);
       if (notSpendable) {
         Alert.alert(notSpendable.title, notSpendable.body);
         return;
@@ -1595,6 +1629,60 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     if (t.length < 14 || t.length > 100) return false;
     return /^(bc1|tb1|bcrt1|[13]|[mn2])[a-zA-Z0-9]+$/.test(t);
   };
+
+  /**
+   * Re-check the capsules the Ark server has called spent: ask the server and
+   * the chain again, then let the wallet decide. Only bark's own records can
+   * remove an id (services/ark/serverSpentList.ts); the server repeating itself
+   * changes nothing, and a server that is down changes nothing. The reserve is
+   * re-sized afterwards so the card reflects the answer.
+   */
+  const handleRecheckServerSpent = async () => {
+    if (recheckingSpent) return;
+    setRecheckingSpent(true);
+    try {
+      const out = await recheckArkServerSpentVtxos();
+      try {
+        const r = await computeExitFeeReserveSats();
+        setRecommendedReserveSats(r.recommendedSats);
+        setReserveDetail({
+          vtxoCount: r.vtxoCount,
+          excludedCount: r.excludedCount,
+          excludedSats: r.excludedSats,
+          feeRateSatPerVb: r.feeRateSatPerVb,
+          serverSaysSpent: r.serverSaysSpent,
+        });
+        setArkExitRecommendedReserveSats(r.recommendedSats);
+      } catch (err) {
+        if (__DEV__) console.warn('[Ark exit-funding] reserve compute after re-check failed:', err);
+      }
+      const t = loc.cypherbox.strike.ark_exit;
+      const body =
+        out.outcome === 'confirmed'
+          ? String(loc.formatString(out.confirmedIds.length === 1 ? t.recheck_confirmed_one : t.recheck_confirmed_other, { count: out.confirmedIds.length }))
+          : out.outcome === 'failed'
+            ? t.recheck_failed
+            : t.recheck_unchanged;
+      Alert.alert(t.recheck_title, body, [{ text: loc._.ok }]);
+    } finally {
+      setRecheckingSpent(false);
+    }
+  };
+
+  /**
+   * One line per capsule left out of the exit. A capsule the server calls
+   * spent keeps its expiry on the row: the server's word has taken it out of
+   * the exit set, so the clock on it is exactly what the user still needs to
+   * see.
+   */
+  const exclusionRow = (e: ExitTriageResult['excluded'][number]): string =>
+    e.reason === 'server-says-spent'
+      ? `  ${loc.formatString(loc.cypherbox.strike.ark_exit.capsule_server_spent_row, {
+          sats: e.sats.toLocaleString(),
+          reason: describeExitExclusion(e.reason),
+          expires: e.blocksUntilExpiry != null ? formatBlocksUntil(e.blocksUntilExpiry) : loc.cypherbox.strike.ark_exit.expires_unknown,
+        })}`
+      : `  ${loc.formatString(loc.cypherbox.strike.ark_exit.capsule_reason_row, { sats: e.sats.toLocaleString(), reason: describeExitExclusion(e.reason) })}`;
 
   /**
    * `economicPolicy` is how far past the economics the user has agreed to go.
@@ -1723,9 +1811,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     // Nothing survived triage. Say why rather than starting an exit that would
     // spend the reserve and return nothing.
     if (plan.selectedIds.length === 0) {
-      const list = plan.excluded
-        .map((e) => `  ${loc.formatString(loc.cypherbox.strike.ark_exit.capsule_reason_row, { sats: e.sats.toLocaleString(), reason: describeExitExclusion(e.reason) })}`)
-        .join('\n');
+      const list = plan.excluded.map(exclusionRow).join('\n');
       if (plan.excluded.length === 0) {
         setExitStarting(false);
         Alert.alert(loc.cypherbox.strike.ark_exit.emergency_exit, loc.cypherbox.strike.ark_exit.no_capsules_to_exit);
@@ -1758,12 +1844,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     const exclusionNotice =
       plan.excluded.length > 0
         ? String(loc.formatString((plan.excluded.length === 1 ? loc.cypherbox.strike.ark_exit.exclusion_header_one : loc.cypherbox.strike.ark_exit.exclusion_header_other), { count: plan.excluded.length, sats: plan.excludedSats.toLocaleString() })) + '\n' +
-          plan.excluded
-            .map(
-              (e) =>
-                `  ${loc.formatString(loc.cypherbox.strike.ark_exit.capsule_reason_row, { sats: e.sats.toLocaleString(), reason: describeExitExclusion(e.reason) })}`,
-            )
-            .join('\n') +
+          plan.excluded.map(exclusionRow).join('\n') +
           '\n\n' + loc.cypherbox.strike.ark_exit.exclusion_footer + '\n\n'
         : '';
 
@@ -2033,6 +2114,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 setArkExitDrained(false);
                 setArkExitFeeDeadlineHeight(null);
                 useAuthStore.getState().setArkExitClaimBatchSince(null);
+                useAuthStore.getState().setArkExitStartedVtxoIds([]);
                 // The send guard also reads the stored capsules' `exiting`
                 // flag; refresh them now rather than on the next sync tick.
                 try {
@@ -2727,7 +2809,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             Shows a single source of truth for what's happening + the
             destination the user picked. Auto-claim runs from useArkSync,
             so there's nothing for the user to tap here. */}
-        {arkExitInProgress ? (
+        {exitPanelActive && (
           <View style={{ marginTop: 30, alignSelf: 'center', width: widths * 0.85, paddingVertical: 14, paddingHorizontal: 18, borderRadius: 12, backgroundColor: '#1a1a1a', borderWidth: 1, borderColor: colors.redLight }}>
             <Text bold style={{ fontSize: 15, color: colors.redLight, marginBottom: 8 }}>
               {loc.cypherbox.strike.ark_exit.exit_in_progress}
@@ -2791,6 +2873,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
             {exitSweptSats > 0 && (
               <Text style={{ fontSize: 12, color: '#FFD54F', marginBottom: 6 }}>
                 {String(loc.formatString(loc.cypherbox.strike.ark_exit.exit_swept_note, { sats: exitSweptSats.toLocaleString() }))}
+              </Text>
+            )}
+            {/* FORCED (bark 0.9.0 force-exit scan). These capsules are in the
+                exit because another party moved them on-chain, not because the
+                user tapped Emergency Exit. Say so, or the header above claims
+                an action the user never took. */}
+            {exitForcedSats > 0 && (
+              <Text style={serverSpentStyles.panelNote}>
+                {String(loc.formatString(loc.cypherbox.strike.ark_exit.exit_forced_note, { sats: exitForcedSats.toLocaleString() }))}
               </Text>
             )}
 
@@ -2905,7 +2996,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
               </Text>
             </TouchableOpacity>
           </View>
-        ) : (
+        )}
+        {/* The action buttons stay while only a FORCED exit runs: the
+            user may still start their own exit for the other capsules. */}
+        {!arkExitInProgress && (
           <>
             {/* Emergency Exit — sits ABOVE Delete Ark vault. Yellow text
                 rather than red so users don't conflate it with the
@@ -2995,6 +3089,43 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                       ? loc.formatString(loc.cypherbox.strike.ark_exit.short_by, { sats: exitFeeShortfallSats.toLocaleString() })
                       : loc.cypherbox.strike.ark_exit.funded}
               </Text>
+              {/* SERVER SAYS SPENT. Capsules the Ark server has refused as
+                  already spent while nothing on-chain confirms it. They are
+                  left out of the exit set, but they stay on this card with
+                  their sats and the soonest expiry, and Re-check asks the
+                  server and the chain again. They used to be filtered out
+                  before triage, so a server that lied (or a response about
+                  some other capsule) made them vanish from the exit (reported
+                  by MrHodl). Only the wallet's own records can remove one:
+                  services/ark/serverSpentList.ts. */}
+              {(reserveDetail?.serverSaysSpent.count ?? 0) > 0 && reserveDetail && (
+                <View style={serverSpentStyles.block}>
+                  <Text style={serverSpentStyles.text}>
+                    {String(loc.formatString(
+                      reserveDetail.serverSaysSpent.count === 1
+                        ? loc.cypherbox.strike.ark_exit.server_spent_card_one
+                        : loc.cypherbox.strike.ark_exit.server_spent_card_other,
+                      {
+                        count: reserveDetail.serverSaysSpent.count,
+                        sats: reserveDetail.serverSaysSpent.sats.toLocaleString(),
+                        expires: reserveDetail.serverSaysSpent.soonestExpiryBlocks != null
+                          ? formatBlocksUntil(reserveDetail.serverSaysSpent.soonestExpiryBlocks)
+                          : loc.cypherbox.strike.ark_exit.expires_unknown,
+                      },
+                    ))}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={recheckingSpent ? undefined : handleRecheckServerSpent}
+                    disabled={recheckingSpent}
+                    activeOpacity={0.7}
+                    style={serverSpentStyles.button}
+                  >
+                    <Text bold style={recheckingSpent ? serverSpentStyles.buttonTextBusy : serverSpentStyles.buttonText}>
+                      {recheckingSpent ? loc.cypherbox.strike.ark_exit.rechecking : loc.cypherbox.strike.ark_exit.recheck}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
 
             {/* Fee-funding gate: on-chain fee wallet is short. Explain, offer
@@ -3799,6 +3930,17 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
 
 // The "only on this phone" card in the Bark backup section. Same look as the
 // iOS snapshot card above it, which is the reminder it sits beside.
+/** The server-says-spent block on the exit fee card, and the forced-exit note
+ *  on the in-progress panel. */
+const serverSpentStyles = StyleSheet.create({
+  panelNote: { fontSize: 12, color: '#FFD54F', marginBottom: 6 },
+  block: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#2A2A2A' },
+  text: { fontSize: 11, color: '#FFD54F', lineHeight: 16 },
+  button: { marginTop: 8, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
+  buttonText: { fontSize: 12, color: '#FFF' },
+  buttonTextBusy: { fontSize: 12, color: '#888' },
+});
+
 const thisPhoneStyles = StyleSheet.create({
   card: {
     marginBottom: 12,

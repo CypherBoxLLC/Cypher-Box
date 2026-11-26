@@ -233,9 +233,11 @@ export default function ArkStuckCapsuleScreen() {
         } catch (e: any) {
             // Never render the raw server string. This screen is where users
             // are SENT when a capsule looks stuck, so an unparsed gRPC error
-            // here is the worst possible answer. Classify first; a `spent`
-            // verdict also prunes the phantom from the balance.
-            const notSpendable = await recordServerSpentFromError(e);
+            // here is the worst possible answer. Classify first. A `spent`
+            // verdict was already recorded by the service that made the call
+            // (offboard by ids, or the swap's send against its coin selection),
+            // which is what prunes the phantom from the balance.
+            const notSpendable = await recordServerSpentFromError(e, null);
             if (notSpendable) {
                 const { body } = notSpendableMessage(notSpendable);
                 setResult({ ok: false, msg: body });

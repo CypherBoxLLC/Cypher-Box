@@ -1990,6 +1990,7 @@
         "expiring": "expiring",
         "expired_short": "expired",
         "label_exiting": "Exiting on-chain\n(sweeps after the ~24h timelock)",
+        "label_exit_forced": "Exit forced on-chain\n(not started here; claims after the ~24h timelock)",
         "label_cancelling": "Cancelling\n(takes less than an hour)",
         "label_refresh_failed_one": "Refreshing or In-flight\n⚠️ {count} refresh attempt failed",
         "label_refresh_failed_other": "Refreshing or In-flight\n⚠️ {count} refresh attempts failed",
@@ -2426,7 +2427,18 @@
         "amount_sats": "Amount (sats)",
         "convert_estimate": "About {net} sats will land on-chain after a {fee} sat fee.",
         "converting": "Converting…",
-        "convert_to_exit_fees": "Convert to exit fees"
+        "convert_to_exit_fees": "Convert to exit fees",
+        "exit_forced_note": "{sats} sats were pushed on-chain by an exit you did not start here. The wallet is claiming them to the destination below.",
+        "capsule_server_spent_row": "{sats} sats: {reason}, expires {expires}",
+        "server_spent_card_one": "{count} capsule holding {sats} sats is left out of the exit: the Ark server says it is already spent, but nothing on-chain confirms that. It expires {expires}. Re-check asks the server and the chain again.",
+        "server_spent_card_other": "{count} capsules holding {sats} sats are left out of the exit: the Ark server says they are already spent, but nothing on-chain confirms that. The soonest expires {expires}. Re-check asks the server and the chain again.",
+        "recheck": "Re-check",
+        "rechecking": "Re-checking…",
+        "recheck_title": "Capsule re-check",
+        "recheck_confirmed_one": "{count} capsule is now confirmed spent by your wallet and is no longer counted.",
+        "recheck_confirmed_other": "{count} capsules are now confirmed spent by your wallet and are no longer counted.",
+        "recheck_unchanged": "No change. The server still reports the capsule as spent and nothing on-chain confirms it. It stays listed with its expiry.",
+        "recheck_failed": "Could not re-check right now. Check your connection and try again."
       }
     },
     "vault": {
@@ -3124,7 +3136,14 @@
         "background_refresh": "Background refresh",
         "vault_not_open": "The vault is not open yet. It needs a connection to open, so check yours and reopen the vault, then try again.",
         "no_capsules_exitable": "No capsules can be exited right now.",
-        "vault_could_not_open": "The vault could not be opened. It needs a connection, so check yours, or switch between Wi-Fi and mobile data, then try again."
+        "vault_could_not_open": "The vault could not be opened. It needs a connection, so check yours, or switch between Wi-Fi and mobile data, then try again.",
+        "forced_exit_title": "A capsule is exiting on-chain",
+        "forced_exit_body_one": "{sats} sats in {count} capsule are being moved on-chain by an exit you did not start here. Another party published it, or it was started from another device holding this seed. Cypher Box is claiming the sats to {dest} once the timelock passes, about {wait}. Open the app from time to time: the claim only progresses while it is open.",
+        "forced_exit_body_other": "{sats} sats in {count} capsules are being moved on-chain by an exit you did not start here. Another party published it, or it was started from another device holding this seed. Cypher Box is claiming the sats to {dest} once the timelock passes, about {wait}. Open the app from time to time: the claim only progresses while it is open.",
+        "forced_exit_fees_short": "The exit pays Bitcoin miner fees from your on-chain fee wallet, which holds {held} sats of about {needed} needed. Top it up under Settings, Emergency Exit, or the exit will stall.",
+        "forced_exit_no_destination": "No destination is set yet, so the sats cannot be claimed. Open or create your Hot Vault and the wallet will use it.",
+        "forced_exit_wait_unknown": "a day or more",
+        "forced_exit_dest_unknown": "your exit destination"
       },
       "network_fault": {
         "chain_source": "Can't reach the Bitcoin network data provider. If you're on Wi-Fi, try mobile data, then try again.",
@@ -3182,7 +3201,8 @@
         "exclusion_refresh_before_exiting": "expiring soon, refresh it instead of exiting it",
         "exclusion_returns_nothing": "network fee is more than it holds",
         "exclusion_fees_dwarf_value": "costs far more in fees than it holds",
-        "exclusion_default": "cannot be exited"
+        "exclusion_default": "cannot be exited",
+        "exclusion_server_says_spent": "the Ark server says it is already spent, but nothing on-chain confirms that"
       },
       "ark_backup": {
         "not_valid_json": "That backup file is not valid JSON. Is it the right file?",
