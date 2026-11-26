@@ -1089,6 +1089,9 @@
       "checking_login": {
         "logging_in_strike": "Logging in to Strike...",
         "strike_auth_failed": "Strike authentication failed.",
+        "strike_signin_hint_title": "Strike sign-in didn't finish",
+        "strike_signin_hint_ios": "Strike's sign-in page could not finish its security check. If Lockdown Mode is on, turn it off in Settings, Privacy and Security, then try again. Give the page a few seconds to load before pressing Next.",
+        "strike_signin_hint_android": "Strike's sign-in page could not finish its security check. Give the page a few seconds to load before pressing Next, then try again.",
         "title": "Add a Lightning Wallet",
         "intro": "Pick a provider to power Lightning send/receive. Custodial accounts hold your bitcoin with a third party, while non-custodial wallets let you have full control over your keys and funds.",
         "non_custodial_header": "NON-CUSTODIAL  ·  LIGHTNING-ENABLED",
