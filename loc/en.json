@@ -1554,7 +1554,14 @@
         "slide_to_send": "Slide to Send",
         "send": "Send",
         "verify_address": "Verify Address",
-        "scan_hardware_to_confirm": "Scan it with your hardware wallet, or compare it with Hot Vault → Show Addresses on your offline phone"
+        "scan_hardware_to_confirm": "Scan it with your hardware wallet, or compare it with Hot Vault → Show Addresses on your offline phone",
+        "coinos_refused_title": "CoinOS did not send this withdrawal",
+        "coinos_refused_action": "Nothing left your CoinOS account. Check the amount and address, then try again.",
+        "coinos_hold_partial": "CoinOS is holding {held} sats that arrived over Lightning. {free} sats can go on-chain now. The rest can wait, or go out over Lightning today.",
+        "coinos_hold_nothing_free": "CoinOS is holding {held} sats that arrived over Lightning. Nothing can go on-chain until the hold ends. You can still send over Lightning.",
+        "coinos_hold_unknown_balance": "CoinOS is holding {held} sats that arrived over Lightning. Part of your balance can go on-chain now. Lower the amount and try again, or send over Lightning.",
+        "coinos_withdraw_capped_button": "Withdraw {amount} sats instead",
+        "coinos_outcome_unknown_title": "This withdrawal may already be on its way"
       },
       "review_withdrawal": {
         "title": "Review withdrawal",
