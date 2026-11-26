@@ -1559,13 +1559,6 @@
         "verify_address": "Verify Address",
         "scan_hardware_to_confirm": "Scan it with your hardware wallet, or compare it with Hot Vault → Show Addresses on your offline phone"
       },
-      "review_withdrawal": {
-        "title": "Review withdrawal",
-        "duplicate_withdrawal": "This withdrawal already went out a moment ago. Check your history rather than sending again.",
-        "withdrawal_indeterminate": "This withdrawal may already have been sent. Check your history before trying again.",
-        "withdrawn_amount": "Withdrawn amount:",
-        "edit_amount": "Edit amount"
-      },
       "fee_selection": {
         "fee_rates_loading": "Fee rates are still loading. If this does not clear, check your connection and try again."
       },
@@ -2574,14 +2567,6 @@
         "seed_para_2": "Then wipe the seed from this phone. To sign, scan the SeedQR: the seed is only held while you sign.",
         "seed_para_3": "Keep this phone offline for good. If it ever connects to the internet, treat this seed as a hot wallet and plan to move your coins to a new seed.",
         "generate_seed": "Generate Seed"
-      },
-      "withdraw_to_savings_vault": {
-        "title": "Coin Withdrawal",
-        "lightning_account": "Lightning Account",
-        "savings_vault": "Savings Vault",
-        "bitcoin_network": "Bitcoin Network",
-        "explanation": "The full pink bar represents the funds accumulated inside the Lightning Account. By clicking ‘Withdraw’ it will convert most of the funds into a real verifiable bitcoin ‘capsule’ (also known as a UTXO) filling one of the five slots in your Hot Vault, and leaving a small amount as pocket money for quick spending (Reserve Amount).",
-        "next": "Next"
       },
       "capsule_catalog": {
         "title": "Capsule Cheat Sheet",
