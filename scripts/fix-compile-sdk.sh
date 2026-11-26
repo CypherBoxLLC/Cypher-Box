@@ -111,6 +111,25 @@ if [ -f "$WEBVIEW_KT" ] && grep -q "webView.loadUrl(args.getString(0))" "$WEBVIE
   echo "  Fixed react-native-webview: loadUrl(getString(0)) -> getString(0)!! (RN 0.77 nullable)"
 fi
 
+# react-native 0.77.3 codegen hidden-folder skip bug: findFilesWithExtension in
+# scripts/codegen/generate-artifacts-executor.js skips any absolute path that
+# CONTAINS "/." . The comment says "hidden folders", but the test matches ANY
+# ancestor directory whose name starts with ".". When the project is built from
+# a checkout nested under such a dot-prefixed directory, the fallback component
+# source-scan finds zero .mm files, so the six libraries WITHOUT
+# codegenConfig.ios.componentProvider (webview, blur, camera-kit, lottie,
+# safe-area-context, pager-view) register no Fabric component:
+# RCTThirdPartyComponentsProvider.mm drops 9 entries (43 vs 52) and those views
+# render blank on the New Architecture (e.g. a blank WebView). Fix to the
+# comment's real intent: skip only entries whose OWN name starts with ".".
+# Identical behavior on dot-free paths (normal checkouts, CI,
+# Android). Idempotent: the grep guard stops matching once the line is rewritten.
+RN_CODEGEN="node_modules/react-native/scripts/codegen/generate-artifacts-executor.js"
+if [ -f "$RN_CODEGEN" ] && grep -qF 'absolutePath.includes(`${path.sep}.`)' "$RN_CODEGEN"; then
+  sedi 's|absolutePath\.includes(`${path\.sep}\.`)|file.startsWith('\''.'\'')|' "$RN_CODEGEN"
+  echo "  Fixed react-native codegen: hidden-folder skip is now name-based (restores Fabric components under dot-prefixed paths)"
+fi
+
 # react-native-modal 13.0.1 (latest published; unmaintained) on RN 0.77: modal.js
 # componentWillUnmount calls BackHandler.removeEventListener (REMOVED in RN 0.77) ->
 # "TypeError: undefined is not a function" the instant any <Modal>/<BottomModal> closes,
