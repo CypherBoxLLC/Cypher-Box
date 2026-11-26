@@ -35,7 +35,9 @@ interface Props {
  * typing them would.
  */
 export interface BackupCheck {
-    walletID: string;
+    // The backup handle the check belongs to (service suffix), used to render the
+    // check under its row. Not the walletID: a new backup's handle is random.
+    ref: string;
     fingerprint: string;
     firstAddress: string;
     status: 'checking' | 'done' | 'failed';
@@ -89,7 +91,8 @@ export default function RecoverSavingVault({ route }: Props) {
     // The one backup checked so far, shown under its row until it's restored or closed.
     const [check, setCheck] = useState<BackupCheck | null>(null);
     // Its 12 words, kept in memory only while its check is open, for "Restore this vault".
-    const checkedWords = useRef<{ walletID: string; mnemonic: string } | null>(null);
+    // `ref` matches the backup's row; `walletID` is the real id from the gated read.
+    const checkedWords = useRef<{ ref: string; walletID: string; mnemonic: string } | null>(null);
     // Bumped whenever a check is closed or replaced, so a balance that arrives late is dropped.
     const checkRun = useRef(0);
     // Optional BIP39 passphrase for manual recovery. Toggle-gated exactly
@@ -187,6 +190,7 @@ export default function RecoverSavingVault({ route }: Props) {
         mnemonic: string,
         restoredWalletID?: string,
         passphrase?: string,
+        restoredRef?: string,
     ) => {
         if (importing.current) return;
         const w = new HDSegwitBech32Wallet();
@@ -218,7 +222,9 @@ export default function RecoverSavingVault({ route }: Props) {
         // that keychain entry.
         setWalletID(id);
         if (restoredWalletID && restoredWalletID === id) {
-            setHotVaultKeychainBackup(id, true);
+            // Re-point the store hint at this backup's handle so Settings can
+            // target the randomized Keychain service for a later remove.
+            setHotVaultKeychainBackup(id, true, restoredRef);
         }
         triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
         saveWallet(w); // flips importing.current + persists via BlueStorage
@@ -273,11 +279,11 @@ export default function RecoverSavingVault({ route }: Props) {
     // No `knownMeta` parameter by design: this flow must not be able to read
     // the sidecar's passphrase state, because acting on it is what leaked the
     // existence of a hidden wallet. The words are all it needs.
-    const handleKeychainCheck = async (walletID: string) => {
+    const handleKeychainCheck = async (ref: string) => {
         if (unlockingID || loading || pendingDeleteID) return;
         closeCheck();
-        setUnlockingID(walletID);
-        const result = await getHotVaultSeedFromKeychain(walletID);
+        setUnlockingID(ref);
+        const result = await getHotVaultSeedFromKeychain(ref);
 
         if (!result.ok) {
             setUnlockingID(null);
@@ -285,7 +291,7 @@ export default function RecoverSavingVault({ route }: Props) {
                 // Race: entry vanished between enumeration and read. Drop it
                 // from the on-screen list and let the user retry manually.
                 setKeychainBackups(prev =>
-                    prev.filter(s => s.walletID !== walletID),
+                    prev.filter(s => s.ref !== ref),
                 );
                 Alert.alert(
                     loc.cypherbox.vault.recover_saving_vault.backup_not_found_title,
@@ -344,17 +350,17 @@ export default function RecoverSavingVault({ route }: Props) {
             console.warn('[HotVault] Keychain backup check could not read the vault:', e);
         }
         const run = ++checkRun.current;
-        checkedWords.current = { walletID, mnemonic: result.mnemonic };
-        setCheck({ walletID, fingerprint, firstAddress, status: 'checking', balance: null, used: null });
+        checkedWords.current = { ref, walletID: result.walletID, mnemonic: result.mnemonic };
+        setCheck({ ref, fingerprint, firstAddress, status: 'checking', balance: null, used: null });
         setUnlockingID(null);
         try {
             const { balance, used } = await withTimeout(scanBackupBalance(wallet), BACKUP_CHECK_TIMEOUT_MS);
             if (checkRun.current !== run) return;
-            setCheck(prev => (prev && prev.walletID === walletID ? { ...prev, status: 'done', balance, used } : prev));
+            setCheck(prev => (prev && prev.ref === ref ? { ...prev, status: 'done', balance, used } : prev));
         } catch (e) {
             if (checkRun.current !== run) return;
             console.warn('[HotVault] Keychain backup balance check failed:', e);
-            setCheck(prev => (prev && prev.walletID === walletID ? { ...prev, status: 'failed' } : prev));
+            setCheck(prev => (prev && prev.ref === ref ? { ...prev, status: 'failed' } : prev));
         }
     };
 
@@ -369,7 +375,7 @@ export default function RecoverSavingVault({ route }: Props) {
         if (!checked || importing.current) return;
         checkRun.current += 1;
         checkedWords.current = null;
-        fastImportHotVault(checked.mnemonic, checked.walletID);
+        fastImportHotVault(checked.mnemonic, checked.walletID, undefined, checked.ref);
     };
 
     /**
@@ -396,21 +402,21 @@ export default function RecoverSavingVault({ route }: Props) {
                     text: loc.cypherbox.vault.recover_saving_vault.remove,
                     style: 'destructive',
                     onPress: async () => {
-                        setPendingDeleteID(summary.walletID);
+                        setPendingDeleteID(summary.ref);
                         const ok = await resetHotVaultBackupFully(
-                            summary.walletID,
+                            summary.ref,
                         );
                         setPendingDeleteID(null);
                         if (ok) {
                             triggerHapticFeedback(
                                 HapticFeedbackTypes.NotificationSuccess,
                             );
-                            if (checkedWords.current?.walletID === summary.walletID) {
+                            if (checkedWords.current?.ref === summary.ref) {
                                 closeCheck();
                             }
                             setKeychainBackups(prev =>
                                 prev.filter(
-                                    s => s.walletID !== summary.walletID,
+                                    s => s.ref !== summary.ref,
                                 ),
                             );
                         } else {
@@ -459,8 +465,8 @@ export default function RecoverSavingVault({ route }: Props) {
      * receive address and balance, then "Restore this vault" or Close. The
      * restore doesn't wait for the balance.
      */
-    const renderBackupCheck = (walletID: string) => {
-        if (!check || check.walletID !== walletID) return null;
+    const renderBackupCheck = (ref: string) => {
+        if (!check || check.ref !== ref) return null;
         let balanceLine: string;
         if (check.status === 'checking') {
             balanceLine = loc.cypherbox.vault.recover_saving_vault.check_balance_checking;
@@ -569,23 +575,23 @@ export default function RecoverSavingVault({ route }: Props) {
                 </Text>
 
                 {keychainBackups.map(summary => {
-                    const { walletID, meta } = summary;
-                    const isDeleting = pendingDeleteID === walletID;
-                    const isUnlocking = unlockingID === walletID;
+                    const { ref, meta } = summary;
+                    const isDeleting = pendingDeleteID === ref;
+                    const isUnlocking = unlockingID === ref;
                     // One backup at a time: while any unlock or removal runs, every other row waits.
                     const isBlocked = loading || (!!unlockingID && !isUnlocking) || (!!pendingDeleteID && !isDeleting);
-                    const isChecked = check?.walletID === walletID;
+                    const isChecked = check?.ref === ref;
 
                     if (isSingle) {
                         // Single-backup case keeps the original big-green-button
                         // shape — no date/ID clutter needed since there's only
                         // one thing to do. Its check opens under the button.
                         return (
-                            <View key={walletID}>
+                            <View key={ref}>
                                 {isChecked ? null : (
                                     <TouchableOpacity
                                         style={styles.keychainButton}
-                                        onPress={() => handleKeychainCheck(walletID)}
+                                        onPress={() => handleKeychainCheck(ref)}
                                         disabled={isBlocked || isUnlocking}
                                         activeOpacity={0.8}
                                         testID="keychainBackupRow"
@@ -599,7 +605,7 @@ export default function RecoverSavingVault({ route }: Props) {
                                         )}
                                     </TouchableOpacity>
                                 )}
-                                {renderBackupCheck(walletID)}
+                                {renderBackupCheck(ref)}
                             </View>
                         );
                     }
@@ -608,11 +614,11 @@ export default function RecoverSavingVault({ route }: Props) {
                     // Remove button beside it has its own onPress, so a tap on
                     // it never also fires the check underneath.
                     return (
-                        <View key={walletID}>
+                        <View key={ref}>
                             <View style={[styles.keychainRowWrap, isBlocked && styles.keychainRowWaiting]}>
                                 <TouchableOpacity
                                     style={[styles.keychainRow, isChecked && styles.keychainRowChecked]}
-                                    onPress={() => (isChecked ? closeCheck() : handleKeychainCheck(walletID))}
+                                    onPress={() => (isChecked ? closeCheck() : handleKeychainCheck(ref))}
                                     disabled={isBlocked || isUnlocking || isDeleting}
                                     activeOpacity={0.8}
                                     testID="keychainBackupRow"
@@ -621,9 +627,13 @@ export default function RecoverSavingVault({ route }: Props) {
                                         <Text style={styles.keychainRowDate}>
                                             {formatBackupDate(meta?.createdAt)}
                                         </Text>
-                                        <Text style={styles.keychainRowId}>
-                                            {loc.formatString(loc.cypherbox.vault.recover_saving_vault.vault_id, { id: walletID.slice(0, 12) })}
-                                        </Text>
+                                        {/* A legacy handle is the walletID (64-hex getID), shown as the vault id.
+                                            A new backup's handle is a random 32-hex value, not an id, so no line. */}
+                                        {ref.length === 64 ? (
+                                            <Text style={styles.keychainRowId}>
+                                                {loc.formatString(loc.cypherbox.vault.recover_saving_vault.vault_id, { id: ref.slice(0, 12) })}
+                                            </Text>
+                                        ) : null}
                                     </View>
                                     {isUnlocking ? (
                                         <ActivityIndicator color={colors.white} />
@@ -654,7 +664,7 @@ export default function RecoverSavingVault({ route }: Props) {
                                     )}
                                 </TouchableOpacity>
                             </View>
-                            {renderBackupCheck(walletID)}
+                            {renderBackupCheck(ref)}
                         </View>
                     );
                 })}
