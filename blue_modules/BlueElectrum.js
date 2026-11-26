@@ -7,8 +7,9 @@ import { isConnectionLostError } from '../src/helpers/broadcastOutcome';
 import WidgetCommunication from './WidgetCommunication';
 import alert from '../components/Alert';
 const bitcoin = require('bitcoinjs-lib');
-// electrum-client, with every request settling: see GuardedElectrumClient.js
+// electrum-client, with every request settling and the server's certificate checked: see GuardedElectrumClient.js
 const ElectrumClient = require('./GuardedElectrumClient');
+const { isCertificateError, ElectrumCertificateError } = require('./electrumCertificate');
 const reverse = require('buffer-reverse');
 const BigNumber = require('bignumber.js');
 
@@ -48,15 +49,33 @@ async function _getRealm() {
 }
 
 const storageKey = 'ELECTRUM_PEERS';
-const defaultPeer = { host: 'electrum1.bluewallet.io', ssl: '443' };
+// The built-in servers. Each connection checks the server's certificate (GuardedElectrumClient), so every one here has a
+// certificate from a public authority issued for the exact name dialed. Checked on 2026-11-26 from a Mac with
+//   openssl s_client -connect HOST:PORT -servername HOST -verify_hostname HOST </dev/null
+// Dropped at that check: bitcoin.lukechilds.co and electrum.bitaroo.net (self-signed), electrum.jochen-hoenicke.de and
+// electrum1.bluewallet.io (refused connections, as did electrum2 and electrum3 there). mainnet.foundationdevices.com
+// answers with a certificate for mainnet-0.foundation.xyz only, so that is the name dialed now. Old names a user may
+// have saved are moved over: renamedHosts.
+const defaultPeer = { host: 'electrum.acinq.co', ssl: '50002' };
 const hardcodedPeers = [
-  { host: 'mainnet.foundationdevices.com', ssl: '50002' },
-  { host: 'bitcoin.lukechilds.co', ssl: '50002' },
-  { host: 'electrum.jochen-hoenicke.de', ssl: '50006' },
-  { host: 'electrum1.bluewallet.io', ssl: '443' },
+  { host: 'mainnet-0.foundation.xyz', ssl: '50002' },
   { host: 'electrum.acinq.co', ssl: '50002' },
-  { host: 'electrum.bitaroo.net', ssl: '50002' },
+  { host: 'electrum.blockstream.info', ssl: '50002' },
 ];
+
+// Hosts that used to be built in. Same servers, but their certificates are issued for the new names only (BlueWallet's
+// is issued for electrum2.bluewallet.io alone; it isn't built in here because it couldn't be reached at the check).
+const renamedHosts = {
+  'mainnet.foundationdevices.com': 'mainnet-0.foundation.xyz',
+  'electrum1.bluewallet.io': 'electrum2.bluewallet.io',
+  'electrum3.bluewallet.io': 'electrum2.bluewallet.io',
+};
+
+/** The name to dial for a host: the new name of a renamed built-in server, any other host as given. */
+function canonicalHost(host) {
+  if (!host) return host;
+  return renamedHosts[host.trim().toLowerCase()] || host;
+}
 
 /** @type {ElectrumClient} */
 let mainClient;
@@ -100,7 +119,8 @@ async function connectMain() {
   }
   let usingPeer = await getNextPeer();
   const savedPeer = await getSavedPeer();
-  if (savedPeer && savedPeer.host && (savedPeer.tcp || savedPeer.ssl)) {
+  const usingSaved = !!(savedPeer && savedPeer.host && (savedPeer.tcp || savedPeer.ssl));
+  if (usingSaved) {
     usingPeer = savedPeer;
   }
   lastPeer = usingPeer;
@@ -124,6 +144,8 @@ async function connectMain() {
     console.log(e);
   }
 
+  // the server answered but its certificate was refused (GuardedElectrumClient), so nothing was sent to it
+  let certificateRefused = false;
   try {
     console.log('begin connection:', JSON.stringify(usingPeer));
     mainClient = new ElectrumClient(global.net, global.tls, usingPeer.ssl || usingPeer.tcp, usingPeer.host, usingPeer.ssl ? 'tls' : 'tcp');
@@ -179,6 +201,7 @@ async function connectMain() {
     }
   } catch (e) {
     mainConnected = false;
+    certificateRefused = !!usingPeer.ssl && isCertificateError(e);
     console.log('bad connection:', JSON.stringify(usingPeer), e);
   }
 
@@ -186,8 +209,12 @@ async function connectMain() {
     console.log('retry');
     connectionAttempt = connectionAttempt + 1;
     mainClient.close && mainClient.close();
-    if (connectionAttempt >= 5) {
-      presentNetworkErrorAlert(usingPeer);
+    if (certificateRefused && usingSaved) {
+      // the saved server shows the same certificate on every try, so retrying can't help: only the user can act (switch
+      // it to its TCP port, give it a proper certificate, or go back to the built-in servers)
+      presentNetworkErrorAlert(usingPeer, true);
+    } else if (connectionAttempt >= 5) {
+      presentNetworkErrorAlert(usingPeer, certificateRefused);
     } else {
       console.log('reconnection attempt #', connectionAttempt);
       await new Promise(resolve => setTimeout(resolve, 500)); // sleep
@@ -205,7 +232,13 @@ function isSigningPhone() {
   }
 }
 
-async function presentNetworkErrorAlert(usingPeer) {
+/**
+ * @param usingPeer the server the last attempt dialed, if any
+ * @param certificateRefused whether that attempt failed on the server's certificate rather than on reaching it: a
+ *   built-in server's is then someone on the network posing as it (or a certificate gone bad, which the user can't fix);
+ *   a saved server's is the user's own server to put right, or to leave
+ */
+async function presentNetworkErrorAlert(usingPeer, certificateRefused = false) {
   if (await isDisabled()) {
     console.log(
       'Electrum connection disabled by user. Perhaps we are attempting to show this network error alert after the user disabled connections.',
@@ -218,12 +251,17 @@ async function presentNetworkErrorAlert(usingPeer) {
     connectionAttempt = 0;
     return;
   }
+  const server = usingPeer ? { server: `${usingPeer.host}:${usingPeer.ssl || usingPeer.tcp}` } : {};
+  let title = loc.errors.network;
+  let message = loc.formatString(usingPeer ? loc.settings.electrum_unable_to_connect : loc.settings.electrum_error_connect, server);
+  if (certificateRefused && usingPeer) {
+    const builtIn = hardcodedPeers.some(peer => peer.host === usingPeer.host && peer.ssl === usingPeer.ssl);
+    title = loc.settings.electrum_cert_refused_title;
+    message = loc.formatString(builtIn ? loc.settings.electrum_cert_refused_default : loc.settings.electrum_cert_refused_saved, server);
+  }
   Alert.alert(
-    loc.errors.network,
-    loc.formatString(
-      usingPeer ? loc.settings.electrum_unable_to_connect : loc.settings.electrum_error_connect,
-      usingPeer ? { server: `${usingPeer.host}:${usingPeer.ssl ?? usingPeer.tcp}` } : {},
-    ),
+    title,
+    message,
     [
       {
         text: loc.wallets.list_tryagain,
@@ -300,14 +338,21 @@ async function getCurrentPeer() {
 async function getNextPeer() {
   const peer = getCurrentPeer();
   currentPeerIndex++;
-  if (currentPeerIndex + 1 >= hardcodedPeers.length) currentPeerIndex = 0;
+  // past the last one, start over (it used to skip the last server: with fewer servers now, each one counts)
+  if (currentPeerIndex >= hardcodedPeers.length) currentPeerIndex = 0;
   return peer;
 }
 
 async function getSavedPeer() {
-  const host = await AsyncStorage.getItem(ELECTRUM_HOST);
+  let host = await AsyncStorage.getItem(ELECTRUM_HOST);
   const port = await AsyncStorage.getItem(ELECTRUM_TCP_PORT);
   const sslPort = await AsyncStorage.getItem(ELECTRUM_SSL_PORT);
+  // a built-in server saved under its old name is moved to the name its certificate is issued for, for good
+  const renamed = canonicalHost(host);
+  if (host && renamed !== host) {
+    host = renamed;
+    await AsyncStorage.setItem(ELECTRUM_HOST, host);
+  }
   return { host, tcp: port, ssl: sslPort };
 }
 
@@ -1113,12 +1158,15 @@ module.exports.calculateBlockTime = function (height) {
  * @param tcpPort
  * @param sslPort
  * @returns {Promise<boolean>} Whether provided host:port is a valid electrum server
+ * @throws {ElectrumCertificateError} when the server answered but its certificate was refused (GuardedElectrumClient):
+ *   unlike a server that's down, that is for the user to put right, so the caller tells them apart
  */
 module.exports.testConnection = async function (host, tcpPort, sslPort) {
   const client = new ElectrumClient(global.net, global.tls, sslPort || tcpPort, host, sslPort ? 'tls' : 'tcp');
 
   client.onError = () => { }; // mute
   let timeoutId = false;
+  let certificateRefused = null;
   try {
     const rez = await Promise.race([
       new Promise(resolve => {
@@ -1131,7 +1179,8 @@ module.exports.testConnection = async function (host, tcpPort, sslPort) {
     await client.server_version('2.7.11', '1.4');
     await client.server_ping();
     return true;
-  } catch (_) {
+  } catch (e) {
+    if (sslPort && isCertificateError(e)) certificateRefused = e;
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
     // close() ends the socket and then destroys it, and on Android each of those removes the native socket: the second
@@ -1141,6 +1190,7 @@ module.exports.testConnection = async function (host, tcpPort, sslPort) {
     client.close();
   }
 
+  if (certificateRefused) throw new ElectrumCertificateError(host, sslPort, certificateRefused);
   return false;
 };
 
@@ -1185,6 +1235,9 @@ module.exports.serverAnswers = async function () {
 };
 
 module.exports.forceDisconnect = () => {
+  // nothing is connected after this: with the flag left on, the first socket error of the next connection (a server that
+  // refuses, say) would start a reconnect loop of its own on top of connectMain's retries
+  mainConnected = false;
   mainClient.close();
 };
 
@@ -1199,8 +1252,10 @@ module.exports.connectMain = connectMain;
 module.exports.isDisabled = isDisabled;
 module.exports.setDisabled = setDisabled;
 module.exports.hardcodedPeers = hardcodedPeers;
+module.exports.canonicalHost = canonicalHost;
+module.exports.ElectrumCertificateError = ElectrumCertificateError;
 // the public servers the app picks by itself; any other server is one the user typed in, their own node
-module.exports.isPublicServer = host => hardcodedPeers.some(peer => peer.host === host);
+module.exports.isPublicServer = host => hardcodedPeers.some(peer => peer.host === canonicalHost(host));
 module.exports.ELECTRUM_HOST = ELECTRUM_HOST;
 module.exports.ELECTRUM_TCP_PORT = ELECTRUM_TCP_PORT;
 module.exports.ELECTRUM_SSL_PORT = ELECTRUM_SSL_PORT;

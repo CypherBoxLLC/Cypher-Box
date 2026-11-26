@@ -181,6 +181,31 @@ if [ -f "$RNPUSH" ] && ! grep -q "canScheduleExactAlarms" "$RNPUSH"; then
   echo "  Fixed react-native-push-notification: exact-alarm SecurityException (targetSdk 35) -> inexact fallback"
 fi
 
+# react-native-tcp-socket 5.6.2, Android: a TLS socket that checks the certificate
+# (tlsCheckValidity on, the default) checks only that the chain leads to an
+# authority the phone trusts, not who the certificate was issued to, so a valid
+# certificate for ANY other name passes. Electrum connections rely on this check
+# against someone posing as the server (blue_modules/GuardedElectrumClient.js),
+# and a certificate for some other name is free to get. Turn on hostname
+# verification (the certificate's names against the host dialed, as a browser
+# does) before the handshake; skipped with a custom CA (tlsCert), as upstream
+# does in 6.4.3. iOS checks the name already (kCFStreamSSLPeerName).
+# SSLParameters.setEndpointIdentificationAlgorithm needs API 24, our minSdk.
+# Idempotent: guarded on the one-line startHandshake call that the rewrite replaces.
+TCPSOCKET_JAVA="node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java"
+if [ -f "$TCPSOCKET_JAVA" ] && ! grep -q 'setEndpointIdentificationAlgorithm("HTTPS")' "$TCPSOCKET_JAVA"; then
+  if grep -q 'if (isTls) ((SSLSocket) socket)\.startHandshake();' "$TCPSOCKET_JAVA"; then
+    sedi 's|if (isTls) ((SSLSocket) socket)\.startHandshake();|if (isTls) { final SSLSocket sslSocket = (SSLSocket) socket; if (!options.hasKey("tlsCert") \&\& (!options.hasKey("tlsCheckValidity") \|\| options.getBoolean("tlsCheckValidity"))) { final javax.net.ssl.SSLParameters sslParameters = sslSocket.getSSLParameters(); sslParameters.setEndpointIdentificationAlgorithm("HTTPS"); sslSocket.setSSLParameters(sslParameters); } sslSocket.startHandshake(); }|' "$TCPSOCKET_JAVA"
+    if grep -q 'setEndpointIdentificationAlgorithm("HTTPS")' "$TCPSOCKET_JAVA"; then
+      echo "  Fixed react-native-tcp-socket: TLS hostname verification on Android"
+    else
+      echo "  WARN: react-native-tcp-socket TLS hostname verification did NOT apply; inspect $TCPSOCKET_JAVA"
+    fi
+  else
+    echo "  WARN: react-native-tcp-socket TcpSocketClient.java has no startHandshake line to patch; TLS hostname verification on Android is missing"
+  fi
+fi
+
 # react-native 0.77.3 Fabric leak-tolerance patch: the upstream
 # RCTAssert(view.superview == nil) in RCTComponentViewRegistry hard-crashes
 # with SIGABRT when any paper-only third-party native view manager attaches
