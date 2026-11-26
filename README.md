@@ -74,7 +74,7 @@ Self-custodial: you can exit to the chain without the server's permission.
 
 ## 📴 Offline Seed-Signer - the top rung
 
-* Turns a dedicated phone that stays offline (an old phone, or a Pixel with GrapheneOS) into a cold signer for a watch-only wallet: a Cypher Box Cold Vault, Sparrow or another app
+* Turns a dedicated phone that stays offline (an old phone you no longer use) into a cold signer for a watch-only wallet: a Cypher Box Cold Vault, Sparrow or another app
 * **Stateless**: the seed is never written to the phone. You back it up on paper or steel and as a **SeedQR**, and scan the SeedQR each time you sign, so the seed is in memory only for that signature. Wipe Seed removes any seed saved before and confirms it's gone
 * **Dice seeds you can check**: from 50 rolls of a six-sided die, the seed comes from your rolls alone (the SeedSigner and COLDCARD method), so [EntropyLab](https://entropylab.online) or Ian Coleman's BIP39 tool make the same 12 words from the same rolls. 77 rolls or more are recommended; with fewer, the rolls are mixed with the phone's randomness
 * **Multisig co-signer**: the signer can be one key of a native SegWit multisig, tested with **Sparrow** and **Nunchuk** as the coordinator. Register the wallet file on the signer, check each key's fingerprint and the receive addresses, then sign

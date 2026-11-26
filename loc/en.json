@@ -1103,7 +1103,7 @@
         "strike_region_notice": "Strike is not available in Cypher Box in your region. If Strike serves your country, you can use the Strike app directly, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address.",
         "coinos_region_notice": "CoinOS is not available in your region. You can use it directly at coinos.io, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address.",
         "cold_signing_header": "COLD SIGNING  ·  OFFLINE PHONE",
-        "cold_signing_subtitle": "Turn an isolated phone that stays offline (a Pixel is recommended) into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign."
+        "cold_signing_subtitle": "Turn an isolated phone that stays offline (an old phone you no longer use) into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign."
       },
       "checking_intro": {
         "title": "Lightning Account",
@@ -2190,6 +2190,7 @@
         "drive_connected": "Google Drive connected.",
         "drive_connect_failed": "Drive connect failed",
         "drive_connect_failed_detail": "Drive connect failed{code}: {msg}",
+        "needs_play_services": "Needs Google Play services",
         "drive_disconnect_title": "Disconnect Google Drive?",
         "drive_disconnect_message": "Your existing backup file will stay in Drive. Disconnecting only stops future uploads. You can reconnect any time.",
         "disconnect": "Disconnect",
@@ -3191,7 +3192,9 @@
         "quota": "Google Drive rejected the upload (quota or permission). Save the backup file manually instead.",
         "server": "Google Drive is having issues right now. Retry in a moment, or save the backup file manually.",
         "unknown": "Google Drive backup failed. Save the backup file manually below.",
-        "access_expired": "Google Drive access has expired. Reconnect Google Drive and try again."
+        "access_expired": "Google Drive access has expired. Reconnect Google Drive and try again.",
+        "no_play_services": "Google Drive needs Google Play services, which this phone does not have. Save the backup to a folder instead.",
+        "no_play_services_restore": "Google Drive needs Google Play services, which this phone does not have. Restore from a backup file or from your 12 words instead."
       },
       "saf_backup": {
         "permission_revoked": "Cypher Box no longer has permission to write to your chosen backup folder. Tap 'Pick folder' to re-grant access.",
@@ -3443,7 +3446,7 @@
         "lead": "Signs for a watch & broadcast only wallet that has this seed's public key: a Cypher Box Cold Vault, Sparrow or another app. You'll see what a transaction does before anything is signed."
       },
       "gate": {
-        "body": "Turns an isolated phone that stays offline (a Pixel is recommended) into a cold signing device for a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in to sign.",
+        "body": "Turns an isolated phone that stays offline (an old phone you no longer use) into a cold signing device for a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in to sign.",
         "one_way": "There's no way back. Once it's on, this app is a seed-signer and nothing else, every time it opens. To use Cypher Box as a normal wallet again, you'll have to delete it and install it fresh.",
         "before_title": "Before you turn it on",
         "dedicated": "• Use a dedicated phone: factory-reset it and install nothing else.",

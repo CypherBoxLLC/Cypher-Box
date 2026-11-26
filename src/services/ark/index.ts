@@ -106,6 +106,7 @@ export type { VerifiedBackupResult, VerifiedBackupDriveOutcome } from './backup'
 
 export {
     configureGoogleDrive,
+    isGoogleDriveAvailable,
     isGoogleDriveConnected,
     connectGoogleDrive,
     disconnectGoogleDrive,
