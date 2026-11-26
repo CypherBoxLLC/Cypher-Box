@@ -1,5 +1,7 @@
 import Lnurl from '../../class/lnurl';
+import { LightningCustodianWallet } from '../../class';
 const assert = require('assert');
+const bolt11 = require('bolt11');
 
 describe('LNURL', function () {
   it('can findlnurl', () => {
@@ -206,6 +208,33 @@ describe('LNURL', function () {
     const preimage = 'bf62911aa53c017c27ba34391f694bc8bf8aaf59b4ebfd9020e66ac0412e189b';
 
     assert.strictEqual(Lnurl.decipherAES(ciphertext, preimage, iv), '1234');
+  });
+});
+
+describe('invoice with two payment-hash tags', function () {
+  // signed by its issuer, with p = 11..11 first and p = 22..22 second; BOLT 11 payers use the first
+  const invoice =
+    'lnbc10u1pj48ugqpp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5yg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3qdq9v36hqxqrrsscqpf3jedlxz9662te9znrjf4vu42nc5xeqahmvsam2hlq3a54crn4dyz267ajcsee7g6w78jltzxmurn8ckgtkvqs7rx7l3zlqesalj9l8spj06jea';
+  const first = '11'.repeat(32);
+  const second = '22'.repeat(32);
+
+  it('is really carrying two different payment hashes', () => {
+    const hashes = bolt11
+      .decode(invoice)
+      .tags.filter(t => t.tagName === 'payment_hash')
+      .map(t => t.data);
+    assert.deepStrictEqual(hashes, [first, second]);
+  });
+
+  it('bolt11 itself reports the first one, and the tags array keeps it first (what the Ark services read)', () => {
+    const decoded = bolt11.decode(invoice);
+    assert.strictEqual(decoded.tagsObject.payment_hash, first);
+    assert.strictEqual(decoded.tags.find(t => t.tagName === 'payment_hash').data, first);
+  });
+
+  it('our own decodeInvoice loops keep the first one too', () => {
+    assert.strictEqual(new Lnurl('').decodeInvoice(invoice).payment_hash, first);
+    assert.strictEqual(new LightningCustodianWallet().decodeInvoice(invoice).payment_hash, first);
   });
 });
 

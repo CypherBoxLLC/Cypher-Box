@@ -2,6 +2,7 @@ import { Alert } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
 import { SIGN_VAULT_MISMATCH, assertKeyOwns, parseUnsignedPsbt, signingKeyForWallet } from "@Cypher/helpers";
+import { unwrapAntiExfilCommit } from "@Cypher/helpers/antiExfilSigner";
 import loc from "../../../loc";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
 import { afterSigningGuide, startSigning } from "../SignOnce/start";
@@ -20,8 +21,10 @@ export default function useSignTransaction(wallet: any) {
 
     const open = (data: string) => {
         try {
+            // a Cold Vault's verified-signing request carries the transaction; the check runs on that
+            const { psbt } = unwrapAntiExfilCommit(data);
             // by fingerprint, or by public key for a Cold Vault set up from this vault's bare xpub (it writes 00000000)
-            assertKeyOwns(parseUnsignedPsbt(data), signingKeyForWallet(wallet), SIGN_VAULT_MISMATCH);
+            assertKeyOwns(parseUnsignedPsbt(psbt), signingKeyForWallet(wallet), SIGN_VAULT_MISMATCH);
         } catch (e: any) {
             Alert.alert(loc.errors.error, signErrorText(e.message));
             return;

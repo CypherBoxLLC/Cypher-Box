@@ -232,6 +232,15 @@ function isSigningPhone() {
   }
 }
 
+// No wallet in the app's storage. Required when asked: BlueApp loads this module, so it can't be loaded from the top.
+function hasNoWallets() {
+  try {
+    return require('../BlueApp').getWallets().length === 0;
+  } catch (_) {
+    return false;
+  }
+}
+
 /**
  * @param usingPeer the server the last attempt dialed, if any
  * @param certificateRefused whether that attempt failed on the server's certificate rather than on reaching it: a
@@ -249,6 +258,15 @@ async function presentNetworkErrorAlert(usingPeer, certificateRefused = false) {
     // a phone kept offline to sign with isn't meant to reach the server, so there's nothing to fix; as Cancel would
     console.log('Signing mode: not showing the network error alert');
     connectionAttempt = 0;
+    return;
+  }
+  if (hasNoWallets()) {
+    // nothing here needs the server yet: a fresh install still on the Terms, the seed-signer gate (which asks for the
+    // phone to be offline), or wallets not loaded yet; no alert over those screens, a look again in a while, and the
+    // alert once there is a wallet to serve
+    console.log('No wallets: not showing the network error alert');
+    connectionAttempt = 0;
+    setTimeout(connectMain, 15000);
     return;
   }
   const server = usingPeer ? { server: `${usingPeer.host}:${usingPeer.ssl || usingPeer.tcp}` } : {};
@@ -1249,6 +1267,7 @@ module.exports.setBatchingEnabled = () => {
   disableBatching = false;
 };
 module.exports.connectMain = connectMain;
+module.exports.presentNetworkErrorAlert = presentNetworkErrorAlert; // for tests
 module.exports.isDisabled = isDisabled;
 module.exports.setDisabled = setDisabled;
 module.exports.hardcodedPeers = hardcodedPeers;

@@ -14,6 +14,12 @@ import {
   SIGN_UNSUPPORTED_MULTISIG,
   SIGN_VAULT_MISMATCH,
 } from '@Cypher/helpers';
+import {
+  ANTI_EXFIL_CANNOT_SIGN,
+  ANTI_EXFIL_DAMAGED,
+  ANTI_EXFIL_NEWER_VERSION,
+  ANTI_EXFIL_WRONG_REPLY,
+} from '@Cypher/helpers/antiExfilSigner';
 import loc from '../../../loc';
 import { safetyMessageText } from '../../helpers/safetyErrorText';
 
@@ -38,8 +44,14 @@ export default function signErrorText(message: string): string {
     [SIGN_MULTISIG_HOT_VAULT]: errors.multisig_hot_vault,
     [SIGN_INPUT_DETAILS]: errors.input_details,
     [SIGN_INPUT_MISMATCH]: errors.input_mismatch,
+    [ANTI_EXFIL_NEWER_VERSION]: loc.cypherbox.anti_exfil.signer.errors.newer_version,
+    [ANTI_EXFIL_DAMAGED]: loc.cypherbox.anti_exfil.signer.errors.damaged,
+    [ANTI_EXFIL_WRONG_REPLY]: loc.cypherbox.anti_exfil.signer.errors.wrong_reply,
+    [ANTI_EXFIL_CANNOT_SIGN]: loc.cypherbox.anti_exfil.signer.errors.cannot_sign,
   };
   if (known[message]) return known[message];
+  // verified signing's own checks (helpers/antiExfil*), which fail closed: one message, in the app's language
+  if (message.startsWith('antiExfil:')) return loc.cypherbox.anti_exfil.signer.errors.cannot_sign;
   const word = /^"(.+)" isn't a recovery phrase word\. Check its spelling\.$/.exec(message);
   if (word) return String(loc.formatString(errors.unknown_word, { word: word[1] }));
   const count = /^That's (\d+) words\. A recovery phrase has 12 or 24\.$/.exec(message);

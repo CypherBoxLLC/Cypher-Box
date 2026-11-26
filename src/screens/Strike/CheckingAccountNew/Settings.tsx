@@ -70,6 +70,7 @@ import {
   cancelArkExits,
   cancelArkExitReadyNotice,
   fetchArkVtxos,
+  isGoogleDriveAvailable,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
   loadArkBackupInstanceId,
@@ -471,6 +472,9 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   const [iCloudAvailable, setICloudAvailable] = useState<boolean | null>(null);
   const [iCloudBackup, setICloudBackup] = useState<BackupInfo | null | undefined>(null);
   const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
+  // Android without Google Play services (GrapheneOS and other Google-free builds): no Google sign-in, so the Drive
+  // row says so instead of offering Connect
+  const driveAvailable = Platform.OS !== 'android' || isGoogleDriveAvailable();
   const [driveBackup, setDriveBackup] = useState<BackupInfo | null | undefined>(null);
   const [driveError, setDriveError] = useState<string | null>(null);
   // Controls the expandable "When to use Emergency Exit" note below the
@@ -2693,6 +2697,8 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                   ) : (
                     <Text bold style={{ fontSize: 13, color: colors.green }}>{formatAgo(iCloudBackup.modifiedAt)}</Text>
                   )
+                ) : !driveAvailable ? (
+                  <Text bold style={{ fontSize: 13, color: '#888' }}>{loc.cypherbox.strike.ark_settings.needs_play_services}</Text>
                 ) : driveConnected === null ? (
                   <ActivityIndicator size="small" color="#888" />
                 ) : !driveConnected ? (
@@ -2764,6 +2770,10 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                     </Text>
                   )}
                 </TouchableOpacity>
+              ) : !driveAvailable ? (
+                <Text style={{ fontSize: 11, color: '#666', marginTop: 10 }}>
+                  {loc.cypherbox.services.google_drive.no_play_services}
+                </Text>
               ) : (
                 <TouchableOpacity
                   onPress={driveConnected ? handleDriveDisconnect : handleDriveConnect}

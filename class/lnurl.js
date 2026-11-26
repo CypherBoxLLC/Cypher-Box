@@ -92,7 +92,8 @@ export default class Lnurl {
       const { tagName, data } = tags[i];
       switch (tagName) {
         case 'payment_hash':
-          decoded.payment_hash = data;
+          // BOLT 11 payers use the first payment-hash field; a second one must not replace it
+          if (!decoded.payment_hash) decoded.payment_hash = data;
           break;
         case 'purpose_commit_hash':
           decoded.description_hash = data;

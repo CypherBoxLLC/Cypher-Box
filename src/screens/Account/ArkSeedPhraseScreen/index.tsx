@@ -16,6 +16,7 @@ import {
     createArkWallet,
     getArkWalletHandle,
     getSavedSafBackupFolder,
+    isGoogleDriveAvailable,
     isGoogleDriveConnected,
     isICloudBackupAvailable,
     messageForDriveError,
@@ -155,9 +156,12 @@ export default function ArkSeedPhraseScreen() {
     // mount + after the Connect button resolves, so the button label
     // flips to "Connected" without needing a manual refresh.
     const [driveConnected, setDriveConnected] = useState<boolean>(false);
+    // Android without Google Play services (GrapheneOS and other Google-free builds) has no Google sign-in, so the
+    // Drive option is replaced by one sentence and the folder backup below is the off-device copy.
+    const driveAvailable = isIOS || isGoogleDriveAvailable();
 
     React.useEffect(() => {
-        if (isIOS) return; // iCloud Drive sync handled by Apple, no in-app auth.
+        if (isIOS || !driveAvailable) return; // iCloud Drive sync handled by Apple, no in-app auth.
         let cancelled = false;
         isGoogleDriveConnected().then((ok) => {
             if (!cancelled) setDriveConnected(ok);
@@ -992,6 +996,11 @@ export default function ArkSeedPhraseScreen() {
                         <Text style={[styles.sectionSub, { marginTop: 18 }]}>
                             {loc.cypherbox.account.ark_seed.lose_phone}
                         </Text>
+                        {!driveAvailable ? (
+                            <Text style={[styles.sectionSub, { marginTop: 10 }]}>
+                                {loc.cypherbox.services.google_drive.no_play_services}
+                            </Text>
+                        ) : (
                         <View style={[styles.backupOption, styles.backupOptionSelected]}>
                             <View style={[styles.backupRadioOuter, styles.backupRadioOuterSelected]}>
                                 <View style={styles.backupRadioInner} />
@@ -1079,6 +1088,7 @@ export default function ArkSeedPhraseScreen() {
                                 )}
                             </View>
                         </View>
+                        )}
 
                         {/* Phone-storage folder backup (Android only). The
                             only Android channel that survives `pm uninstall`

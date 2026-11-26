@@ -5,6 +5,8 @@ import {
 import { readCoinosJson } from '@Cypher/services/coinos/apiResponse';
 import useAuthStore from '@Cypher/stores/authStore';
 import { expireCoinosSession } from '../services/sessionExpiry';
+import { CoinosRequestError } from '@Cypher/services/coinos/apiResponse';
+import { readCoinosJsonText, refusalLeavesOutcomeUnknown } from '@Cypher/services/coinos/withdrawRefusal';
 import SimpleToast from "react-native-simple-toast";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -494,10 +496,13 @@ export const bitcoinSendFee = async (amount: number, address: string, feeRate: n
       },
       body: JSON.stringify({ amount, address, feeRate}),
     }));
-    
-    return await response.text();
+    // CoinOS answers a refused estimate as a non-2xx status with a plain-text
+    // reason. Returning that text as if it were the quote left the screen to
+    // toast it, cut off. Read the status first: a refusal throws with the
+    // reason attached, and only a JSON quote comes back.
+    return await readCoinosJsonText(response);
   } catch (error) {
-    console.error('Error sending bitcoin payment:', error);
+    console.error('Error estimating bitcoin fee:', error);
     throw error;
   }
 };
@@ -523,15 +528,28 @@ export const sendBitcoinPayment = async (
       },
       body: feeRate === 0 ? JSON.stringify({ amount, address }) : JSON.stringify({ amount, address, feeRate, memo }),
     }));
-    return await response.text();
+    // A refusal is a non-2xx status with a plain-text reason (one is a hold on
+    // funds that arrived over Lightning). It used to come back as the return
+    // value and reach the user as a truncated toast. Now only a JSON success
+    // body is returned; anything else throws CoinosRequestError with the
+    // status and the reason, and the screen shows the reason in full.
+    return await readCoinosJsonText(response);
   } catch (error) {
     console.error('Error sending bitcoin payment:', error);
+    // CoinOS answered with a refusal of its own: a clean failure, nothing left
+    // the account, and the screen gets the reason as is. Decided before the
+    // network-shaped test because a refusal whose text happens to contain
+    // "timeout" is not a lost reply. A gateway status or an unreadable success
+    // body is NOT a clean failure and falls through to the marker below.
+    if (error instanceof CoinosRequestError && !refusalLeavesOutcomeUnknown(error)) {
+      throw error;
+    }
     // A network-shaped throw means the request's fate is UNKNOWN: CoinOS may
     // well have accepted it and the reply was lost. Reporting that as a
     // failure is what made the withdraw screen say "Please try again" and
     // re-arm the button, which sends the money a second time. Flag it so
     // callers can branch on a marker instead of guessing from the text.
-    if (isNetworkShapedFailure(error)) {
+    if (error instanceof CoinosRequestError || isNetworkShapedFailure(error)) {
       throw markWithdrawIndeterminate(
         loc.cypherbox.services.coinos_api.withdrawal_may_have_been_sent,
       );

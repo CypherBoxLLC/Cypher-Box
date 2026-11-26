@@ -10,6 +10,7 @@ import {
 } from "@Cypher/helpers";
 import signedTxErrorText from "@Cypher/helpers/signedTxErrorText";
 import useAuthStore from "@Cypher/stores/authStore";
+import useAntiExfilStore from "@Cypher/stores/antiExfilStore";
 import loc from "../../../loc";
 import { WatchOnlyWallet } from "../../../class";
 import { requestCameraAuthorization } from "../../../helpers/scan-qr";
@@ -51,6 +52,12 @@ export default function useImportTransaction(wallet: any, memo = '') {
             imported = parseImportedTransaction(data);
         } catch (e: any) {
             Alert.alert(loc.errors.error, signedTxErrorText(e.message));
+            return;
+        }
+        // With Verify my signing phone on, a finished transaction signed outside the verified exchange isn't sent:
+        // that is the point of the switch. Turning it off on the transaction screen is the way to send one.
+        if ('txhex' in imported && useAntiExfilStore.getState().verifySigningPhone) {
+            Alert.alert(loc.cypherbox.anti_exfil.import_blocked_title, loc.cypherbox.anti_exfil.import_blocked_message);
             return;
         }
         const pending = useAuthStore.getState().pendingSignatures?.[wallet?.getID?.()];

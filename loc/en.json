@@ -1566,7 +1566,14 @@
         "slide_to_send": "Slide to Send",
         "send": "Send",
         "verify_address": "Verify Address",
-        "scan_hardware_to_confirm": "Scan it with your hardware wallet, or compare it with Hot Vault → Show Addresses on your offline phone"
+        "scan_hardware_to_confirm": "Scan it with your hardware wallet, or compare it with Hot Vault → Show Addresses on your offline phone",
+        "coinos_refused_title": "CoinOS did not send this withdrawal",
+        "coinos_refused_action": "Nothing left your CoinOS account. Check the amount and address, then try again.",
+        "coinos_hold_partial": "CoinOS is holding {held} sats that arrived over Lightning. {free} sats can go on-chain now. The rest can wait, or go out over Lightning today.",
+        "coinos_hold_nothing_free": "CoinOS is holding {held} sats that arrived over Lightning. Nothing can go on-chain until the hold ends. You can still send over Lightning.",
+        "coinos_hold_unknown_balance": "CoinOS is holding {held} sats that arrived over Lightning. Part of your balance can go on-chain now. Lower the amount and try again, or send over Lightning.",
+        "coinos_withdraw_capped_button": "Withdraw {amount} sats instead",
+        "coinos_outcome_unknown_title": "This withdrawal may already be on its way"
       },
       "fee_selection": {
         "fee_rates_loading": "Fee rates are still loading. If this does not clear, check your connection and try again."
@@ -2198,6 +2205,7 @@
         "drive_connected": "Google Drive connected.",
         "drive_connect_failed": "Drive connect failed",
         "drive_connect_failed_detail": "Drive connect failed{code}: {msg}",
+        "needs_play_services": "Needs Google Play services",
         "drive_disconnect_title": "Disconnect Google Drive?",
         "drive_disconnect_message": "Your existing backup file will stay in Drive. Disconnecting only stops future uploads. You can reconnect any time.",
         "disconnect": "Disconnect",
@@ -3220,7 +3228,9 @@
         "quota": "Google Drive rejected the upload (quota or permission). Save the backup file manually instead.",
         "server": "Google Drive is having issues right now. Retry in a moment, or save the backup file manually.",
         "unknown": "Google Drive backup failed. Save the backup file manually below.",
-        "access_expired": "Google Drive access has expired. Reconnect Google Drive and try again."
+        "access_expired": "Google Drive access has expired. Reconnect Google Drive and try again.",
+        "no_play_services": "Google Drive needs Google Play services, which this phone does not have. Save the backup to a folder instead.",
+        "no_play_services_restore": "Google Drive needs Google Play services, which this phone does not have. Restore from a backup file or from your 12 words instead."
       },
       "saf_backup": {
         "permission_revoked": "Cypher Box no longer has permission to write to your chosen backup folder. Tap 'Pick folder' to re-grant access.",
@@ -3885,6 +3895,38 @@
       "need_imported": "It's worth it here. You opened a finished transaction, so Cypher Box has no record of what you meant to send and nothing to compare it with. It shows you every amount and address, but only you can tell whether they are right.",
       "need_title": "Do you need this?",
       "title": "Check your transaction yourself"
+    },
+    "anti_exfil": {
+      "setting_title": "Verify my signing phone",
+      "setting_explainer": "When this is on, every spend checks that your signing phone generated its signature honestly, which protects you if that phone is ever tampered with. It adds two extra scans each time you sign, and your signing phone needs Cypher Box 0.1.14 or later. Recommended for large, long-term cold storage.",
+      "step_commit": "Scan this with your signing phone to start verified signing.",
+      "step_reveal": "Your signing phone has committed to its signature. Scan this with it to continue.",
+      "scan_open": "Scan the reply from your signing phone",
+      "scan_sign": "Scan the signed transaction from your signing phone",
+      "verifying": "Checking the signatures against what your signing phone committed to…",
+      "verified_ok": "Signatures verified. Your signing phone generated them honestly.",
+      "wrong_reply": "That isn't the reply this step expects. Show this code to your signing phone again, then scan what it shows.",
+      "tamper_title": "Signature did not pass the safety check",
+      "tamper_message": "A signature did not match what your signing phone committed to, so this transaction will not be sent. That phone may be tampered with: stop signing with it, and do not reuse its recovery phrase for new funds. Load the recovery phrase on a signing device you trust and move your coins to a new wallet.",
+      "unsupported_title": "Signing phone could not be verified",
+      "unsupported_message": "Your signing phone's reply isn't part of verified signing, so this transaction will not be sent. Update Cypher Box on both phones to the same version. To sign without verification, turn off Verify my signing phone on the transaction screen.",
+      "cannot_start_title": "Verified signing isn't available",
+      "cannot_start_message": "One of this transaction's inputs can't be checked this way, so verified signing can't start. Turn off Verify my signing phone on the transaction screen to sign it the usual way.",
+      "import_blocked_title": "Verify my signing phone is on",
+      "import_blocked_message": "This transaction was signed without verification, so it won't be sent. Sign it again with verified signing, or turn off Verify my signing phone on the transaction screen first.",
+      "signer": {
+        "review_note": "Verified signing is on: your Cold Vault will check that this phone generated the signature honestly.",
+        "open_title": "Show this to your Cold Vault",
+        "open_body": "This phone has committed to its signature. Scan this with the Cold Vault that made the transaction, then scan the reply it shows.",
+        "scan_reply": "Scan the Cold Vault's reply",
+        "signed_body": "Scan this with your Cold Vault. It checks the signature before it lets you send.",
+        "errors": {
+          "newer_version": "This verified-signing request comes from a newer Cypher Box. Update this phone, then scan it again.",
+          "damaged": "This verified-signing request is incomplete or damaged. Start the spend again on your Cold Vault and scan its code again.",
+          "wrong_reply": "That isn't your Cold Vault's reply to this signing. Scan this phone's code on the Cold Vault again, then scan what it shows.",
+          "cannot_sign": "This transaction can't be signed with verification by this key. Sign it without verification: turn off Verify my signing phone on the Cold Vault."
+        }
+      }
     }
   }
 }
