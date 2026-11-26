@@ -874,6 +874,27 @@ module.exports.multiGetTransactionByTxid = async function (txids, batchsize, ver
   return ret;
 };
 
+/**
+ * Removes cached raw txhexes (non-verbose) of these txids, so next time they are fetched from the server. Used when a
+ * cached copy fails verification (e.g. it was saved while connected to a malicious server)
+ *
+ * @param txids {string[]}
+ * @returns {Promise<void>}
+ */
+module.exports.forgetCachedTransactions = async function (txids) {
+  try {
+    const realm = await _getRealm();
+    realm.write(() => {
+      for (const txid of txids) {
+        const cached = realm.objectForPrimaryKey('Cache', txid + '_non_verbose');
+        if (cached) realm.delete(cached);
+      }
+    });
+  } catch (error) {
+    console.warn('forgetCachedTransactions(): failed to drop cached transactions', error);
+  }
+};
+
 // One transaction asked on its own, for a batch the server refused. Still verbose when asked verbose, so its
 // confirmations and times come from the server and it's cached as before. Only one too large to send verbose even alone
 // is asked raw and decoded here, with confirmations and times estimated from the height its address history gave.
