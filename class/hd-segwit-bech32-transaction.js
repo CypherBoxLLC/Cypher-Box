@@ -1,9 +1,81 @@
 import { HDSegwitBech32Wallet } from './wallets/hd-segwit-bech32-wallet';
 import { SegwitBech32Wallet } from './wallets/segwit-bech32-wallet';
+import ecc from '../blue_modules/noble_ecc';
 const bitcoin = require('bitcoinjs-lib');
 const BlueElectrum = require('../blue_modules/BlueElectrum');
 const reverse = require('buffer-reverse');
-const BigNumber = require('bignumber.js');
+
+/**
+ * Thrown when transaction data from the Electrum server fails verification (wrong txid, invalid signature on our input
+ * etc). A malicious server can show us a forged unconfirmed tx (our inputs, attacker's outputs); if we RBF it, we pay
+ * the attacker. See GHSA-6jp4-8v48-cc5v (spesmilo/electrum)
+ */
+export class TxVerificationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'TxVerificationError';
+  }
+}
+
+/**
+ * Decodes raw tx hex from the Electrum server and checks that it hashes to the txid we asked for. A bad copy is dropped
+ * from the cache (it could have been saved while connected to a malicious server), so next time we fetch a fresh one
+ *
+ * @param txid {string}
+ * @param hex {*} What the server (or the cache) answered
+ * @returns {Promise<bitcoin.Transaction>}
+ */
+async function decodeServerTx(txid, hex) {
+  try {
+    if (typeof hex !== 'string') throw new Error('not a raw tx');
+    const tx = bitcoin.Transaction.fromHex(hex);
+    if (tx.getId() !== txid) throw new Error('txid mismatch');
+    return tx;
+  } catch (_) {
+    await BlueElectrum.forgetCachedTransactions([txid]);
+    throw new TxVerificationError('Electrum server returned a bad transaction ' + txid);
+  }
+}
+
+/**
+ * Checks that input `index` of `tx` is a valid p2wpkh spend of `prevOut`: signed by the key `prevOut` pays to, with
+ * SIGHASH_ALL, so the signature commits to the outputs of this very tx. A forged tx (see `TxVerificationError`) reuses
+ * our inputs with a copied witness, but the signatures don't check out against its outputs
+ *
+ * @param tx {bitcoin.Transaction}
+ * @param index {number}
+ * @param prevOut {{script: Buffer, value: number}}
+ * @returns {boolean}
+ */
+function isValidP2wpkhSpend(tx, index, prevOut) {
+  try {
+    const witness = tx.ins[index].witness;
+    if (witness.length !== 2) return false; // padded witness inflates vsize
+    const [sig, pubkey] = witness;
+    const expectedScript = bitcoin.payments.p2wpkh({ pubkey }).output;
+    if (!expectedScript || !expectedScript.equals(prevOut.script)) return false;
+    const { signature, hashType } = bitcoin.script.signature.decode(sig);
+    if (hashType !== bitcoin.Transaction.SIGHASH_ALL) return false; // only SIGHASH_ALL commits to all outputs
+    const hash = tx.hashForWitnessV0(index, bitcoin.payments.p2pkh({ pubkey }).output, prevOut.value, hashType);
+    return ecc.verify(hash, pubkey, signature);
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Address of an output script, or undefined if it has none (e.g. OP_RETURN)
+ *
+ * @param script {Buffer}
+ * @returns {string|undefined}
+ */
+function scriptToAddress(script) {
+  try {
+    return bitcoin.address.fromOutputScript(script, bitcoin.networks.bitcoin);
+  } catch (_) {
+    return undefined;
+  }
+}
 
 /**
  * Represents transaction of a BIP84 wallet.
@@ -43,7 +115,7 @@ export class HDSegwitBech32Transaction {
     const hexes = await BlueElectrum.multiGetTransactionByTxid([this._txid], 10, false);
     this._txhex = hexes[this._txid];
     if (!this._txhex) throw new Error("Transaction can't be found in mempool");
-    this._txDecoded = bitcoin.Transaction.fromHex(this._txhex);
+    this._txDecoded = await decodeServerTx(this._txid, this._txhex);
   }
 
   /**
@@ -75,14 +147,17 @@ export class HDSegwitBech32Transaction {
   /**
    * If internal extended tx data not set - this is a method
    * to fetch and set this data from electrum. Its different data from
-   * decoded hex - it contains confirmations etc.
+   * decoded hex - it contains confirmations etc. Only used for the confirmations
+   * number: amounts, outputs and inputs come from the verified raw tx instead.
    *
    * @returns {Promise<void>}
    * @private
    */
   async _fetchRemoteTx() {
     const result = await BlueElectrum.multiGetTransactionByTxid([this._txid || this._txDecoded.getId()]);
-    this._remoteTx = Object.values(result)[0];
+    const remoteTx = Object.values(result)[0];
+    if (!remoteTx) throw new Error('Transaction not found on Electrum');
+    this._remoteTx = remoteTx;
   }
 
   /**
@@ -135,80 +210,84 @@ export class HDSegwitBech32Transaction {
   /**
    * Returns all the info about current transaction which is needed to do a replacement TX
    * * fee - current tx fee
-   * * utxos - UTXOs current tx consumes
+   * * utxos - UTXOs current tx consumes that we own (inputs we don't own are not listed)
    * * changeAmount - amount of satoshis that sent to change address (or addresses) we control
    * * feeRate - sat/byte for current tx
-   * * targets - destination(s) of funds (outputs we do not control)
+   * * targets - destination(s) of funds (outputs we do not control). An output with no address (e.g. OP_RETURN) is
+   *   listed as `{value, script: {hex}}`
    * * unconfirmedUtxos - UTXOs created by this transaction (only the ones we control)
+   *
+   * Everything is taken from raw transactions checked against their txids, never from the server's decoded json, and
+   * every input we own must carry a valid SIGHASH_ALL signature for this very tx. Throws `TxVerificationError` otherwise.
    *
    * @returns {Promise<{fee: number, utxos: Array, unconfirmedUtxos: Array, changeAmount: number, feeRate: number, targets: Array}>}
    */
   async getInfo() {
     if (!this._wallet) throw new Error('Wallet required for this method');
-    if (!this._remoteTx) await this._fetchRemoteTx();
     if (!this._txDecoded) await this._fetchTxhexAndDecode();
+    const txid = this._txid || this._txDecoded.getId();
 
     const prevInputs = [];
     for (const inp of this._txDecoded.ins) {
-      let reversedHash = Buffer.from(reverse(inp.hash));
-      reversedHash = reversedHash.toString('hex');
-      prevInputs.push(reversedHash);
+      prevInputs.push(Buffer.from(reverse(inp.hash)).toString('hex'));
     }
 
-    const prevTransactions = await BlueElectrum.multiGetTransactionByTxid(prevInputs);
+    // raw hexes (not server-decoded jsons), so we can check them against the txids we asked for
+    const prevHexes = await BlueElectrum.multiGetTransactionByTxid(prevInputs, 10, false);
+    const prevTransactions = {};
+    for (const prevTxid of prevInputs) {
+      prevTransactions[prevTxid] = await decodeServerTx(prevTxid, prevHexes[prevTxid]);
+    }
 
     // fetched, now lets count how much satoshis went in
     let wentIn = 0;
     const utxos = [];
-    for (const inp of this._txDecoded.ins) {
-      let reversedHash = Buffer.from(reverse(inp.hash));
-      reversedHash = reversedHash.toString('hex');
-      if (prevTransactions[reversedHash] && prevTransactions[reversedHash].vout && prevTransactions[reversedHash].vout[inp.index]) {
-        let value = prevTransactions[reversedHash].vout[inp.index].value;
-        value = new BigNumber(value).multipliedBy(100000000).toNumber();
-        wentIn += value;
-        const address = SegwitBech32Wallet.witnessToAddress(inp.witness[inp.witness.length - 1]);
-        utxos.push({ vout: inp.index, value, txId: reversedHash, address });
+    for (let i = 0; i < this._txDecoded.ins.length; i++) {
+      const inp = this._txDecoded.ins[i];
+      const reversedHash = Buffer.from(reverse(inp.hash)).toString('hex');
+      const prevOut = prevTransactions[reversedHash].outs[inp.index];
+      if (!prevOut) throw new TxVerificationError('Previous output of an input is missing');
+      const value = Number(prevOut.value);
+      wentIn += value;
+      const address = SegwitBech32Wallet.scriptPubKeyToAddress(prevOut.script.toString('hex'));
+      if (!address || !this._wallet.weOwnAddress(address)) continue; // not our input (e.g. incoming tx), nothing to check
+      if (!isValidP2wpkhSpend(this._txDecoded, i, prevOut)) {
+        await BlueElectrum.forgetCachedTransactions([txid]);
+        throw new TxVerificationError('Invalid signature on our input, transaction was not created by this wallet');
       }
+      utxos.push({ vout: inp.index, value, txId: reversedHash, address });
     }
 
     // counting how much went into actual outputs
 
     let wasSpent = 0;
     for (const outp of this._txDecoded.outs) {
-      wasSpent += +outp.value;
+      wasSpent += Number(outp.value);
     }
 
     const fee = wentIn - wasSpent;
+    if (fee < 0) throw new TxVerificationError('Transaction fee is negative');
     let feeRate = Math.floor(fee / this._txDecoded.virtualSize());
     if (feeRate === 0) feeRate = 1;
 
-    // lets take a look at change
+    // lets take a look at change, and at outputs we own that current transaction creates (can be used in CPFP)
     let changeAmount = 0;
     const targets = [];
-    for (const outp of this._remoteTx.vout) {
-      const address = outp.scriptPubKey.addresses[0];
-      const value = new BigNumber(outp.value).multipliedBy(100000000).toNumber();
-      if (this._wallet.weOwnAddress(address)) {
+    const unconfirmedUtxos = [];
+    for (let n = 0; n < this._txDecoded.outs.length; n++) {
+      const outp = this._txDecoded.outs[n];
+      const value = Number(outp.value);
+      const address = scriptToAddress(outp.script);
+      if (address && this._wallet.weOwnAddress(address)) {
         changeAmount += value;
-      } else {
+        unconfirmedUtxos.push({ vout: n, value, txId: txid, address });
+      } else if (address) {
         // this is target
         targets.push({ value, address });
-      }
-    }
-
-    // lets find outputs we own that current transaction creates. can be used in CPFP
-    const unconfirmedUtxos = [];
-    for (const outp of this._remoteTx.vout) {
-      const address = outp.scriptPubKey.addresses[0];
-      const value = new BigNumber(outp.value).multipliedBy(100000000).toNumber();
-      if (this._wallet.weOwnAddress(address)) {
-        unconfirmedUtxos.push({
-          vout: outp.n,
-          value,
-          txId: this._txid || this._txDecoded.getId(),
-          address,
-        });
+      } else {
+        // e.g. OP_RETURN. `createTransaction` builds outputs from addresses only, so such a tx can't be re-created
+        // here; `createRBFbumpFee` refuses it with a clear error
+        targets.push({ value, script: { hex: outp.script.toString('hex') } });
       }
     }
 
@@ -280,10 +359,10 @@ export class HDSegwitBech32Transaction {
    */
   async createRBFcancelTx(newFeerate) {
     if (!this._wallet) throw new Error('Wallet required for this method');
-    if (!this._remoteTx) await this._fetchRemoteTx();
 
     const { feeRate, utxos } = await this.getInfo();
 
+    if (utxos.length !== this._txDecoded.ins.length) throw new Error('Not all inputs are ours');
     if (newFeerate <= feeRate) throw new Error('New feerate should be bigger than the old one');
     const myAddress = await this._wallet.getChangeAddressAsync();
 
@@ -305,10 +384,13 @@ export class HDSegwitBech32Transaction {
    */
   async createRBFbumpFee(newFeerate) {
     if (!this._wallet) throw new Error('Wallet required for this method');
-    if (!this._remoteTx) await this._fetchRemoteTx();
 
     const { feeRate, targets, changeAmount, utxos } = await this.getInfo();
 
+    if (utxos.length !== this._txDecoded.ins.length) throw new Error('Not all inputs are ours');
+    if (targets.some(t => !t.address)) {
+      throw new Error('This transaction has an output with no address (such as OP_RETURN) and cannot be bumped here');
+    }
     if (newFeerate <= feeRate) throw new Error('New feerate should be bigger than the old one');
     const myAddress = await this._wallet.getChangeAddressAsync();
 
@@ -335,7 +417,6 @@ export class HDSegwitBech32Transaction {
    */
   async createCPFPbumpFee(newFeerate) {
     if (!this._wallet) throw new Error('Wallet required for this method');
-    if (!this._remoteTx) await this._fetchRemoteTx();
 
     const { feeRate, fee: oldFee, unconfirmedUtxos } = await this.getInfo();
 

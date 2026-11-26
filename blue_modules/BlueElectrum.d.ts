@@ -65,6 +65,12 @@ export function multiGetTransactionByTxid(
 ): Promise<Record<string, ElectrumTransaction>>;
 export function multiGetTransactionByTxid(txIds: string[], batchsize: number, verbose: false): Promise<Record<string, string>>;
 
+/**
+ * Removes cached raw txhexes (non-verbose) of these txids, so next time they are fetched from the server. Used when a
+ * cached copy fails verification (e.g. it was saved while connected to a malicious server)
+ */
+export function forgetCachedTransactions(txids: string[]): Promise<void>;
+
 export type MultiGetBalanceResponse = {
   balance: number;
   unconfirmed_balance: number;

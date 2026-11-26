@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { ActivityIndicator, View, ScrollView, StyleSheet } from 'react-native';
 import navigationStyle from '../../components/navigationStyle';
 import { BlueSpacing20, BlueText } from '../../BlueComponents';
-import { HDSegwitBech32Transaction, HDSegwitBech32Wallet } from '../../class';
+import { HDSegwitBech32Transaction, HDSegwitBech32Wallet, TxVerificationError } from '../../class';
 import CPFP from './CPFP';
 import loc from '../../loc';
 import { BlueStorageContext } from '../../blue_modules/storage-context';
@@ -27,7 +27,12 @@ export default class RBFBumpFee extends CPFP {
       newFeeRate: '',
       nonReplaceable: false,
     });
-    await this.checkPossibilityOfRBFBumpFee();
+    try {
+      await this.checkPossibilityOfRBFBumpFee();
+    } catch (error) {
+      // if anything goes wrong we just show "this is not bumpable" message
+      this.setState({ nonReplaceable: true, unverified: error instanceof TxVerificationError, isLoading: false });
+    }
   }
 
   async checkPossibilityOfRBFBumpFee() {
@@ -93,7 +98,7 @@ export default class RBFBumpFee extends CPFP {
           <BlueSpacing20 />
           <BlueSpacing20 />
 
-          <BlueText h4>{loc.transactions.cpfp_no_bump}</BlueText>
+          <BlueText h4>{this.state.unverified ? loc.transactions.rbf_unverified : loc.transactions.cpfp_no_bump}</BlueText>
         </SafeArea>
       );
     }
