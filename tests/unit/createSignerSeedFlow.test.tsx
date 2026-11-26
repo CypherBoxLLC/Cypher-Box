@@ -212,7 +212,7 @@ describe('Create a Seed', () => {
         await press(root, /^View$/);
         await press(root, /I've backed it up/);
         const text = textOf(root);
-        expect(text).toContain('Seed-Signer created!');
+        expect(text).toContain('Seed-Signing phone ready!');
         for (const line of ["What's next", 'Check your backup', 'Set up your watch-only wallet', 'Sign by scanning', 'Before you go']) {
             expect(text).toContain(line);
         }
@@ -232,7 +232,7 @@ describe('Create a Seed', () => {
         type(root, /Type your 12 words/, LEGAL);
         await press(root, /^Check the words$/);
         expect(textOf(root)).toContain("That isn't the same phrase.");
-        expect(textOf(root)).toContain('Seed-Signer created!');
+        expect(textOf(root)).toContain('Seed-Signing phone ready!');
 
         type(root, /Type your 12 words/, ABANDON.toUpperCase());
         await press(root, /^Check the words$/);

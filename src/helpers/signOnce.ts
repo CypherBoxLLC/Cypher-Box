@@ -35,7 +35,7 @@ export const SIGN_BACKUP_MISMATCH =
 export const SIGN_VAULT_MISMATCH =
     "This transaction wasn't made for your Hot Vault. Sign it on the signing device it was made for.";
 export const SIGN_ON_SIGNING_DEVICE =
-    "This phone only signs for its own Hot Vault. Sign this transaction on your signing device: a hardware wallet, or an offline phone in Offline Seed-Signer mode.";
+    "This phone only signs for its own Hot Vault. Sign this transaction on your signing device: a hardware wallet, or an offline phone in Offline Seed-Signing mode.";
 export const SIGN_FALSE_CHANGE =
     "An amount marked as coming back to your wallet goes to an address that isn't yours. Don't sign this transaction.";
 export const SIGN_NOTHING_SIGNED = "Nothing in this transaction could be signed with this key.";
@@ -47,7 +47,7 @@ export const SIGN_UNSUPPORTED_MULTISIG =
     "This transaction spends from a kind of multisig the signer doesn't sign. It only signs native SegWit (P2WSH) multisig wallets.";
 export const SIGN_MIXED_WALLETS = "This transaction spends from more than one wallet. Sign one wallet's transactions at a time.";
 export const SIGN_MULTISIG_HOT_VAULT =
-    "The Hot Vault doesn't sign multisig transactions. Sign this one on an offline phone in Offline Seed-Signer mode, with your SeedQR.";
+    "The Hot Vault doesn't sign multisig transactions. Sign this one on an offline phone in Offline Seed-Signing mode, with your SeedQR.";
 export const SIGN_INPUT_DETAILS =
     "This transaction's details about the coins it spends are missing or don't agree. Don't sign it: export it again from your wallet.";
 
