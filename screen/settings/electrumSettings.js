@@ -171,7 +171,8 @@ export default class ElectrumSettings extends Component {
   };
 
   save = () => {
-    const host = this.state.host ? this.state.host : '';
+    // a built-in server typed or picked under its old name is saved under the name its certificate is issued for
+    const host = this.state.host ? BlueElectrum.canonicalHost(this.state.host) : '';
     const port = this.state.port ? this.state.port : '';
     const sslPort = this.state.sslPort ? this.state.sslPort : '';
     const serverHistory = this.state.serverHistory || [];
@@ -195,9 +196,8 @@ export default class ElectrumSettings extends Component {
           triggerHapticFeedback(HapticFeedbackTypes.NotificationSuccess);
           alert(loc.settings.electrum_saved);
           await this.useSavedServer();
-        } else if (!(await BlueElectrum.testConnection(host, port, sslPort))) {
-          triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
-          alert(loc.settings.electrum_error_connect);
+        } else if (!(await this.testServer(host, port, sslPort))) {
+          // told already
         } else {
           await AsyncStorage.setItem(BlueElectrum.ELECTRUM_HOST, host);
           await AsyncStorage.setItem(BlueElectrum.ELECTRUM_TCP_PORT, port);
@@ -232,6 +232,27 @@ export default class ElectrumSettings extends Component {
       }
       this.setState({ isLoading: false });
     });
+  };
+
+  /**
+   * Whether the server answers over the port given, telling the user when it doesn't. A server whose certificate the
+   * phone refuses is not saved: a self-signed one can't be told from someone posing as the server, so the user is
+   * pointed at its TCP port or a certificate from a public authority instead.
+   */
+  testServer = async (host, port, sslPort) => {
+    let answered = false;
+    let message = loc.settings.electrum_error_connect;
+    try {
+      answered = await BlueElectrum.testConnection(host, port, sslPort);
+    } catch (e) {
+      if (!(e instanceof BlueElectrum.ElectrumCertificateError)) throw e;
+      message = loc.formatString(loc.settings.electrum_cert_refused_test, { server: `${host}:${sslPort}` });
+    }
+    if (!answered) {
+      triggerHapticFeedback(HapticFeedbackTypes.NotificationError);
+      alert(message);
+    }
+    return answered;
   };
 
   onBarScanned = value => {
