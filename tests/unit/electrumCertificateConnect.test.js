@@ -20,6 +20,9 @@ import loc from '../../loc';
 jest.unmock('electrum-client');
 jest.unmock('../../blue_modules/BlueElectrum');
 jest.mock('@react-native-async-storage/async-storage', () => require('@react-native-async-storage/async-storage/jest/async-storage-mock'));
+// BlueElectrum shows no network alert while the app has no wallet (its hasNoWallets guard looks again later instead);
+// these tests are about what the alert says, so they run with a wallet present
+jest.mock('../../BlueApp', () => ({ getWallets: () => [{}] }));
 
 const BlueElectrum = require('../../blue_modules/BlueElectrum');
 
