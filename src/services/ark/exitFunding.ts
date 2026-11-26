@@ -44,7 +44,7 @@ import {
 import { getArkOnchainAddress } from './receive';
 import { ensureArkWalletHandleReady } from './restore';
 import { getArkWalletHandle } from './walletHandle';
-import { runBroadcastCall } from './indeterminate';
+import { offboardTxid, runBroadcastCall } from './indeterminate';
 import loc from '../../../loc';
 
 // --- Tunable sizing constants ----------------------------------------------
@@ -622,9 +622,13 @@ export async function convertToExitFees(
     // 'conversion' matches the tab the user is on ("Convert from balance").
     // Deliberately not "offboard", which is bark's word and appears nowhere in
     // the UI.
-    const txid = await runBroadcastCall(
-        () => handle.sendOnchain(address, BigInt(Math.floor(amountSats))),
-        loc.cypherbox.services.indeterminate.what_conversion,
+    // bark 0.8.0: sendOnchain returns OffboardResult { txid, movementId };
+    // offboardTxid reads it without throwing after the broadcast.
+    const txid = offboardTxid(
+        await runBroadcastCall(
+            () => handle.sendOnchain(address, BigInt(Math.floor(amountSats))),
+            loc.cypherbox.services.indeterminate.what_conversion,
+        ),
     );
     if (__DEV__) {
         console.log(

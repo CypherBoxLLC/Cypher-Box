@@ -57,6 +57,7 @@ import loc from '../../loc';
 // Also not re-exported through the barrel.
 import { shouldRescheduleExpiryWarning } from '@Cypher/services/ark/chainTipFreshness';
 import { arkStuckRoundThresholdMs } from '@Cypher/services/ark/roundStuck';
+import { describeArkRound } from '@Cypher/services/ark/roundFlight';
 import useAuthStore from '@Cypher/stores/authStore';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import {
@@ -859,7 +860,12 @@ export default function useArkSync(): UseArkSync {
                         const uiBalance = await fetchArkBalance();
                         const uiTip = useAuthStore.getState().arkChainTipHeight;
                         const uiFiltered = uiBalance
-                            ? applyExpiredVtxoFilter(uiBalance, uiVtxos?.all, uiTip)
+                            ? applyExpiredVtxoFilter(
+                                  uiBalance,
+                                  uiVtxos?.all,
+                                  uiTip,
+                                  useAuthStore.getState().arkMaxVtxoExitDepth,
+                              )
                             : null;
                         if (uiFiltered) {
                             setArkBalance(uiFiltered.totalSats);
@@ -1037,7 +1043,8 @@ export default function useArkSync(): UseArkSync {
             if (__DEV__ && rounds.length > 0) {
                 console.log(
                     '[Ark sync] pending rounds:',
-                    rounds.map((r) => `${r.id}(${r.ongoing ? 'ongoing' : 'finalising'})`).join(', '),
+                    // bark 0.8 adds the flow state (DelegatedPending, …).
+                    rounds.map((r) => describeArkRound(r)).join(', '),
                 );
             }
 
@@ -1106,8 +1113,19 @@ export default function useArkSync(): UseArkSync {
             // balance stayed artificially high until server-side pubkey
             // detachment (many minutes). Trusting `spendableSats` post-
             // expiry-filter is the lesser evil.
+            //
+            // bark 0.8.0: `spendableSats` already excludes expired capsules and
+            // ones at the server's exit-depth limit (`needsRefreshSats`). The
+            // filter knows that and only takes out what bark still counts; see
+            // its doc comment. It needs the depth limit to classify capsules the
+            // way bark does.
             const filteredBalance = balance
-                ? applyExpiredVtxoFilter(balance, vtxos?.all, tip)
+                ? applyExpiredVtxoFilter(
+                      balance,
+                      vtxos?.all,
+                      tip,
+                      useAuthStore.getState().arkMaxVtxoExitDepth,
+                  )
                 : null;
             if (filteredBalance) {
                 console.log(
@@ -1116,6 +1134,7 @@ export default function useArkSync(): UseArkSync {
                     'pendingInRound=', filteredBalance.pendingInRoundSats,
                     'claimableLn=', filteredBalance.claimableLightningReceiveSats,
                     'expiredUnrecoverable=', filteredBalance.expiredUnrecoverableSats,
+                    'needsRefresh=', filteredBalance.needsRefreshSats ?? 0,
                     'tip=', tip, ')',
                 );
                 setArkBalance(filteredBalance.totalSats);

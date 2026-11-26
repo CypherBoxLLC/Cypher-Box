@@ -86,3 +86,23 @@ export async function runBroadcastCall<T>(run: () => Promise<T>, what: string): 
         );
     }
 }
+
+/**
+ * The txid out of what an on-chain send or offboard returned.
+ *
+ * bark 0.8.0 (SDK 0.26.0) changed `sendOnchain`, `offboardVtxos` and
+ * `offboardAll` from returning the txid string to returning
+ * `OffboardResult { txid, movementId }`. The value only arrives once the
+ * transaction is already out, so reading it must never throw: a throw here
+ * reports a failure for a withdrawal that went through, which invites the user
+ * to send it again. `send.ts` called `.slice()` on the result, and on the new
+ * shape that is exactly this throw.
+ *
+ * Takes the old string shape too, so an older binding or a test double still
+ * yields its txid. Anything else gives '', never an exception.
+ */
+export function offboardTxid(result: unknown): string {
+    if (typeof result === 'string') return result;
+    const txid = (result as { txid?: unknown } | null | undefined)?.txid;
+    return typeof txid === 'string' ? txid : '';
+}

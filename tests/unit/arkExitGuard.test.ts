@@ -3,9 +3,9 @@
  *
  * bark does NOT defend against this. Confirmed with Second 2026-08-13: "we
  * allow VTXOs to be marked for exit and for the user to still spend them."
- * The lock/unlock API they suggest is not exposed in bark-react-native 0.16.1,
- * so this client-side guard is the only thing standing between a delegated
- * round and a coin that is already committed on-chain.
+ * The lock/unlock API they suggested is exposed since bark-react-native 0.18.0
+ * but unused, so this client-side guard is still the only thing standing
+ * between a delegated round and a coin that is already committed on-chain.
  *
  * These paths are deliberately NOT reachable from the UI, which is why they get
  * a unit test rather than device QA. On device (2026-08-16) every refresh
@@ -16,6 +16,14 @@
  */
 
 const mockGetExitVtxos = jest.fn();
+// The rest of the bark 0.8.1 (SDK 0.27.0) handle surface exit.ts touches.
+const mockHandle = {
+    getExitVtxos: mockGetExitVtxos,
+    drainExits: jest.fn(),
+    signExitClaimInputs: jest.fn(),
+    broadcastTx: jest.fn(),
+    cancelExit: jest.fn(),
+};
 const mockStoreState = {
     arkExitInProgress: false,
     arkVtxos: [] as Array<{ id: string; exiting?: boolean }>,
@@ -28,22 +36,30 @@ jest.mock('@Cypher/stores/authStore', () => ({
 
 jest.mock('../../src/services/ark/walletHandle', () => ({
     __esModule: true,
-    getArkWalletHandle: () => ({ getExitVtxos: mockGetExitVtxos }),
+    getArkWalletHandle: () => mockHandle,
     ensureArkOnchainHandle: jest.fn(),
 }));
 
 jest.mock('@secondts/bark-react-native', () => ({
     __esModule: true,
-    extractTxFromPsbt: jest.fn(),
+    extractTxFromPsbt: jest.fn(() => 'deadbeef'),
 }));
 
 import {
     assertNoActiveArkExitAsync,
+    cancelArkExits,
+    claimArkExitsToAddress,
     hasActiveArkExitRecords,
+    readExitCancelResult,
 } from '../../src/services/ark/exit';
+import { isActiveExit, isSweptExit } from '../../src/services/ark/barkState';
 
 beforeEach(() => {
     mockGetExitVtxos.mockReset();
+    mockHandle.drainExits.mockReset();
+    mockHandle.signExitClaimInputs.mockReset();
+    mockHandle.broadcastTx.mockReset();
+    mockHandle.cancelExit.mockReset();
     mockStoreState.arkExitInProgress = false;
     mockStoreState.arkVtxos = [];
 });
@@ -79,14 +95,15 @@ describe('hasActiveArkExitRecords', () => {
     });
 
     it('is false once every record is terminal', async () => {
-        // The terminal set is exactly Claimed / VtxoAlreadySpent / Canceled,
-        // per the SDK's generated ExitState_Tags. This case used to assert on
-        // 'Done' and 'Exited', which are not ExitState variants at all, so it
-        // proved nothing about real terminal detection.
+        // The terminal set is exactly Claimed / VtxoAlreadySpent / Canceled /
+        // VtxoSwept (bark 0.8.0), per the SDK's generated ExitState_Tags. This
+        // case used to assert on 'Done' and 'Exited', which are not ExitState
+        // variants at all, so it proved nothing about real terminal detection.
         mockGetExitVtxos.mockResolvedValue([
             { state: 'Claimed', isClaimable: false },
             { state: 'VtxoAlreadySpent', isClaimable: false },
             { state: 'Canceled', isClaimable: false },
+            { state: 'VtxoSwept', isClaimable: false },
         ]);
         await expect(hasActiveArkExitRecords()).resolves.toBe(false);
     });
@@ -190,7 +207,7 @@ describe('hasActiveArkExitRecords with bark 0.6.1 tagged-enum states', () => {
         },
     );
 
-    it.each(['Claimed', 'VtxoAlreadySpent', 'Canceled'])(
+    it.each(['Claimed', 'VtxoAlreadySpent', 'Canceled', 'VtxoSwept'])(
         'is false for terminal tagged-enum %s',
         async (tag) => {
             mockGetExitVtxos.mockResolvedValue([{ state: { tag }, isClaimable: false }]);
@@ -252,5 +269,145 @@ describe('assertNoActiveArkExitAsync', () => {
         await expect(assertNoActiveArkExitAsync('Background refresh')).rejects.toThrow(
             /^Background refresh is unavailable/,
         );
+    });
+});
+
+/**
+ * bark 0.8.0 VtxoSwept: an exit that ended because the chain it needed was
+ * spent on chain (the server swept the round after expiry). Listed as
+ * terminal; before that it read as active forever, because unknown states are
+ * active by design, which kept every spend blocked by the exit guard.
+ * Payload shape from the SDK 0.27.0 bindings: { tipHeight, spentInputs }.
+ */
+describe('VtxoSwept (bark 0.8.0)', () => {
+    const swept = {
+        vtxoId: 'swept-vtxo',
+        amountSats: BigInt(4_000),
+        state: {
+            tag: 'VtxoSwept',
+            inner: {
+                tipHeight: 975000,
+                spentInputs: [{ txid: 'aa'.repeat(32), vout: 0 }],
+            },
+        },
+        isClaimable: false,
+    };
+
+    it('is terminal, so a swept exit no longer counts as live', async () => {
+        expect(isActiveExit(swept)).toBe(false);
+        mockGetExitVtxos.mockResolvedValue([swept]);
+        await expect(hasActiveArkExitRecords()).resolves.toBe(false);
+    });
+
+    it('releases the background-refresh guard once the only exit is swept', async () => {
+        mockGetExitVtxos.mockResolvedValue([swept]);
+        await expect(assertNoActiveArkExitAsync('Background refresh')).resolves.toBeUndefined();
+    });
+
+    it('is recognised by isSweptExit, and nothing else is', () => {
+        expect(isSweptExit(swept)).toBe(true);
+        expect(isSweptExit({ state: 'VtxoSwept' })).toBe(true);
+        expect(isSweptExit({ state: { tag: 'VtxoAlreadySpent' } })).toBe(false);
+        expect(isSweptExit({ state: { tag: 'AwaitingDelta' } })).toBe(false);
+        expect(isSweptExit(null)).toBe(false);
+    });
+});
+
+/**
+ * bark 0.8.0 inserted `drainAll` as drainExits' SECOND argument. The old
+ * three-argument call would land the address in `drainAll` and the fee rate in
+ * `address`, and an empty id list without drainAll is now an error, so every
+ * claim would fail. The claim is the step that stalled exits in August.
+ */
+describe('claimArkExitsToAddress with bark 0.8.0 drainExits', () => {
+    beforeEach(() => {
+        mockHandle.drainExits.mockResolvedValue({
+            psbtBase64: 'cHNidP8=',
+            feeSats: BigInt(210),
+            vtxoIds: ['a', 'b'],
+            skippedVtxoIds: [],
+        });
+        mockHandle.signExitClaimInputs.mockResolvedValue('cHNidP8signed');
+        mockHandle.broadcastTx.mockResolvedValue('c1a1m');
+    });
+
+    it('asks to drain everything claimable, with the address and rate in their new places', async () => {
+        const out = await claimArkExitsToAddress('  bc1qdestination  ', BigInt(3));
+        expect(mockHandle.drainExits).toHaveBeenCalledTimes(1);
+        expect(mockHandle.drainExits).toHaveBeenCalledWith([], true, 'bc1qdestination', BigInt(3));
+        expect(out).toEqual({ txid: 'c1a1m', feeSats: 210, psbtBase64: 'cHNidP8=' });
+    });
+
+    it('passes an undefined rate through rather than shifting it', async () => {
+        await claimArkExitsToAddress('bc1qdestination');
+        expect(mockHandle.drainExits).toHaveBeenCalledWith([], true, 'bc1qdestination', undefined);
+    });
+
+    it('still claims when a binding leaves out the new vtxoIds fields', async () => {
+        mockHandle.drainExits.mockResolvedValue({ psbtBase64: 'cHNidP8=', feeSats: BigInt(99) });
+        await expect(claimArkExitsToAddress('bc1qdestination')).resolves.toMatchObject({ txid: 'c1a1m', feeSats: 99 });
+    });
+
+    it('refuses an empty destination before touching bark', async () => {
+        await expect(claimArkExitsToAddress('   ')).rejects.toThrow();
+        expect(mockHandle.drainExits).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * bark 0.8.x cancelExit. Expected refusals come back IN the result
+ * (ExitCancelResult { canceled, reason? }), never as a throw. Anything that is
+ * not an explicit `canceled: true` must read as a refusal: an unknown shape
+ * read as success would drop the spend guard while an exit may be broadcasting.
+ */
+describe('cancelling an exit (bark 0.8.x cancelExit)', () => {
+    it('reads canceled: true as cancelled', () => {
+        expect(readExitCancelResult('v1', { canceled: true })).toEqual({ vtxoId: 'v1', canceled: true });
+    });
+
+    it.each([
+        [{ tag: 'NotExiting' }, 'not-exiting'],
+        [{ tag: 'TooLate', inner: { state: 3 } }, 'too-late'],
+        [{ tag: 'SomethingNew' }, 'unknown'],
+    ])('reads refusal %j as %s', (reason, refusal) => {
+        expect(readExitCancelResult('v1', { canceled: false, reason })).toEqual({
+            vtxoId: 'v1',
+            canceled: false,
+            refusal,
+        });
+    });
+
+    it('keeps the txid of an exit that is already broadcast', () => {
+        expect(
+            readExitCancelResult('v1', { canceled: false, reason: { tag: 'AlreadyBroadcast', inner: { txid: 'ab'.repeat(32) } } }),
+        ).toEqual({ vtxoId: 'v1', canceled: false, refusal: 'already-broadcast', txid: 'ab'.repeat(32) });
+    });
+
+    it.each([undefined, null, {}, { canceled: 'yes' }, 'canceled'])(
+        'never reads %j as cancelled',
+        (result) => {
+            expect(readExitCancelResult('v1', result)).toMatchObject({ canceled: false, refusal: 'unknown' });
+        },
+    );
+
+    it('asks bark once per capsule and keeps going past a throw', async () => {
+        mockHandle.cancelExit
+            .mockResolvedValueOnce({ canceled: true })
+            .mockRejectedValueOnce(new Error('handle busy'))
+            .mockResolvedValueOnce({ canceled: false, reason: { tag: 'TooLate', inner: { state: 2 } } });
+        const out = await cancelArkExits(['a', 'b', 'c']);
+        expect(mockHandle.cancelExit.mock.calls.map((c) => c[0])).toEqual(['a', 'b', 'c']);
+        expect(out).toEqual([
+            { vtxoId: 'a', canceled: true },
+            { vtxoId: 'b', canceled: false, refusal: 'unknown' },
+            { vtxoId: 'c', canceled: false, refusal: 'too-late' },
+        ]);
+    });
+
+    it('skips empty ids instead of sending them to bark', async () => {
+        mockHandle.cancelExit.mockResolvedValue({ canceled: true });
+        const out = await cancelArkExits(['', 'a']);
+        expect(mockHandle.cancelExit).toHaveBeenCalledTimes(1);
+        expect(out).toEqual([{ vtxoId: 'a', canceled: true }]);
     });
 });

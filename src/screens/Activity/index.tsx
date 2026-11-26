@@ -81,8 +81,16 @@ const describe = (ev: AppEvent): RowMeta => {
             };
         case "ark-exit-finished":
             return {
-                icon: ev.result === "success" ? "checkmark-circle-outline" : "alert-circle-outline",
-                line1: ev.result === "success" ? loc.cypherbox.payments.activity.exit_complete : loc.cypherbox.payments.activity.exit_failed,
+                icon: ev.result === "success"
+                    ? "checkmark-circle-outline"
+                    : ev.result === "canceled"
+                        ? "close-circle-outline"
+                        : "alert-circle-outline",
+                line1: ev.result === "success"
+                    ? loc.cypherbox.payments.activity.exit_complete
+                    : ev.result === "canceled"
+                        ? loc.cypherbox.payments.activity.exit_canceled
+                        : loc.cypherbox.payments.activity.exit_failed,
                 walletLabel: getWalletLabel()["ark"],
             };
         case "ark-refresh-started":

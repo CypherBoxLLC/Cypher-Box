@@ -225,6 +225,15 @@ export function createArkConfig(overrides?: Partial<Parameters<typeof Config.cre
         // OnchainWallet.default_ signatures (passed as ARK_NETWORK there).
         vtxoRefreshExpiryThreshold: undefined,
         vtxoExitMargin: undefined,
+        // bark 0.9.0 added `boardLifetime`, the default expiry of a board VTXO
+        // (432 blocks / ~3 days on mainnet). A board left on that default would
+        // expire far sooner than before 0.9.0, when a board took the server's
+        // full VTXO lifetime. bark clamps this to `ArkInfo.vtxo_lifetime`, so a
+        // large value keeps the pre-0.9.0 behavior: a board lives as long as
+        // any VTXO. (The per-board `expiryHeight` argument stays undefined so
+        // boards use this; unlike this field, an over-large argument is
+        // refused rather than clamped.)
+        boardLifetime: 52560, // ~1 year of blocks; clamped down to the server's vtxo_lifetime
         htlcRecvClaimDelta: undefined,
         fallbackFeeRate: undefined,
         roundTxRequiredConfirmations: undefined,

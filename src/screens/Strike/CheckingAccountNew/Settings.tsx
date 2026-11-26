@@ -64,6 +64,10 @@ import {
   getLastLocalBackupNote,
   hasActiveArkExitRecords,
   isActiveExit,
+  isSweptExit,
+  cancelArkExits,
+  cancelArkExitReadyNotice,
+  fetchArkVtxos,
   isGoogleDriveConnected,
   isICloudBackupAvailable,
   loadArkBackupInstanceId,
@@ -84,7 +88,7 @@ import RNFS from "react-native-fs";
 import Share from "react-native-share";
 import { BlueStorageContext } from "../../../../blue_modules/storage-context";
 import { recordEvent } from "@Cypher/stores/eventLogStore";
-import { setArkExitCorrelationId } from "@Cypher/services/activityCursors";
+import { getArkExitCorrelationId, setArkExitCorrelationId } from "@Cypher/services/activityCursors";
 import loc from "../../../../loc";
 import { arkSeedKeychainText } from "@Cypher/helpers/arkSeedKeychainText";
 
@@ -1074,6 +1078,13 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
   // sats total. The panel used to print one sentence for the entire two-day
   // run, so a stalled exit and a working one looked identical.
   const [exitPhase, setExitPhase] = useState<ExitPhaseSummary | null>(null);
+  // Sats in capsules whose exit ended in bark 0.8's VtxoSwept: the chain the
+  // exit needed was spent on chain (the server swept the round after expiry),
+  // so the exit can never deliver them. Terminal, so they drop out of the
+  // pending total above; this says where they went. Same poll, no new request.
+  const [exitSweptSats, setExitSweptSats] = useState(0);
+  // Cancel-exit request in flight (bark 0.8 `cancelExit`). One at a time.
+  const [exitCanceling, setExitCanceling] = useState(false);
 
   // --- Exit-fee funding gate ---
   //
@@ -1184,6 +1195,7 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
     if (!arkExitInProgress) {
       setPendingExitSats(null);
       setExitPhase(null);
+      setExitSweptSats(0);
       return;
     }
     let cancelled = false;
@@ -1250,8 +1262,14 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
         // what made a real countdown possible (the store's tip used to freeze
         // for the whole exit, and bark's is stamped once on entry).
         const tipHeight = useAuthStore.getState().arkChainTipHeight ?? null;
+        // bark 0.8 VtxoSwept: terminal, so not in `active`; counted apart so
+        // the panel can say these will not come out.
+        const sweptSats = vtxos
+          .filter((v) => isSweptExit(v))
+          .reduce((acc, v) => acc + Number(v.amountSats ?? 0), 0);
 
         if (!cancelled) {
+          setExitSweptSats(sweptSats);
           setPendingExitSats(Math.max(activeSats, pendingTotal));
           setExitPhase(
             summariseExitPhase({
@@ -1954,6 +1972,106 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
       return;
     }
     void startExitWithAddress(loc.cypherbox.strike.ark_exit.dest_external, t);
+  };
+
+  /**
+   * Undo an emergency exit that has not reached the chain yet (bark 0.8.x
+   * `cancelExit`).
+   *
+   * Until this existed a started exit could not be taken back, and the common
+   * way to get stuck was an exit started without fee money: nothing ever
+   * broadcasts, and the vault stays send-locked behind it. bark lets an exit go
+   * while it is still in its abortable window, which ends once an exit
+   * transaction is out; past that the chain cannot be talked out of it.
+   *
+   * Asks bark for every exit it tracks, not just the ones the panel counts, so
+   * a capsule in a state this build does not recognise is still offered. The
+   * app's exit flags are cleared ONLY when no live exit remains afterwards:
+   * a partly cancelled exit is still an exit, and the spend guard has to stay
+   * up for the capsules already on-chain. useArkSync's self-heal would re-arm
+   * the flag from bark's records anyway, so clearing it early buys nothing.
+   */
+  const handleCancelExit = () => {
+    if (exitCanceling) return;
+    Alert.alert(
+      loc.cypherbox.strike.ark_exit.cancel_exit_title,
+      loc.cypherbox.strike.ark_exit.cancel_exit_body,
+      [
+        { text: loc.cypherbox.strike.ark_exit.cancel_exit_keep, style: 'cancel' },
+        {
+          text: loc.cypherbox.strike.ark_exit.cancel_exit,
+          style: 'destructive',
+          onPress: async () => {
+            setExitCanceling(true);
+            try {
+              const before = await fetchArkExitVtxos();
+              const live = before.filter((v) => isActiveExit(v));
+              const outcomes = await cancelArkExits(live.map((v) => String(v.vtxoId)));
+              const canceledCount = outcomes.filter((o) => o.canceled).length;
+
+              // Re-read rather than trust the outcomes: what decides whether the
+              // exit is over is bark's own records afterwards.
+              const after = await fetchArkExitVtxos();
+              const stillLive = after.some((v) => isActiveExit(v));
+              console.log(
+                '[Ark exit] cancel:', canceledCount, 'of', outcomes.length, 'cancelled;',
+                'refusals=', outcomes.filter((o) => !o.canceled).map((o) => (o.canceled ? '' : o.refusal)).join(',') || 'none',
+                'stillLive=', stillLive,
+              );
+
+              if (!stillLive) {
+                try { cancelArkExitReadyNotice(); } catch { /* best-effort */ }
+                const correlationId = await getArkExitCorrelationId();
+                if (correlationId) {
+                  recordEvent({ kind: 'ark-exit-finished', correlationId, result: 'canceled' });
+                  await setArkExitCorrelationId(null);
+                }
+                setArkExitInProgress(false);
+                setArkExitDestinationAddress(null);
+                setArkExitStartedAt(null);
+                setArkExitStartedSats(null);
+                setArkExitDrained(false);
+                setArkExitFeeDeadlineHeight(null);
+                useAuthStore.getState().setArkExitClaimBatchSince(null);
+                // The send guard also reads the stored capsules' `exiting`
+                // flag; refresh them now rather than on the next sync tick.
+                try {
+                  const list = await fetchArkVtxos();
+                  if (list) useAuthStore.getState().setArkVtxos(list.spendable);
+                } catch { /* the next sync tick refreshes them */ }
+                SimpleToast.show(loc.cypherbox.strike.ark_exit.exit_canceled, SimpleToast.LONG);
+              } else if (canceledCount > 0) {
+                Alert.alert(
+                  loc.cypherbox.strike.ark_exit.exit_in_progress,
+                  String(loc.formatString(loc.cypherbox.strike.ark_exit.exit_cancel_partial, {
+                    canceled: canceledCount,
+                    total: outcomes.length,
+                  })),
+                );
+              } else if (outcomes.some((o) => !o.canceled && o.refusal === 'unknown')) {
+                Alert.alert(
+                  loc.cypherbox.strike.ark_exit.exit_in_progress,
+                  loc.cypherbox.strike.ark_exit.exit_cancel_failed,
+                );
+              } else {
+                Alert.alert(
+                  loc.cypherbox.strike.ark_exit.exit_in_progress,
+                  loc.cypherbox.strike.ark_exit.exit_cancel_too_late,
+                );
+              }
+            } catch (err: any) {
+              console.warn('[Ark exit] cancel failed:', err?.message ?? String(err));
+              Alert.alert(
+                loc.cypherbox.strike.ark_exit.exit_in_progress,
+                loc.cypherbox.strike.ark_exit.exit_cancel_failed,
+              );
+            } finally {
+              setExitCanceling(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   /**
@@ -2666,6 +2784,15 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 {exitPhase.detail}
               </Text>
             )}
+            {/* SWEPT (bark 0.8 VtxoSwept). These exits ended because the chain
+                they needed was spent on chain, so their sats will not arrive
+                and have left the pending total above. Say so, rather than let
+                the total shrink without a reason. */}
+            {exitSweptSats > 0 && (
+              <Text style={{ fontSize: 12, color: '#FFD54F', marginBottom: 6 }}>
+                {String(loc.formatString(loc.cypherbox.strike.ark_exit.exit_swept_note, { sats: exitSweptSats.toLocaleString() }))}
+              </Text>
+            )}
 
             {/* BATTERY NOTICE, Android only, during an exit only.
                 An earlier version of this banner lived on the auto-refresh
@@ -2762,6 +2889,21 @@ export function ArkSettingsBody({ view = 'backup' }: { view?: 'backup' | 'action
                 <Text bold style={{ fontSize: 13, color: '#FFF' }}>{loc.cypherbox.strike.ark_exit.top_up_exit_fees}</Text>
               </TouchableOpacity>
             </View>
+
+            {/* CANCEL EXIT (bark 0.8 `cancelExit`). Last, small and plain, so
+                it is never the obvious tap; the confirm dialog says it only
+                works before the exit reaches the chain. bark refuses it past
+                that point, and handleCancelExit reports which case it was. */}
+            <TouchableOpacity
+              onPress={exitCanceling ? undefined : handleCancelExit}
+              activeOpacity={0.7}
+              disabled={exitCanceling}
+              style={{ marginTop: 14, paddingVertical: 8, alignItems: 'center', opacity: exitCanceling ? 0.5 : 1 }}
+            >
+              <Text style={{ fontSize: 12, color: '#AAA', textDecorationLine: 'underline' }}>
+                {loc.cypherbox.strike.ark_exit.cancel_exit}
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <>
