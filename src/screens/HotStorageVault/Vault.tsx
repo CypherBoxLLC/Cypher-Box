@@ -22,6 +22,7 @@ import { btc } from "@Cypher/helpers/coinosHelper";
 import loc, { formatBalance, formatBalanceWithoutSuffix } from "../../../loc";
 import { describePending, dispatchNavigate, formatAge, formatSats, pendingInputsSpent, resumeParams, sameAccountKey } from "@Cypher/helpers";
 import useAuthStore from "@Cypher/stores/authStore";
+import useAntiExfilStore from "@Cypher/stores/antiExfilStore";
 import { WatchOnlyWallet } from "../../../class";
 import useImportTransaction from "./useImportTransaction";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
@@ -96,7 +97,10 @@ export default function Vault({ wallet, matchedRate, setSelectedTab }: { wallet:
         ]);
 
     const resumePending = () => {
-        if (pending) dispatchNavigate('HardwareWalletTransactionContinue', resumeParams(pending, wallet));
+        if (!pending) return;
+        // with Verify my signing phone on, the resumed spend goes through the verified exchange too, from a fresh start
+        const verified = useAntiExfilStore.getState().verifySigningPhone;
+        dispatchNavigate(verified ? 'AntiExfilVerify' : 'HardwareWalletTransactionContinue', resumeParams(pending, wallet));
     };
 
     const discardPending = () => {

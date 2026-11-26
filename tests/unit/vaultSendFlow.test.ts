@@ -196,8 +196,12 @@ describe('params that decide what is spent survive each hop', () => {
     });
 
     it('the signing screen gets the flow, the change and the fee, and passes them on for "Show again"', () => {
-        const [signing] = paramsOf(read('src/screens/ColdStorage/index.tsx'), "navigation.navigate('HardwareWalletTransaction'");
+        // one params object for both signing screens: the plain one, and verified signing when its switch is on
+        const review = read('src/screens/ColdStorage/index.tsx');
+        const [signing] = paramsOf(review, 'const signingParams = ');
         for (const key of ['kind', 'changeSats', 'networkFees', 'to']) expect(signing).toMatch(new RegExp(`\\b${key}\\b`));
+        expect(review).toMatch(/navigate\('HardwareWalletTransaction', signingParams\)/);
+        expect(review).toMatch(/navigate\('AntiExfilVerify', signingParams\)/);
         const [onward] = paramsOf(read('src/screens/HardwareWalletTransaction/index.tsx'), 'navigation.navigate("HardwareWalletTransactionContinue"');
         for (const key of ['kind', 'changeSats', 'networkFees']) expect(onward).toMatch(new RegExp(`\\b${key}\\b`));
     });

@@ -46,6 +46,10 @@ interface Style {
     logoImage: ImageStyle;
     vaultIconImage: ImageStyle;
     coldVaultIconImage: ImageStyle;
+    verifySigner: ViewStyle;
+    verifySignerRow: ViewStyle;
+    verifySignerTitle: TextStyle;
+    verifySignerExplainer: TextStyle;
 }
 
 export default StyleSheet.create<Style>({
@@ -329,5 +333,31 @@ export default StyleSheet.create<Style>({
         width: 39,
         height: 29,
         marginEnd: 5,
+    },
+    // the "Verify my signing phone" switch under the title, Cold Vault only
+    verifySigner: {
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: "#333",
+        backgroundColor: "#1a1a1a",
+    },
+    verifySignerRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+    },
+    verifySignerTitle: {
+        fontSize: 14,
+        color: colors.white,
+        flex: 1,
+        marginRight: 12,
+    },
+    verifySignerExplainer: {
+        fontSize: 11,
+        color: "#aaa",
+        lineHeight: 16,
+        marginTop: 8,
     },
 })

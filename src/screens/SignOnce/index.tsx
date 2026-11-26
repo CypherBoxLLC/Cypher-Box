@@ -32,6 +32,16 @@ import {
     signWithRoot,
     signingKeyForWallet,
 } from "@Cypher/helpers";
+import { SignerSession, signerCommitStep, signerSignStep } from "@Cypher/helpers/antiExfilController";
+import {
+    ANTI_EXFIL_NEWER_VERSION,
+    ANTI_EXFIL_WRONG_REPLY,
+    keyAccessFromRoot,
+    keyAccessFromWallet,
+    unwrapAntiExfilCommit,
+} from "@Cypher/helpers/antiExfilSigner";
+import { AntiExfilMessage, decodeAntiExfilMessage } from "@Cypher/helpers/antiExfilTransport";
+import AntiExfilCode from "@Cypher/components/AntiExfilCode";
 import useAuthStore from "@Cypher/stores/authStore";
 import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import useProtectSecret from "../../custom-hooks/useProtectSecret";
@@ -48,7 +58,7 @@ import loc from "../../../loc";
 const bitcoinjs = require('bitcoinjs-lib');
 const fs = require('../../../blue_modules/fs');
 
-type Step = 'scan' | 'choose' | 'backup' | 'review' | 'signed';
+type Step = 'scan' | 'choose' | 'backup' | 'review' | 'open' | 'signed';
 type Mode = 'vault' | 'backup';
 
 /**
@@ -63,6 +73,12 @@ type Mode = 'vault' | 'backup';
  * A multisig spend (one key of a wallet made in Nunchuk, Sparrow or BlueWallet) is only signed from a backup, in
  * Offline Seed-Signer mode, and only for a wallet registered under Multisig Wallets: one that isn't is refused when it's
  * scanned, before any SeedQR. The review then names the wallet, and change is checked against it.
+ *
+ * A Cold Vault with "Verify my signing phone" on sends its transaction inside a verified-signing request
+ * (helpers/antiExfilTransport). The same checks and review run on the transaction inside; signing then takes two
+ * more scans: this phone shows what it committed to, the Cold Vault replies, and only then is the transaction signed,
+ * with exactly the nonces committed to (helpers/antiExfilController). The key is held until that reply, or until the
+ * screen closes.
  *
  * Params: `psbt` to start from a transaction already scanned, `mode: 'vault'` to sign with the Hot Vault straight away.
  */
@@ -96,6 +112,12 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
     // what the signed screen says about the other keys of a multisig
     const [signedMultisig, setSignedMultisig] = useState<TransactionReview['multisig'] | null>(null);
     const rootRef = useRef<BIP32Interface | null>(null);
+    // verified signing: the Cold Vault's request the transaction came in, this phone's commitments to answer it with,
+    // and the codes it shows for the two extra hops
+    const [antiExfil, setAntiExfil] = useState<AntiExfilMessage | null>(null);
+    const [signerSession, setSignerSession] = useState<SignerSession | null>(null);
+    const [openCode, setOpenCode] = useState<string | null>(null);
+    const [signCode, setSignCode] = useState<string | null>(null);
 
     // a recovery phrase or a key made from one can be on this screen: hide it from the app switcher, block screenshots
     useProtectSecret();
@@ -130,7 +152,10 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
     const accept = (data: string) => {
         setError(null);
         try {
-            const tx = parseUnsignedPsbt(data);
+            // the Cold Vault's verified-signing request carries the transaction; a plain one is itself
+            const { psbt: raw, commit } = unwrapAntiExfilCommit(data);
+            setAntiExfil(commit);
+            const tx = parseUnsignedPsbt(raw);
             if (!inputFingerprints(tx).length) throw new Error(SIGN_NO_KEY_INFO);
             setPsbt(tx);
             const key = hotVaultKey();
@@ -212,6 +237,63 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         }
     };
 
+    // the key verified signing derives from: the backup loaded for this signature, or the Hot Vault on this phone
+    const keyAccess = () => {
+        if (mode === 'backup') {
+            if (!rootRef.current) throw new Error(SIGN_NOTHING_SIGNED);
+            return keyAccessFromRoot(rootRef.current);
+        }
+        if (!hotVault) throw new Error(loc.cypherbox.sign_once.no_hot_vault);
+        return keyAccessFromWallet(hotVault);
+    };
+
+    // Verified signing, this phone's first hop: the checks a plain signature gets, then a commitment to the nonces
+    // (no signature yet). The key stays until the Cold Vault's reply is scanned, or the screen closes.
+    const commitAntiExfil = (commit: AntiExfilMessage) => {
+        const tx = psbt as bitcoin.Psbt;
+        if (mode === 'backup') {
+            if (!rootRef.current) throw new Error(SIGN_NOTHING_SIGNED);
+            // whatever the review refuses isn't signed either, as signWithRoot does
+            reviewWithRoot(tx, rootRef.current, multisigWallets);
+        } else {
+            assertSingleKeyOnly(tx);
+            const key = hotVaultKey();
+            if (!key) throw new Error(loc.cypherbox.sign_once.no_hot_vault);
+            assertKeyOwns(tx, key, SIGN_VAULT_MISMATCH);
+        }
+        const { message, session } = signerCommitStep(commit, keyAccess());
+        setSignerSession(session);
+        setOpenCode(message);
+        setStep('open');
+    };
+
+    // Verified signing, the second hop: the Cold Vault's reply to this phone's commitment, then the signature, with
+    // exactly the nonces committed to. Still only while no server answers.
+    const finishAntiExfil = (data: string) => {
+        setError(null);
+        if (!offline) {
+            setError(onlineNote);
+            return;
+        }
+        try {
+            const reveal = decodeAntiExfilMessage(data);
+            if (reveal.kind === 'unsupported-version') throw new Error(ANTI_EXFIL_NEWER_VERSION);
+            if (reveal.kind !== 'ok' || reveal.message.hop !== 'reveal' || !signerSession || reveal.message.sessionId !== signerSession.id) {
+                throw new Error(ANTI_EXFIL_WRONG_REPLY);
+            }
+            const { message, signedPsbtBase64 } = signerSignStep(reveal.message, signerSession, keyAccess());
+            rootRef.current = null;
+            setSigned(bitcoinjs.Psbt.fromBase64(signedPsbtBase64));
+            setSignCode(message);
+            setSignedMultisig(null);
+            setReview(null);
+            setSignedOnThisPhone(true);
+            setStep('signed');
+        } catch (e: any) {
+            setError(signErrorText(e.message));
+        }
+    };
+
     const sign = () => {
         setError(null);
         if (!offline) {
@@ -219,6 +301,10 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
             return;
         }
         try {
+            if (antiExfil) {
+                commitAntiExfil(antiExfil);
+                return;
+            }
             if (mode === 'backup') {
                 if (!rootRef.current) throw new Error(SIGN_NOTHING_SIGNED);
                 setSigned(signWithRoot(psbt as bitcoin.Psbt, rootRef.current, multisigWallets).psbt);
@@ -381,8 +467,27 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                     {loc.formatString(loc.cypherbox.sign_once.partial, { own: review.ownInputs, total: review.inputCount })}
                 </Text>
             ) : null}
+            {antiExfil ? <Text style={styles.note}>{loc.cypherbox.anti_exfil.signer.review_note}</Text> : null}
             <TouchableOpacity style={styles.primary} onPress={sign} accessibilityRole="button">
                 <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.sign}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.secondary} onPress={cancel} accessibilityRole="button">
+                <Text h3>{loc._.cancel}</Text>
+            </TouchableOpacity>
+            {renderError()}
+        </>
+    );
+
+    const renderOpen = () => (
+        <>
+            <Text style={styles.title}>{loc.cypherbox.anti_exfil.signer.open_title}</Text>
+            {!offline ? <Text style={styles.online}>{onlineNote}</Text> : null}
+            <View style={styles.qr}>
+                <AntiExfilCode value={openCode ?? ''} />
+            </View>
+            <Text style={styles.body}>{loc.cypherbox.anti_exfil.signer.open_body}</Text>
+            <TouchableOpacity style={styles.primary} onPress={() => scan(finishAntiExfil)} accessibilityRole="button">
+                <Text h3 style={styles.primaryText}>{loc.cypherbox.anti_exfil.signer.scan_reply}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondary} onPress={cancel} accessibilityRole="button">
                 <Text h3>{loc._.cancel}</Text>
@@ -395,32 +500,43 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
         <>
             <Text style={styles.title}>{loc.cypherbox.sign_once.signed_title}</Text>
             <View style={styles.qr}>
-                {/* a white margin around it: a laptop webcam (Sparrow) doesn't find the code against the dark screen without one */}
-                <DynamicQRCode value={(signed as bitcoin.Psbt).toHex()} quietZone={24} />
+                {signCode ? (
+                    // verified signing: the signed transaction together with what this phone committed to, for the Cold Vault's check
+                    <AntiExfilCode value={signCode} />
+                ) : (
+                    // a white margin around it: a laptop webcam (Sparrow) doesn't find the code against the dark screen without one
+                    <DynamicQRCode value={(signed as bitcoin.Psbt).toHex()} quietZone={24} />
+                )}
             </View>
             <Text style={styles.body}>
-                {signedMultisig
+                {signCode
+                    ? loc.cypherbox.anti_exfil.signer.signed_body
+                    : signedMultisig
                     ? String(loc.formatString(loc.cypherbox.sign_once.signed_body_multisig, { m: signedMultisig.m, n: signedMultisig.n }))
                     : loc.cypherbox.sign_once.signed_body}
             </Text>
             {mode === 'backup' ? <Text style={styles.success}>{loc.cypherbox.sign_once.not_saved}</Text> : null}
-            <TouchableOpacity
-                style={styles.secondary}
-                onPress={() => {
-                    Clipboard.setString((signed as bitcoin.Psbt).toBase64());
-                    SimpleToast.show(loc.cypherbox.sign_once.copied, SimpleToast.SHORT);
-                }}
-                accessibilityRole="button"
-            >
-                <Text h3>{loc.cypherbox.sign_once.copy}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-                style={styles.secondary}
-                onPress={() => fs.writeFileAndExport(`signed-${Date.now()}.psbt`, (signed as bitcoin.Psbt).toBase64())}
-                accessibilityRole="button"
-            >
-                <Text h3>{loc.cypherbox.sign_once.save_file}</Text>
-            </TouchableOpacity>
+            {signCode ? null : (
+                <>
+                    <TouchableOpacity
+                        style={styles.secondary}
+                        onPress={() => {
+                            Clipboard.setString((signed as bitcoin.Psbt).toBase64());
+                            SimpleToast.show(loc.cypherbox.sign_once.copied, SimpleToast.SHORT);
+                        }}
+                        accessibilityRole="button"
+                    >
+                        <Text h3>{loc.cypherbox.sign_once.copy}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.secondary}
+                        onPress={() => fs.writeFileAndExport(`signed-${Date.now()}.psbt`, (signed as bitcoin.Psbt).toBase64())}
+                        accessibilityRole="button"
+                    >
+                        <Text h3>{loc.cypherbox.sign_once.save_file}</Text>
+                    </TouchableOpacity>
+                </>
+            )}
             <TouchableOpacity style={styles.primary} onPress={() => navigation.goBack()} accessibilityRole="button">
                 <Text h3 style={styles.primaryText}>{loc.cypherbox.sign_once.done}</Text>
             </TouchableOpacity>
@@ -440,6 +556,7 @@ export default function SignOnce({ route, navigation }: { route: any; navigation
                 {step === 'choose' && renderChoose()}
                 {step === 'backup' && renderBackup()}
                 {step === 'review' && renderReview()}
+                {step === 'open' && renderOpen()}
                 {step === 'signed' && signed && renderSigned()}
             </ScrollView>
         </ScreenLayout>

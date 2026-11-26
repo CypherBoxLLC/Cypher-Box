@@ -24,6 +24,7 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { AbstractHDElectrumWallet } from "../../../class/wallets/abstract-hd-electrum-wallet";
 import BigNumber from "bignumber.js";
 import useAuthStore from "@Cypher/stores/authStore";
+import useAntiExfilStore from "@Cypher/stores/antiExfilStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
@@ -111,6 +112,7 @@ export default function ColdStorage({ route, navigation }: Props) {
     const [changeFetchLoading, setChangeFetchLoading] = useState(false);
     const { wallets, setSelectedWalletID, sleep, txMetadata, saveToDisk, isElectrumDisabled } = useContext(BlueStorageContext);
     const { walletID, coldStorageWalletID, isStrikeAuth: isStrikeConnected, isAuth: isCoinosConnected, isArkAuth } = useAuthStore();
+    const { verifySigningPhone, setVerifySigningPhone } = useAntiExfilStore();
     // Region gates (services/featureFlags): a connected rail that is not
     // offered in this region is treated as unavailable on this surface.
     const isAuth = isCoinosConnected && isCoinosAllowed();
@@ -591,7 +593,7 @@ export default function ColdStorage({ route, navigation }: Props) {
           // watch-only wallets with enabled HW wallet support have different flow. we have to show PSBT to user as QR code
           // so he can scan it and sign it. then we have to scan it back from user (via camera and QR code), and ask
           // user whether he wants to broadcast it
-          navigation.navigate('HardwareWalletTransaction', {
+          const signingParams = {
             memo: transactionMemo,
             fromWallet: wallet,
             psbt,
@@ -613,7 +615,15 @@ export default function ColdStorage({ route, navigation }: Props) {
                 destination: changeDestination,
                 depositAddress: changeDepositAddress,
             } : null,
-          });
+          };
+          // "Verify my signing phone" (anti-exfil) is an opt-in, default OFF. When on, the spend goes through the
+          // verified exchange with the signing phone instead of the plain QR screen, with the same params. It is an
+          // ADDITIONAL layer: the confirm screen both end on still runs the existing match check before the swipe.
+          if (verifySigningPhone) {
+            navigation.navigate('AntiExfilVerify', signingParams);
+          } else {
+            navigation.navigate('HardwareWalletTransaction', signingParams);
+          }
           setIsLoading(false);
           return;
         }
@@ -956,6 +966,22 @@ export default function ColdStorage({ route, navigation }: Props) {
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
                 <Text style={styles.title} center>{labels.title}</Text>
+                {/* Cold Vault only: the signing phone proves each signature honest before anything is sent (screens/AntiExfilVerify) */}
+                {wallet?.type === WatchOnlyWallet.type && (
+                    <View style={styles.verifySigner}>
+                        <View style={styles.verifySignerRow}>
+                            <Text bold style={styles.verifySignerTitle}>{loc.cypherbox.anti_exfil.setting_title}</Text>
+                            <Switch
+                                value={verifySigningPhone}
+                                onValueChange={(v: boolean) => setVerifySigningPhone(v)}
+                                ios_backgroundColor="#333333"
+                                thumbColor="#ffffff"
+                                trackColor={{ false: '#666666', true: '#FF65D4' }}
+                            />
+                        </View>
+                        <Text style={styles.verifySignerExplainer}>{loc.cypherbox.anti_exfil.setting_explainer}</Text>
+                    </View>
+                )}
                 {/* <SavingVault
                     container={styles.savingVault}
                     innerContainer={styles.savingVault}
