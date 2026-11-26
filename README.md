@@ -7,7 +7,7 @@
 
 **Website:** [cypherbox.io](https://cypherbox.io) · **Community:** [Telegram](https://t.me/BitcoinUserSupport) · **Email:** info@cypherbox.io
 
-Cypher Box walks you up the self-custody ladder: start with an easy custodial Lightning account(s), graduate to a Hot/Ark vault, land in full on-chain cold storage for long term secure storage, and reach the top rung by signing that cold storage yourself on an **Offline Seed-Signer**: a spare phone that stays offline and keeps no seed. You can reverse the flow and top-up coins from cold storage back to your hot or lightning wallets for cheap fast payments.
+Cypher Box walks you up the self-custody ladder: start with an easy custodial Lightning account(s), graduate to a Hot/Ark vault, land in full on-chain cold storage for long term secure storage, and reach the top rung by signing that cold storage yourself in **Offline Seed-Signing mode**: a spare phone that stays offline and keeps no seed. You can reverse the flow and top-up coins from cold storage back to your hot or lightning wallets for cheap fast payments.
 
 Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built with React Native + Electrum, powered by **Strike**, **Coinos**, and **Second's Bark SDK**.
 
@@ -20,8 +20,8 @@ Cloned from [BlueWallet](https://github.com/BlueWallet/BlueWallet) 6.5.1. Built 
 | ⚡ **Lightning Accounts** | Custodial (Strike / Coinos) | Lightning | First sats, everyday spending |
 | ⛵ **Bark Vault** | Escapable Lightning | Ark protocol (L2) | Lightning speed, your keys, experimental |
 | 🔥 **Hot Vault** | Self-custodial | Bitcoin on-chain | Savings on your device |
-| 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Savings signed offline by a hardware wallet or an Offline Seed-Signer |
-| 📴 **Offline Seed-Signer** | Self-custodial, offline, keeps no seed | Bitcoin on-chain (signs for a watch-only wallet) | The top rung: cold savings signed on your own offline phone, alone or as a multisig co-signer, from a seed you can make with dice |
+| 🧊 **Cold Vault** | Self-custodial (watch-only) | Bitcoin on-chain | Savings signed offline by a hardware wallet or a phone in Offline Seed-Signing mode |
+| 📴 **Offline Seed-Signing mode** | Self-custodial, offline, keeps no seed | Bitcoin on-chain (signs for a watch-only wallet) | The top rung: cold savings signed on your own offline phone, alone or as a multisig co-signer, from a seed you can make with dice |
 
 Swap between rails in-app: Lightning ↔ Bark, top-up vaults from Lightning, withdraw Lightning to vaults.
 
@@ -68,11 +68,11 @@ Self-custodial: you can exit to the chain without the server's permission.
 * **Optional BIP39 passphrase**, kept on the phone and never sent anywhere by the app (an iPhone's iCloud or encrypted computer backup includes it): it protects the paper backup, and recovery needs the seed *and* the passphrase
 * **Keychain / Keystore backup** (optional): a copy of the 12 words in the iPhone Keychain or Android Keystore, opened with Face ID or fingerprint. Recovering checks each backup first (master fingerprint, first address, balance) before restoring it
 * **Coin control** with UTXO visualization: label, consolidate, pick coins
-* Cold Vault: watch-only + PSBT signing with **BBQr animated QR** for airgapped hardware wallets or an Offline Seed-Signer
+* Cold Vault: watch-only + PSBT signing with **BBQr animated QR** for airgapped hardware wallets or a phone in Offline Seed-Signing mode
 * Custom Electrum server support, plausible deniability
 * **Privacy boundary:** the app is wired so your xPub is never exposed to the Lightning custodians or exchanges; they only ever see the single address you chose to withdraw to. Users are advised to practice good coin control and labelling.
 
-## 📴 Offline Seed-Signer - the top rung
+## 📴 Offline Seed-Signing mode - the top rung
 
 * Turns a dedicated phone that stays offline (an old phone you no longer use) into a cold signer for a watch-only wallet: a Cypher Box Cold Vault, Sparrow or another app
 * **Stateless**: the seed is never written to the phone. You back it up on paper or steel and as a **SeedQR**, and scan the SeedQR each time you sign, so the seed is in memory only for that signature. Wipe Seed removes any seed saved before and confirms it's gone
@@ -132,7 +132,7 @@ npx react-native run-ios
 ## 🗺 Roadmap
 
 * ✅ Bark SDK upgrade (bark 0.6.1): capsules stay spendable while refreshing, dust consolidation, safer exit
-* ✅ 0.1.13: Offline Seed-Signer (dice seeds, SeedQR, multisig co-signer), expired Bark capsule recovery, Arabic
+* ✅ 0.1.13: Offline Seed-Signing mode (dice seeds, SeedQR, multisig co-signer), expired Bark capsule recovery, Arabic
 * ⏳ **Bark SDK upgrade** to bark 0.8.1 (`@secondts/bark-react-native` 0.27): pre-signed emergency exits and fixes to coin selection in exits
 * ⏳ **French translation**
 * ⏳ Coin flips and 20-sided dice for seeds, back once fully tested

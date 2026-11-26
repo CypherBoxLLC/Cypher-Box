@@ -11,7 +11,7 @@ import loc from "../../../loc";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 
 // typed as it is in every language, like a code
-const CONFIRM_WORD = 'SEED-SIGNER';
+const CONFIRM_WORD = 'SEED-SIGNING';
 
 /**
  * The one way into Offline Seed-Signer mode, and there's no way back out short of reinstalling. It opens only in an

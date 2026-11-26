@@ -8,8 +8,8 @@ import { dispatchNavigate } from "@Cypher/helpers";
  * loc.cypherbox.seed_signer.title and loc.cypherbox.seed_signer.mode instead, read while they render, so they're in the
  * app's language.
  */
-export const SEED_SIGNER = 'Offline Seed-Signer';
-export const SEED_SIGNER_MODE = 'Offline Seed-Signer mode';
+export const SEED_SIGNER = 'Offline Seed-Signing';
+export const SEED_SIGNER_MODE = 'Offline Seed-Signing mode';
 
 /** Wherever the mode is turned on from, it goes through the one-way gate (screens/SeedSignerGate). */
 export function openSeedSignerGate() {
