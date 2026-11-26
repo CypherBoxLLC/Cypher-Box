@@ -2642,6 +2642,7 @@
         "remove_failed_message_android": "قد يظل الإدخال موجودًا في Keystore. حاول مرة أخرى، أو أزله من إعدادات الخزنة.",
         "backed_up_legacy": "نسخة احتياطية (قديمة)",
         "backed_up": "نسخة احتياطية بتاريخ {date}",
+        "not_fingerprint_protected": "غير محمية ببصمتك. استعِدها لحفظ نسخة محمية.",
         "keychain_title": "الاسترداد من Keychain على iPhone",
         "keychain_title_android": "الاسترداد من Keystore على Android",
         "no_keychain_backup": "لم يتم العثور على نسخة احتياطية في Keychain على هذا الجهاز. لاستخدام هذه الميزة، أنشئ خزنة ساخنة مع تفعيل «الحفظ في Keychain على iPhone»، أو فعّله لاحقًا من إعدادات الخزنة.",
