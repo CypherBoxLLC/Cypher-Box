@@ -33,6 +33,7 @@ import useAuthStore from "@Cypher/stores/authStore";
 import { colors } from "@Cypher/style-guide";
 import styles from "./styles";
 import { createInvoice } from "@Cypher/api/coinOSApis";
+import { describeCoinosFailure } from "@Cypher/services/coinos/apiResponse";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
 import loc from "../../../../loc";
@@ -212,7 +213,9 @@ export default function WithdrawList({ refRBSheet, balance, recommendedFee, cold
       }
     } catch (error) {
       console.error('Error generating bitcoin address handleCreateInvoice 3:', error);
-      SimpleToast.show(type == 'bitcoin' ? loc.cypherbox.home.address_failed_bitcoin : loc.cypherbox.home.address_failed_liquid, SimpleToast.SHORT);
+      const fallback = type == 'bitcoin' ? loc.cypherbox.home.address_failed_bitcoin : loc.cypherbox.home.address_failed_liquid;
+      const message = describeCoinosFailure(error, fallback);
+      if (message) SimpleToast.show(message, message === fallback ? SimpleToast.SHORT : SimpleToast.LONG);
     } finally {
       setIsLoading(false);
     }

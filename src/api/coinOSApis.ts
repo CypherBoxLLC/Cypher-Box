@@ -2,6 +2,7 @@ import {
   isNetworkShapedFailure,
   markWithdrawIndeterminate,
 } from '@Cypher/services/coinos/withdrawGuard';
+import { readCoinosJson } from '@Cypher/services/coinos/apiResponse';
 import useAuthStore from '@Cypher/stores/authStore';
 import { expireCoinosSession } from '../services/sessionExpiry';
 import SimpleToast from "react-native-simple-toast";
@@ -239,7 +240,12 @@ export const createInvoice = async (invoiceData: any) => {
       },
       body: JSON.stringify({ invoice: invoiceData }),
     }));
-    return await response.json();
+    // CoinOS answers a failed create as HTTP 500 with the reason as a plain
+    // text body (an address type its node cannot serve, for one), so read the
+    // status before parsing: parsing that body as JSON threw a SyntaxError and
+    // the screens showed a generic "try again" with the reason lost. A 401
+    // expires the session, as the other authenticated calls do.
+    return await readCoinosJson(response, () => expireCoinosSession());
   } catch (error) {
     console.error('Error creating invoice:', error);
     throw error;
