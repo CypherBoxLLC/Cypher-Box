@@ -16,11 +16,10 @@ const TXID = 'f'.repeat(64);
 const ZPUB = 'zpub6rFDtF1nuXZ9PUL4XzKURh3vJBW6Kj6TUrYL4qPtFNtDXtcTVfiqjQDyrZNwjwzt5HS14qdqo3Co2282Lv3Re6Y5wFZxAVuMEpeygnnDwfx';
 
 describe('capsule label presets', () => {
-  it('offers KYC, KYC-free, P2P, Exchange, Income and Gift, with KYC and KYC-free excluding each other', () => {
+  it('offers P2P, Exchange, Income and Gift', () => {
     const presets = capsulePresetLabels();
-    expect(presets.map(p => p.text)).toEqual(['KYC', 'KYC-free', 'P2P', 'Exchange', 'Income', 'Gift']);
-    expect(presets.find(p => p.key === 'kyc')?.excludes).toEqual(['KYC-free']);
-    expect(presets.find(p => p.key === 'kyc_free')?.excludes).toEqual(['KYC']);
+    expect(presets.map(p => p.key)).toEqual(['p2p', 'exchange', 'income', 'gift']);
+    expect(presets.map(p => p.text)).toEqual(['P2P', 'Exchange', 'Income', 'Gift']);
   });
 
   it('adds a preset, adds more after it, and takes one out when tapped again', () => {
@@ -30,16 +29,16 @@ describe('capsule label presets', () => {
     expect(togglePresetLabel('Bought from Sam', 'KYC-free')).toBe('Bought from Sam, KYC-free');
   });
 
-  it('never keeps KYC and KYC-free together', () => {
-    expect(togglePresetLabel('KYC, Exchange', 'KYC-free', ['KYC'])).toBe('Exchange, KYC-free');
-    expect(togglePresetLabel('kyc-free', 'KYC', ['KYC-free'])).toBe('KYC');
+  it('keeps whatever the user typed when a preset is added', () => {
+    expect(togglePresetLabel('KYC', 'Exchange')).toBe('KYC, Exchange');
+    expect(togglePresetLabel('KYC-free, Exchange', 'P2P')).toBe('KYC-free, Exchange, P2P');
   });
 
   it('matches presets whatever the case and with Arabic commas', () => {
     expect(labelHasPreset('kyc, p2p', 'KYC')).toBe(true);
     expect(labelHasPreset('KYC-free', 'KYC')).toBe(false);
     expect(labelHasPreset('دون هوية، هدية', 'هدية')).toBe(true);
-    expect(togglePresetLabel('دون هوية، هدية', 'دخل', [], '، ')).toBe('دون هوية، هدية، دخل');
+    expect(togglePresetLabel('دون هوية، هدية', 'دخل', '، ')).toBe('دون هوية، هدية، دخل');
   });
 
   it('cleans a label before saving it', () => {

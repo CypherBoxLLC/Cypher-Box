@@ -2610,8 +2610,8 @@
         "rec_small": "• Use small capsules for everyday payments",
         "rec_large": "• Keep larger capsules for long-term saving",
         "rec_combine": "• Occasionally combine small capsules when fees are low, unless you plan to spend them soon",
-        "rec_label": "• Label your capsules when you receive them, especially KYC'd ones, so you can track and manage them strategically",
-        "kyc_warning": "⚠️ Never mix KYC and non-KYC capsules in the same transaction. Selecting a KYC capsule alongside a non-KYC one links them on-chain, compromising the privacy of your non-KYC coins."
+        "rec_label": "• Label your capsules when you receive them, with where they came from, so you can track and manage them strategically",
+        "kyc_warning": "⚠️ Never mix capsules from an exchange account with capsules bought peer to peer in the same transaction. Selecting them together links them on-chain and compromises the privacy of both."
       },
       "connect_cold_storage": {
         "invalid_xpub_title": "Invalid Xpub",
@@ -3325,8 +3325,6 @@
         "label_placeholder": "Write a label or pick one below",
         "label_separator": ", ",
         "presets": {
-          "kyc": "KYC",
-          "kyc_free": "KYC-free",
           "p2p": "P2P",
           "exchange": "Exchange",
           "income": "Income",
