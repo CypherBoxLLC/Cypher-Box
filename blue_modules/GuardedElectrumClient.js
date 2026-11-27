@@ -48,7 +48,8 @@ class GuardedElectrumClient extends ElectrumClient {
   }
 
   /**
-   * Opens the socket the way electrum-client does, with the socket's end() switched off.
+   * Opens the socket the way electrum-client does, with the socket's end() switched off and, over TLS, the server's
+   * certificate checked.
    *
    * electrum-client closes a connection by ending its socket and then destroying it: in close(), and when a reply can't
    * be parsed. On Android, react-native-tcp-socket removes the native socket on each of those calls, so the destroy
@@ -60,6 +61,7 @@ class GuardedElectrumClient extends ElectrumClient {
   initSocket(protocol, options) {
     super.initSocket(protocol, options);
     this.conn.end = () => {};
+    if (['tls', 'ssl'].includes(protocol || this._protocol)) validateCertificates(this.conn);
   }
 
   onRecv(chunk) {
@@ -142,6 +144,26 @@ class GuardedElectrumClient extends ElectrumClient {
       callback(new Error('close connect'));
     }
   }
+}
+
+/**
+ * Makes the wrapper electrum-client puts around a TLS socket open it with the server's certificate checked.
+ *
+ * electrum-client's TlsSocketWrapper opens its socket with `tls.connect({ port, host, rejectUnauthorized: false })`,
+ * hardcoded, so whoever answered was taken for the server: anyone on the network path (a hostile Wi-Fi, an ISP) could
+ * pose as it, show a false balance or history, swallow a transaction, or replace a just-sent one and get paid by its fee
+ * bump (Electrum advisory GHSA-6jp4-8v48-cc5v). With `rejectUnauthorized: true` the certificate must come from an
+ * authority the phone trusts and name the host dialed. node checks both. On the phone, blue_modules/tls.js passes the
+ * flag to react-native-tcp-socket: iOS checks both; Android checks the chain, and the name once the hostname patch in
+ * scripts/fix-compile-sdk.sh is in the build. A self-signed certificate is refused: a server of one's own needs a
+ * certificate from a public authority, or its plain TCP port. The wrapper's socket is made inside connect(), so the
+ * `tls` it was given is what's replaced here.
+ */
+function validateCertificates(wrapper) {
+  const tls = wrapper._tls;
+  wrapper._tls = {
+    connect: (config, callback) => tls.connect({ ...config, rejectUnauthorized: true }, callback),
+  };
 }
 
 GuardedElectrumClient.REQUEST_TIMEOUT_MS = REQUEST_TIMEOUT_MS;

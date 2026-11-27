@@ -17,7 +17,9 @@ function connect(config, callback) {
       port: config.port,
       host: config.host,
       tls: true,
-      tlsCheckValidity: config.rejectUnauthorized,
+      // checked unless the caller says not to, as node's tls.connect() does: the certificate must come from an authority
+      // the phone trusts and name the host (on Android the name only with the patch in scripts/fix-compile-sdk.sh)
+      tlsCheckValidity: config.rejectUnauthorized !== false,
     },
     callback,
   );

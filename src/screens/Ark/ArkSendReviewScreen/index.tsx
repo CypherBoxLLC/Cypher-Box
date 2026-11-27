@@ -206,10 +206,11 @@ export default function ArkSendReviewScreen({ route }: Props) {
                 setErrorMsg(err?.message ?? loc.cypherbox.ark.send_review.payment_in_flight);
             } else {
                 // The server refused a capsule, for example one already spent
-                // from another device. A spent one is recorded so the balance
-                // stops counting it, and the user reads the app's words, not
-                // the raw server string.
-                const notSpendable = await recordAndDescribeNotSpendable(err);
+                // from another device. The send service recorded a spent one
+                // against the inputs it used, so the balance stops counting it;
+                // here the user reads the app's words, not the raw server
+                // string.
+                const notSpendable = await recordAndDescribeNotSpendable(err, null);
                 if (notSpendable) {
                     setErrorMsg(notSpendable.body);
                 } else {

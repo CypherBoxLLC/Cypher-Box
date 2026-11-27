@@ -75,7 +75,8 @@ beforeEach(() => {
         netAmountSats: 1_000n,
         vtxosSpent: [],
     });
-    mockHandle.sendArkoorPayment.mockResolvedValue(undefined);
+    // bark 0.8.0 (SDK 0.26.0+) returns the payment's movement id.
+    mockHandle.sendArkoorPayment.mockResolvedValue(17);
     mockHandle.sync.mockResolvedValue(undefined);
     mockHandle.allVtxos.mockResolvedValue([deepCapsule(PHANTOM), deepCapsule(DEEP)]);
     mockRefresh.mockResolvedValue({ roundState: null });

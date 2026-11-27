@@ -3,12 +3,16 @@ import { computeRefreshingSweep } from './refreshingStaleness';
 import { ensureArkWalletHandleReady } from './restore';
 import { assertNoActiveArkExitAsync } from './exit';
 import { fetchArkBalance } from './balance';
-import { fetchArkVtxos, recordServerSpentFromError } from './vtxos';
+import { fetchArkVtxos, recordServerSpentFromError, spendableVtxoIdsForInputs } from './vtxos';
+import { assertNotForcedExitVtxos, forcedExitIdsFromStore } from './forcedExitGuard';
+import { lockForcedExitVtxos } from './forcedExitLock';
+import { classifyExitRecords } from './forcedExit';
 import { writeArkAutoBackup } from './backup';
 import { scheduleArkRefreshReminder } from './backgroundNotifications';
 import { recordEvent } from '@Cypher/stores/eventLogStore';
 import useAuthStore from '@Cypher/stores/authStore';
 import type { FeeEstimate, RoundState } from '@secondts/bark-react-native';
+import { isArkRoundInFlight, isInFlightInputsRefusal } from './roundFlight';
 import loc from '../../../loc';
 
 export type ArkRefreshFeeView = {
@@ -69,11 +73,18 @@ export class ArkRefreshInFlightError extends Error {
  * refresh goes through. An unnamed one cannot be left out next time, so it
  * still counts.
  *
+ * `inputVtxoIds` is what the refused call was given, or bark's Spendable set
+ * when bark picked the capsules itself (maintenance). A refusal naming any
+ * other capsule is not recorded; see ./serverSpentList.ts.
+ *
  * Never throws, so the caller's catch still rethrows the original error.
  */
-async function recordRefusedSpentCapsule(err: unknown): Promise<boolean> {
+async function recordRefusedSpentCapsule(
+    err: unknown,
+    inputVtxoIds: readonly string[] | null,
+): Promise<boolean> {
     try {
-        const parsed = await recordServerSpentFromError(err);
+        const parsed = await recordServerSpentFromError(err, inputVtxoIds);
         return parsed?.state === 'spent' && !!parsed.vtxoId;
     } catch {
         return false;
@@ -127,22 +138,27 @@ export async function refreshArkVtxos(
     // the same coin twice, once cooperatively and once on-chain, and one of the
     // two loses. bark does not protect against this (confirmed with Second
     // 2026-08-13: "we allow VTXOs to be marked for exit and for the user to
-    // still spend them"), and the lock/unlock API they suggest is not exposed
-    // in bark-react-native 0.16.1, so the client is the only thing standing
-    // here.
+    // still spend them"). bark-react-native 0.18.0 exposes the lock/unlock API
+    // they suggested (`lockVtxos` / `unlockVtxos`), but nothing here uses it
+    // yet, so the client guard is still the only thing standing here.
     await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.refreshing_capsules);
+    // A forced exit (bark 0.9.0) does not raise that guard; its capsules are
+    // refused one by one instead. bark's refreshVtxos takes the ids as given,
+    // with no state filter, so this is the only thing stopping one.
+    assertNotForcedExitVtxos(vtxoIds, loc.cypherbox.services.ark_exit.refreshing_capsules);
 
     // Serialize rounds: one refresh at a time, per wallet. The in-process
     // flag catches same-process races; the pendingRoundStates probe catches
-    // rounds left in flight by a previous process. Only `ongoing` rounds
-    // block — `ongoing=false` (finalising) rounds have terminated
+    // rounds left in flight by a previous process. Only rounds still waiting
+    // for or playing out their round block (see ./roundFlight, which also
+    // covers bark 0.8's DelegatedPending): finalising rounds have terminated
     // server-side, their inputs are already spent, and the next sync
     // ingests them regardless.
     if (refreshSubmissionInFlight) {
         throw new ArkRefreshInFlightError(1);
     }
     const pending = await fetchArkPendingRoundStates();
-    const ongoingCount = pending.filter((r) => r.ongoing).length;
+    const ongoingCount = pending.filter((r) => isArkRoundInFlight(r)).length;
     if (ongoingCount > 0) {
         console.log(
             '[Ark refresh] submission blocked:', ongoingCount,
@@ -198,6 +214,13 @@ export async function refreshArkVtxos(
             result: 'failure',
             durationMs: Date.now() - t0,
         });
+        // A round attempt already holds these capsules (server 0.8.1): the
+        // refresh is in progress, not failed. Same treatment as the
+        // pre-submission guard above.
+        if (isInFlightInputsRefusal(err)) {
+            console.log('[Ark refresh] server reports these capsules already in a round; treating as in flight');
+            throw new ArkRefreshInFlightError(1);
+        }
         // Count consecutive failed submissions across every refresh path
         // (Capsules tab, notification tap, background sweep all land
         // here). The pre-submission ArkRefreshInFlightError guard above
@@ -206,7 +229,7 @@ export async function refreshArkVtxos(
         // named as already spent (see recordRefusedSpentCapsule).
         // useArkSync escalates once the streak crosses its threshold while
         // a VTXO is near expiry.
-        if (!(await recordRefusedSpentCapsule(err))) {
+        if (!(await recordRefusedSpentCapsule(err, vtxoIds))) {
             const store = useAuthStore.getState();
             store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
         }
@@ -301,6 +324,7 @@ export async function refreshArkVtxosDelegated(
     // Same exit guard as the self-signed path: a delegated round is still a
     // cooperative spend of the VTXO. See refreshArkVtxos.
     await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.refreshing_capsules);
+    assertNotForcedExitVtxos(vtxoIds, loc.cypherbox.services.ark_exit.refreshing_capsules);
 
     // Cross-caller submission guard. `refreshSubmissionInFlight` is shared
     // with the self-signed path and now also with delegated maintenance, so
@@ -313,15 +337,17 @@ export async function refreshArkVtxosDelegated(
     if (refreshSubmissionInFlight) {
         throw new ArkRefreshInFlightError(0);
     }
-    // Block only when a round is genuinely still ongoing server-side. A
-    // finalising (`ongoing=false`) round has terminated and the next sync
-    // ingests it, so it must not block a fresh delegation.
+    // Block only when a round is genuinely still in flight: waiting for its
+    // round or playing it out. On bark 0.8 that includes a delegated refresh
+    // waiting for its scheduled round (DelegatedPending), which reports
+    // `ongoing=false`; see ./roundFlight. A finalising round has terminated
+    // and the next sync ingests it, so it must not block a fresh delegation.
     const pending = await fetchArkPendingRoundStates();
-    const ongoingCount = pending.filter((r) => r.ongoing).length;
+    const ongoingCount = pending.filter((r) => isArkRoundInFlight(r)).length;
     if (ongoingCount > 0) {
         console.log(
             '[Ark refresh] delegated submission blocked:', ongoingCount,
-            'round(s) already ongoing',
+            'round(s) already in flight',
         );
         throw new ArkRefreshInFlightError(ongoingCount);
     }
@@ -383,16 +409,23 @@ export async function refreshArkVtxosDelegated(
             result: 'failure',
             durationMs: Date.now() - t0,
         });
+        // A round attempt already holds these capsules (server 0.8.1): in
+        // flight, not failed. See the self-signed path above.
+        if (isInFlightInputsRefusal(err)) {
+            console.log('[Ark refresh] server reports these capsules already in a round; treating as in flight');
+            throw new ArkRefreshInFlightError(1);
+        }
         // Same streak rule as the self-signed path above.
-        if (!(await recordRefusedSpentCapsule(err))) {
+        if (!(await recordRefusedSpentCapsule(err, vtxoIds))) {
             const store = useAuthStore.getState();
             store.setArkRefreshFailStreak(store.arkRefreshFailStreak + 1);
         }
         throw err;
     } finally {
         // Held only across the submit (seconds, until accept). Once accepted
-        // the round is `ongoing`, so the pending-round check guards it from
-        // here; releasing lets the next legitimate submission proceed.
+        // the participation is pending (DelegatedPending on bark 0.8), so the
+        // pending-round check guards it from here; releasing lets the next
+        // legitimate submission proceed.
         refreshSubmissionInFlight = false;
     }
 }
@@ -468,6 +501,32 @@ export async function maintenanceArkDelegated(): Promise<void> {
     // the guard is the async one that asks bark's DB rather than trusting a
     // possibly-unhydrated store.
     await assertNoActiveArkExitAsync(loc.cypherbox.services.ark_exit.background_refresh);
+    // A forced exit (bark 0.9.0) leaves that guard down and keeps its capsules
+    // out of bark's coin selection with a lock instead. maintenance lets bark
+    // pick, so it may only run once every forced capsule is confirmed locked.
+    // Read bark's exit records too, not only the store rows: this path also
+    // runs from the headless background wake, before the store has hydrated,
+    // and there every active exit record counts as not started here.
+    const forcedIds = new Set(forcedExitIdsFromStore());
+    try {
+        const s = useAuthStore.getState();
+        const { forced } = classifyExitRecords((await handle.getExitVtxos()) ?? [], {
+            startedIds: s.arkExitStartedVtxoIds ?? [],
+            exitStartedAt: s.arkExitStartedAt ?? null,
+        });
+        for (const e of forced) forcedIds.add(String(e.vtxoId).toLowerCase());
+    } catch {
+        // No exit records readable: the store rows above are all we have.
+    }
+    if (forcedIds.size > 0) {
+        const { failed } = await lockForcedExitVtxos([...forcedIds]);
+        if (failed.length > 0) {
+            throw new Error(String(loc.formatString(
+                loc.cypherbox.services.ark_exit.unavailable_during_exit,
+                { action: loc.cypherbox.services.ark_exit.background_refresh },
+            )));
+        }
+    }
 
     // Same cross-caller guard as refreshArkVtxosDelegated: the background wake
     // must not submit a maintenance round while another submission is mid-
@@ -477,10 +536,16 @@ export async function maintenanceArkDelegated(): Promise<void> {
         throw new ArkRefreshInFlightError(0);
     }
     const pending = await fetchArkPendingRoundStates();
-    const ongoingCount = pending.filter((r) => r.ongoing).length;
+    const ongoingCount = pending.filter((r) => isArkRoundInFlight(r)).length;
     if (ongoingCount > 0) {
         throw new ArkRefreshInFlightError(ongoingCount);
     }
+    // bark 0.8.1 picks with `RefreshStrategy::should_refresh_if_must`, and an
+    // already-EXPIRED capsule counts as "must" (its expiry is at or before the
+    // tip). So on a wallet holding an expired capsule this submits it too: the
+    // custodial post-expiry refresh, which Second honours today at its
+    // discretion. Recorded here so it is not a surprise; whether the
+    // background wake should do that without asking is an open product call.
     refreshSubmissionInFlight = true;
     const t0 = Date.now();
     console.log('[Ark refresh] maintenanceDelegated() calling');
@@ -498,10 +563,18 @@ export async function maintenanceArkDelegated(): Promise<void> {
             Math.round((Date.now() - t0) / 1000),
             's: tag=', tag, 'inner=', inner, 'message=', err?.message ?? String(err),
         );
+        // A round attempt already holds the capsules bark picked (server
+        // 0.8.1): maintenance is already running, not failing.
+        if (isInFlightInputsRefusal(err)) {
+            console.log('[Ark refresh] server reports maintenance capsules already in a round; treating as in flight');
+            throw new ArkRefreshInFlightError(1);
+        }
         // Recorded so the balance stops counting it. bark picks these capsules
         // itself, so it may pick the same one on the next wake: this stays a
         // real failure for the background caller, which keeps counting it.
-        await recordRefusedSpentCapsule(err);
+        // bark's Spendable set is the only honest bound on what it could have
+        // used, since no fee estimate names maintenance's inputs.
+        await recordRefusedSpentCapsule(err, await spendableVtxoIdsForInputs());
         throw err;
     } finally {
         refreshSubmissionInFlight = false;

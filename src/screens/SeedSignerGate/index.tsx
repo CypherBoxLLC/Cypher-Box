@@ -11,7 +11,7 @@ import loc from "../../../loc";
 import useElectrumConnection from "../../custom-hooks/useElectrumConnection";
 
 // typed as it is in every language, like a code
-const CONFIRM_WORD = 'SEED-SIGNER';
+const CONFIRM_WORD = 'SEED-SIGNING';
 
 /**
  * The one way into Offline Seed-Signer mode, and there's no way back out short of reinstalling. It opens only in an
@@ -50,7 +50,9 @@ export default function SeedSignerGate() {
         <ScreenLayout showToolbar isBackButton disableScroll>
             <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
                 <Text style={styles.title}>{loc.cypherbox.seed_signer.title}</Text>
-                <Text style={styles.body}>{loc.cypherbox.seed_signer.gate.body}</Text>
+                <Text style={styles.body}>
+                    {Platform.OS === 'ios' ? loc.cypherbox.seed_signer.gate.body_ios : loc.cypherbox.seed_signer.gate.body}
+                </Text>
                 <Text style={styles.oneWay}>{loc.cypherbox.seed_signer.gate.one_way}</Text>
 
                 <Text style={styles.heading}>{loc.cypherbox.seed_signer.gate.before_title}</Text>

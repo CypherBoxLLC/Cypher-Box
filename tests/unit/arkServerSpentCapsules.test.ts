@@ -139,15 +139,23 @@ function sdkVtxo(id: string, sats: number, state = 'Spendable') {
     };
 }
 
-/** bark's balance(): it still counts the phantom, because it never asked the server. */
+/**
+ * bark's balance(): it still counts the phantom, because it never asked the
+ * server. bark 0.8.0 (SDK 0.26.0+) shape: `needsRefreshSats`,
+ * `pendingArkoorSendSats` and `pendingOffboardSats` are new and 0 here (no
+ * capsule in these fixtures is expired or at the depth limit).
+ */
 function sdkBalance(spendableSats: number) {
     return {
         spendableSats: BigInt(spendableSats),
+        needsRefreshSats: 0n,
         pendingInRoundSats: 0n,
         pendingExitSats: 0n,
         pendingLightningSendSats: 0n,
         claimableLightningReceiveSats: 0n,
         pendingBoardSats: 0n,
+        pendingArkoorSendSats: 0n,
+        pendingOffboardSats: 0n,
     };
 }
 
@@ -195,6 +203,8 @@ beforeEach(() => {
     mockHandle.sync.mockResolvedValue(undefined);
     useAuthStore.setState({
         arkServerSpentVtxoIds: [],
+        arkExitStartedVtxoIds: [],
+        arkExitStartedAt: null,
         arkVtxos: [],
         arkBalance: 100_000,
         arkBalanceDetail: summary(100_000),
@@ -322,7 +332,7 @@ describe('swap Max and the swap balance check', () => {
 
 describe('recordServerSpentFromError', () => {
     it('records the capsule and corrects the stored list and balance at once', async () => {
-        const parsed = await recordServerSpentFromError(spentError(PHANTOM));
+        const parsed = await recordServerSpentFromError(spentError(PHANTOM), [PHANTOM]);
         expect(parsed).toEqual({ vtxoId: PHANTOM, state: 'spent' });
         const s = useAuthStore.getState();
         expect(s.arkServerSpentVtxoIds).toEqual([PHANTOM]);
@@ -333,7 +343,7 @@ describe('recordServerSpentFromError', () => {
 
     it('does not record a transient refusal, or touch the balance for it', async () => {
         const err = { message: `vtxo ${PHANTOM} is not spendable (state: unregistered)` };
-        const parsed = await recordServerSpentFromError(err);
+        const parsed = await recordServerSpentFromError(err, [PHANTOM]);
         expect(parsed?.state).toBe('unregistered');
         const s = useAuthStore.getState();
         expect(s.arkServerSpentVtxoIds).toEqual([]);
@@ -344,7 +354,7 @@ describe('recordServerSpentFromError', () => {
         // Without the list the filter would hand back bark's number, phantom
         // and all, over a headline that may already be right.
         mockHandle.allVtxos.mockRejectedValue(new Error('handle busy'));
-        await recordServerSpentFromError(spentError(PHANTOM));
+        await recordServerSpentFromError(spentError(PHANTOM), [PHANTOM]);
         const s = useAuthStore.getState();
         expect(s.arkServerSpentVtxoIds).toEqual([PHANTOM]);
         expect(s.arkBalance).toBe(100_000);
@@ -355,27 +365,27 @@ describe('recordAndDescribeNotSpendable, which the send, withdraw and convert sc
     const vss = loc.cypherbox.services.vtxo_spend_state;
 
     it('records a named spent capsule and gives the spent copy', async () => {
-        const msg = await recordAndDescribeNotSpendable(spentError(PHANTOM));
+        const msg = await recordAndDescribeNotSpendable(spentError(PHANTOM), [PHANTOM]);
         expect(msg).toEqual({ title: vss.spent_title, body: vss.spent_body });
         expect(useAuthStore.getState().arkServerSpentVtxoIds).toEqual([PHANTOM]);
         expect(msg?.body).not.toMatch(/not spendable|state:|bad user input/i);
     });
 
     it('does not claim a correction it could not make when the server named no capsule', async () => {
-        const msg = await recordAndDescribeNotSpendable({ message: 'vtxo is not spendable (state: spent)' });
+        const msg = await recordAndDescribeNotSpendable({ message: 'vtxo is not spendable (state: spent)' }, [PHANTOM]);
         expect(msg).toEqual({ title: vss.default_title, body: vss.default_body });
         expect(useAuthStore.getState().arkServerSpentVtxoIds).toEqual([]);
     });
 
     it('gives a transient refusal its own copy without recording it', async () => {
-        const msg = await recordAndDescribeNotSpendable({ message: `vtxo ${PHANTOM} is not spendable (state: unclaimed)` });
+        const msg = await recordAndDescribeNotSpendable({ message: `vtxo ${PHANTOM} is not spendable (state: unclaimed)` }, [PHANTOM]);
         expect(msg).toEqual({ title: vss.unclaimed_title, body: vss.unclaimed_body });
         expect(useAuthStore.getState().arkServerSpentVtxoIds).toEqual([]);
     });
 
     it('returns null for any other failure, so the screen keeps its own message', async () => {
-        await expect(recordAndDescribeNotSpendable(new Error('insufficient funds'))).resolves.toBeNull();
-        await expect(recordAndDescribeNotSpendable(undefined)).resolves.toBeNull();
+        await expect(recordAndDescribeNotSpendable(new Error('insufficient funds'), [PHANTOM])).resolves.toBeNull();
+        await expect(recordAndDescribeNotSpendable(undefined, null)).resolves.toBeNull();
     });
 });
 
@@ -387,13 +397,14 @@ describe('the emergency-exit set', () => {
         });
     });
 
-    it('leaves a recorded capsule out of the exit and its reserve', async () => {
+    it('leaves a recorded capsule out of the exit and its reserve, and says why', async () => {
         useAuthStore.setState({ arkServerSpentVtxoIds: [PHANTOM] });
         mockHandle.allVtxos.mockResolvedValue([sdkVtxo(PHANTOM, 2_000_000), sdkVtxo(LIVE, 3_000_000)]);
         const plan = await computeArkExitPlan();
         expect(plan?.selectedIds).toEqual([LIVE]);
-        // Not disclosed as an exclusion either: it holds nothing of the user's.
-        expect(plan?.excluded.map((e) => e.id)).not.toContain(PHANTOM);
+        // Disclosed, not dropped: the server's word alone must not make a
+        // capsule vanish from the exit (see arkExitServerSpentList.test.ts).
+        expect(plan?.excluded.find((e) => e.id === PHANTOM)?.reason).toBe('server-says-spent');
     });
 
     it('still exits both when nothing is recorded', async () => {

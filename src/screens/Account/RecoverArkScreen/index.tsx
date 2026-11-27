@@ -18,6 +18,7 @@ import {
     deriveBackupFingerprint,
     ensureBgNotificationPermission,
     getArkWalletHandle,
+    getLastArkRecoveryOutcome,
     getLastArkRecoveryReport,
     hasArkDatadir,
     isTransientArkOpenError,
@@ -799,9 +800,23 @@ export default function RecoverArkScreen() {
               report.exited.vtxoIds.length
             : 0;
 
+        // bark 0.7.0 `recoveryStatus()`: tells a scan that FAILED apart from
+        // one that never ran, which an absent report alone could not.
+        let outcome: ReturnType<typeof getLastArkRecoveryOutcome> = 'unknown';
+        try {
+            outcome = getLastArkRecoveryOutcome();
+        } catch {
+            outcome = 'unknown';
+        }
+
         let title: string;
         let message: string;
-        if (!report) {
+        if (!report && outcome === 'failed') {
+            // The scan errored before producing a report. Funds may be missing,
+            // and saying "no result" would undersell that.
+            title = loc.cypherbox.account.recover_ark.scan_failed_title;
+            message = loc.cypherbox.account.recover_ark.scan_failed_body;
+        } else if (!report) {
             title = loc.cypherbox.account.recover_ark.recovered_title;
             message =
                 loc.cypherbox.account.recover_ark.no_report_body;

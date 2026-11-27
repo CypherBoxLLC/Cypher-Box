@@ -1,6 +1,7 @@
 import useAuthStore from '@Cypher/stores/authStore';
 
 import { decideAutoBoard } from './autoBoardDecision';
+import { forcedExitIdsFromStore } from './forcedExitGuard';
 
 import { ensureArkOnchainHandle, getArkWalletHandle, rotateArkOnchainEsplora, setLastOnchainBalanceSats } from './walletHandle';
 
@@ -113,10 +114,17 @@ export async function syncArkWallet(): Promise<boolean> {
             //      touched the exit-funding flow) keeps the exact old boardAll
             //      behavior.
             const authState = useAuthStore.getState();
+            // An exit the user did not start (bark 0.9.0 force-exit scan) runs
+            // with the flag DOWN so the rest of the wallet keeps working, but
+            // its CPFP fees still come out of THIS on-chain wallet, and the
+            // recommended reserve no longer covers a capsule that is already
+            // exiting. Hold boards for it the way a user exit does, or the
+            // next tick could board the fee money away and starve the exit.
+            const forcedExitLive = forcedExitIdsFromStore().size > 0;
             const boardDecision = decideAutoBoard({
                 confirmedSats: Number(onchainBal.confirmedSats),
                 pendingBoardSats: Number(arkBal.pendingBoardSats),
-                exitInProgress: authState.arkExitInProgress,
+                exitInProgress: authState.arkExitInProgress || forcedExitLive,
                 armedReserveSats: authState.arkExitFeeReserveSats,
                 recommendedReserveSats: authState.arkExitRecommendedReserveSats,
                 minBoardSats: MIN_BOARD_SATS,
@@ -135,7 +143,9 @@ export async function syncArkWallet(): Promise<boolean> {
                     'sats; keeping', boardDecision.holdSats, 'on-chain for exit fees',
                 );
                 try {
-                    await handle.boardAmount(BigInt(boardDecision.sats));
+                    // bark 0.9.0 added a board `expiryHeight`; undefined uses
+                    // Config.boardLifetime (clamped to the server VTXO lifetime).
+                    await handle.boardAmount(BigInt(boardDecision.sats), undefined);
                     console.log('[Ark sync] auto-board: boardAmount initiated');
                 } catch (boardErr) {
                     console.warn('[Ark sync] auto-board: boardAmount failed:', boardErr);
@@ -147,7 +157,9 @@ export async function syncArkWallet(): Promise<boolean> {
                     'sats unboarded onchain and nothing to hold, initiating boardAll',
                 );
                 try {
-                    await handle.boardAll();
+                    // bark 0.9.0: board `expiryHeight` undefined uses
+                    // Config.boardLifetime (clamped to the server VTXO lifetime).
+                    await handle.boardAll(undefined);
                     console.log('[Ark sync] auto-board: boardAll initiated');
                 } catch (boardErr) {
                     console.warn('[Ark sync] auto-board: boardAll failed:', boardErr);

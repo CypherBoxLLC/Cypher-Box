@@ -1,7 +1,9 @@
 import { assertNoActiveArkExit } from './exit';
 import { getArkWalletHandle } from './walletHandle';
-import { runBroadcastCall } from './indeterminate';
+import { offboardTxid, runBroadcastCall } from './indeterminate';
 import loc from '../../../loc';
+import { recordServerSpentFromError } from './vtxos';
+import { assertNotForcedExitVtxos } from './forcedExitGuard';
 
 /**
  * Cooperative on-chain offboard of SPECIFIC VTXOs (coin control).
@@ -52,15 +54,33 @@ export async function estimateArkOffboardFee(
 
 /**
  * Offboard the named VTXOs on-chain to `address`. Returns the broadcast txid.
+ *
+ * bark 0.8.0 returns `OffboardResult { txid, movementId }` rather than the txid
+ * string, so the txid is read with `offboardTxid`, which cannot throw after the
+ * offboard has already gone out.
  */
 export async function offboardArkVtxos(
     vtxoIds: string[],
     address: string,
 ): Promise<string> {
     assertNoActiveArkExit();
+    // offboardVtxos takes the ids as given, with no state filter in bark, so a
+    // forced-exit capsule (see forcedExitLock.ts) has to be refused here.
+    assertNotForcedExitVtxos(vtxoIds);
     const handle = requireHandle();
-    return await runBroadcastCall(
-        () => handle.offboardVtxos(vtxoIds, address.trim()),
-        loc.cypherbox.services.indeterminate.what_transfer,
-    );
+    try {
+        const result = await runBroadcastCall(
+            () => handle.offboardVtxos(vtxoIds, address.trim()),
+            loc.cypherbox.services.indeterminate.what_transfer,
+        );
+        return offboardTxid(result);
+    } catch (err) {
+        // The server only reveals a spent capsule when one is submitted. This
+        // call names its inputs, so a refusal naming one of THEM is recorded;
+        // one naming any other capsule is not (see ./serverSpentList.ts).
+        try {
+            await recordServerSpentFromError(err, vtxoIds);
+        } catch { /* recorded nothing; the offboard error below still stands */ }
+        throw err;
+    }
 }

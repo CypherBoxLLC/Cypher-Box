@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import * as Keychain from 'react-native-keychain';
+import { randomBytes } from '../../class/rng';
 
 /**
  * Hot Vault seed phrase — iPhone Keychain / Android Keystore storage.
@@ -9,18 +10,28 @@ import * as Keychain from 'react-native-keychain';
  * iOS generic-password Keychain items are uniquely identified by service +
  * account; `getGenericPassword({ service })` returns a single record, so if
  * two wallets shared one service string the second save would shadow the
- * first. Namespacing the service with the walletID sidesteps that entirely.
+ * first. Each backup therefore gets its own service suffix.
  *
- * Two entries per wallet:
+ * That suffix is a random handle, NOT the walletID. `getAllGenericPasswordServices()`
+ * lists service names with no biometric, and the Keychain outlives app delete /
+ * reinstall, so a walletID in the service name is a walletID a forensic read can
+ * recover without unlocking. A passphrase (hidden) vault's walletID is derived
+ * WITH the passphrase, so a walletID that matches no vault in the app would betray
+ * that a hidden or deleted vault exists. The walletID lives only inside the
+ * biometry-gated seed payload (the account field); the ungated meta carries none.
+ * Legacy backups written by older builds use the walletID as the suffix and stay
+ * fully readable (their handle just equals the walletID).
  *
- *   1. hot-vault-seed-phrase:<walletID>      — the mnemonic itself
- *        account:  walletID
+ * Two entries per backup:
+ *
+ *   1. hot-vault-seed-phrase:<ref>           — the mnemonic itself
+ *        account:  walletID (only readable behind the gate)
  *        password: BIP39 mnemonic, space-separated
  *        access:   BIOMETRY_ANY_OR_DEVICE_PASSCODE + WHEN_PASSCODE_SET_THIS_DEVICE_ONLY
  *        → FaceID/passcode required on READ; silent on WRITE.
  *
- *   2. hot-vault-meta:<walletID>             — the sidecar
- *        account:  walletID
+ *   2. hot-vault-meta:<ref>                   — the sidecar
+ *        account:  ref (never the walletID)
  *        password: JSON { version, createdAt, label? }
  *        access:   WHEN_PASSCODE_SET_THIS_DEVICE_ONLY, NO accessControl
  *        → READ is free (no biometric); listing can enrich picker rows
@@ -64,11 +75,22 @@ const RSA_STORAGE: string =
     (Keychain as unknown as { STORAGE_TYPE?: { RSA?: string } }).STORAGE_TYPE?.RSA ??
     'KeystoreRSAECB';
 
-const serviceFor = (walletID: string): string =>
-    `${KEYCHAIN_SERVICE_PREFIX}:${walletID}`;
+// `ref` is a backup's service suffix: a random handle for a new backup, or the
+// walletID for a legacy one. Reads work the same either way.
+const serviceFor = (ref: string): string =>
+    `${KEYCHAIN_SERVICE_PREFIX}:${ref}`;
 
-const metaServiceFor = (walletID: string): string =>
-    `${KEYCHAIN_META_PREFIX}:${walletID}`;
+const metaServiceFor = (ref: string): string =>
+    `${KEYCHAIN_META_PREFIX}:${ref}`;
+
+/**
+ * A random, non-identifying handle for a new backup's two entries. 16 bytes of
+ * CSPRNG output as hex (32 chars) so it can never collide with a walletID (a
+ * 64-hex getID) — the Recover screen tells legacy from new by that length.
+ */
+async function newBackupRef(): Promise<string> {
+    return (await randomBytes(16)).toString('hex');
+}
 
 /**
  * Metadata payload shape — stored as JSON in the unprotected sidecar entry.
@@ -126,9 +148,14 @@ export type HotVaultKeychainSaveResult =
  * rather than leave an un-gated seed the user never agreed to. Callers must
  * surface that case instead of flipping the "backed up" flag.
  */
+// `ref` is the service suffix to write under. It defaults to the walletID
+// (legacy layout), and `backupHotVaultSeedWithMeta` passes a random handle for a
+// new backup. The walletID always rides in the account field, which is only
+// readable behind the gate, so it never reaches the ungated service list.
 export async function backupHotVaultSeed(
     walletID: string,
     mnemonic: string,
+    ref: string = walletID,
 ): Promise<HotVaultKeychainSaveResult> {
     if (!walletID) {
         return { ok: false, kind: 'error', error: new Error('Missing walletID') };
@@ -141,7 +168,7 @@ export async function backupHotVaultSeed(
     let written: false | { storage?: string };
     try {
         written = (await Keychain.setGenericPassword(walletID, trimmed, {
-            service: serviceFor(walletID),
+            service: serviceFor(ref),
             accessControl:
                 Keychain.ACCESS_CONTROL.BIOMETRY_ANY_OR_DEVICE_PASSCODE,
             accessible:
@@ -169,7 +196,7 @@ export async function backupHotVaultSeed(
                 '). Removing the un-gated entry rather than storing an unprotected seed.',
             );
             try {
-                await Keychain.resetGenericPassword({ service: serviceFor(walletID) });
+                await Keychain.resetGenericPassword({ service: serviceFor(ref) });
             } catch (resetErr) {
                 // Best effort. Reported either way, so the caller never claims
                 // the seed is protected when it is not.
@@ -196,11 +223,11 @@ export async function backupHotVaultSeed(
  * screen synthesizes a stub with `createdAt: 0` so they still render.
  */
 export async function backupHotVaultMeta(
-    walletID: string,
+    ref: string,
     meta: Omit<HotVaultMeta, 'version'>,
 ): Promise<HotVaultKeychainSaveResult> {
-    if (!walletID) {
-        return { ok: false, kind: 'error', error: new Error('Missing walletID') };
+    if (!ref) {
+        return { ok: false, kind: 'error', error: new Error('Missing ref') };
     }
     try {
         const payload: HotVaultMeta = {
@@ -209,11 +236,13 @@ export async function backupHotVaultMeta(
             label: meta.label ?? null,
             // No passphrase flag is written. See HotVaultMeta.
         };
+        // Account is the ref, never the walletID: this entry is ungated, so a
+        // walletID here would be readable without the gate, the leak we removed.
         await Keychain.setGenericPassword(
-            walletID,
+            ref,
             JSON.stringify(payload),
             {
-                service: metaServiceFor(walletID),
+                service: metaServiceFor(ref),
                 accessible:
                     Keychain.ACCESSIBLE.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
             },
@@ -236,14 +265,22 @@ export async function backupHotVaultMeta(
  * `createdAt` defaults to `Date.now()` — callers only need to pass a custom
  * value when rehydrating from a known timestamp (e.g. import flow).
  */
+export type HotVaultSeedWithMetaResult =
+    | { ok: true; ref: string }
+    | { ok: false; kind: 'no-biometric-gate'; storage: string }
+    | { ok: false; kind: 'error'; error: Error };
+
 export async function backupHotVaultSeedWithMeta(
     walletID: string,
     mnemonic: string,
     meta?: Partial<Omit<HotVaultMeta, 'version'>>,
-): Promise<HotVaultKeychainSaveResult> {
-    const seedResult = await backupHotVaultSeed(walletID, mnemonic);
+): Promise<HotVaultSeedWithMetaResult> {
+    // One random handle for both entries, so the seed and its sidecar pair up on
+    // read without the walletID appearing in either service name.
+    const ref = await newBackupRef();
+    const seedResult = await backupHotVaultSeed(walletID, mnemonic, ref);
     if (!seedResult.ok) return seedResult;
-    const metaResult = await backupHotVaultMeta(walletID, {
+    const metaResult = await backupHotVaultMeta(ref, {
         createdAt: meta?.createdAt ?? Date.now(),
         label: meta?.label ?? null,
     });
@@ -258,11 +295,11 @@ export async function backupHotVaultSeedWithMeta(
             metaResult.kind === 'error' ? metaResult.error : metaResult.storage;
         console.warn('[HotVault] Meta save failed, seed saved OK:', detail);
     }
-    return { ok: true };
+    return { ok: true, ref };
 }
 
 export type HotVaultKeychainReadResult =
-    | { ok: true; mnemonic: string }
+    | { ok: true; mnemonic: string; walletID: string }
     | { ok: false; reason: 'not-found' | 'read-failed'; error?: Error };
 
 /**
@@ -278,23 +315,25 @@ export type HotVaultKeychainReadResult =
  * declined / Keychain error)".
  */
 export async function getHotVaultSeedFromKeychain(
-    walletID: string,
+    ref: string,
 ): Promise<HotVaultKeychainReadResult> {
-    if (!walletID) {
+    if (!ref) {
         return {
             ok: false,
             reason: 'read-failed',
-            error: new Error('Missing walletID'),
+            error: new Error('Missing ref'),
         };
     }
     try {
         const creds = await Keychain.getGenericPassword({
-            service: serviceFor(walletID),
+            service: serviceFor(ref),
         });
         if (!creds || !creds.password) {
             return { ok: false, reason: 'not-found' };
         }
-        return { ok: true, mnemonic: creds.password };
+        // The walletID is the gated account. A legacy entry stored it there too,
+        // so this is uniform; `ref` is only a fallback for a malformed record.
+        return { ok: true, mnemonic: creds.password, walletID: creds.username || ref };
     } catch (err) {
         return { ok: false, reason: 'read-failed', error: err as Error };
     }
@@ -312,12 +351,12 @@ export async function getHotVaultSeedFromKeychain(
  * corrupt meta shouldn't break the entire Recover screen.
  */
 export async function getHotVaultMeta(
-    walletID: string,
+    ref: string,
 ): Promise<HotVaultMeta | null> {
-    if (!walletID) return null;
+    if (!ref) return null;
     try {
         const creds = await Keychain.getGenericPassword({
-            service: metaServiceFor(walletID),
+            service: metaServiceFor(ref),
         });
         if (!creds || !creds.password) return null;
         const parsed = JSON.parse(creds.password);
@@ -326,7 +365,7 @@ export async function getHotVaultMeta(
             parsed === null ||
             typeof parsed.createdAt !== 'number'
         ) {
-            console.warn('[HotVault] Meta shape invalid for', walletID);
+            console.warn('[HotVault] Meta shape invalid for', ref);
             return null;
         }
         return {
@@ -339,7 +378,7 @@ export async function getHotVaultMeta(
             // the phone that a hidden wallet existed. See HotVaultMeta.
         };
     } catch (err) {
-        console.warn('[HotVault] Meta read failed for', walletID, err);
+        console.warn('[HotVault] Meta read failed for', ref, err);
         return null;
     }
 }
@@ -347,9 +386,11 @@ export async function getHotVaultMeta(
 /**
  * Enumerate all hot-vault Keychain backups on this device.
  *
- * Returns an array of walletIDs (with the service prefix stripped). Safe to
- * call at any time: `getAllGenericPasswordServices` only lists service
- * strings — it does NOT read passwords, so no biometric prompt fires.
+ * Returns an array of backup handles (the service suffix): a random handle for a
+ * new backup, the walletID for a legacy one. The walletID of a new backup is NOT
+ * here by design — it only lives behind the gate. Safe to call at any time:
+ * `getAllGenericPasswordServices` only lists service strings — it does NOT read
+ * passwords, so no biometric prompt fires.
  *
  * Filters strictly on the seed-phrase prefix so that meta entries (same-app,
  * different prefix) aren't double-counted. The meta list is derived lazily
@@ -375,9 +416,43 @@ export async function listHotVaultKeychainBackups(): Promise<string[]> {
     }
 }
 
+/**
+ * Whether a backup's seed is bound to the fingerprint, read from the entry's
+ * stored cipher WITHOUT opening it (no prompt), the same technique as
+ * dropUnprotectedHotVaultBackups.
+ *
+ * Only Android can hold an un-gated copy: before the cipher was checked (0.1.12
+ * and earlier) a phone with no strong biometric stored the seed with
+ * KeystoreAESCBC, which reads back with no fingerprint. A copy of a deleted vault
+ * is kept on purpose (it may be the only copy), so such a copy can still be here.
+ * iOS entries always carry their access control, so they are always 'gated'.
+ * 'unknown' when the cipher can't be read; callers must not treat that as
+ * un-gated.
+ */
+export type HotVaultProtection = 'gated' | 'ungated' | 'unknown';
+
+export async function getHotVaultBackupProtection(ref: string): Promise<HotVaultProtection> {
+    if (Platform.OS !== 'android') return 'gated';
+    try {
+        const found = await Keychain.hasInternetCredentials(serviceFor(ref));
+        const storage = found && typeof found === 'object' && typeof (found as { storage?: unknown }).storage === 'string'
+            ? (found as { storage: string }).storage
+            : null;
+        if (storage === null) return 'unknown';
+        return storage === RSA_STORAGE ? 'gated' : 'ungated';
+    } catch {
+        return 'unknown';
+    }
+}
+
 export interface HotVaultBackupSummary {
-    walletID: string;
+    // The backup handle (service suffix): random for a new backup, the walletID
+    // for a legacy one. The real walletID of a new backup is known only after the
+    // gated seed read; recovery carries it out of getHotVaultSeedFromKeychain.
+    ref: string;
     meta: HotVaultMeta | null;
+    // Whether the seed is behind the fingerprint (Android only can be 'ungated').
+    protection: HotVaultProtection;
 }
 
 /**
@@ -393,11 +468,12 @@ export interface HotVaultBackupSummary {
  * This is the primary data source for the Recover screen's picker.
  */
 export async function listHotVaultKeychainBackupsWithMeta(): Promise<HotVaultBackupSummary[]> {
-    const walletIDs = await listHotVaultKeychainBackups();
+    const refs = await listHotVaultKeychainBackups();
     const summaries = await Promise.all(
-        walletIDs.map(async walletID => ({
-            walletID,
-            meta: await getHotVaultMeta(walletID),
+        refs.map(async ref => ({
+            ref,
+            meta: await getHotVaultMeta(ref),
+            protection: await getHotVaultBackupProtection(ref),
         })),
     );
     return summaries.sort((a, b) => {
@@ -420,11 +496,11 @@ export async function listHotVaultKeychainBackupsWithMeta(): Promise<HotVaultBac
  * hypothetical "lock seed" feature) can do so without losing the timestamp.
  */
 export async function resetHotVaultKeychainBackup(
-    walletID: string,
+    ref: string,
 ): Promise<boolean> {
-    if (!walletID) return false;
+    if (!ref) return false;
     try {
-        await Keychain.resetGenericPassword({ service: serviceFor(walletID) });
+        await Keychain.resetGenericPassword({ service: serviceFor(ref) });
         return true;
     } catch (err) {
         console.warn('[HotVault] Keychain reset failed:', err);
@@ -439,11 +515,11 @@ export async function resetHotVaultKeychainBackup(
  * `resetHotVaultBackupFully`. Exposed standalone for defensive cleanup
  * paths (e.g. enumeration found a meta entry with no matching seed).
  */
-export async function resetHotVaultMeta(walletID: string): Promise<boolean> {
-    if (!walletID) return false;
+export async function resetHotVaultMeta(ref: string): Promise<boolean> {
+    if (!ref) return false;
     try {
         await Keychain.resetGenericPassword({
-            service: metaServiceFor(walletID),
+            service: metaServiceFor(ref),
         });
         return true;
     } catch (err) {
@@ -500,9 +576,9 @@ export async function dropUnprotectedHotVaultBackups(walletIDsInApp: readonly st
  * either half being missing.
  */
 export async function resetHotVaultBackupFully(
-    walletID: string,
+    ref: string,
 ): Promise<boolean> {
-    const seedOk = await resetHotVaultKeychainBackup(walletID);
-    const metaOk = await resetHotVaultMeta(walletID);
+    const seedOk = await resetHotVaultKeychainBackup(ref);
+    const metaOk = await resetHotVaultMeta(ref);
     return seedOk && metaOk;
 }

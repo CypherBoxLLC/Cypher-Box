@@ -17,8 +17,10 @@ import { BlueStorageContext } from '../../blue_modules/storage-context';
 import loc, { formatBalance } from '../../loc';
 import { BitcoinUnit } from '../../models/bitcoinUnits';
 import {
+    backupHotVaultSeedWithMeta,
     getHotVaultSeedFromKeychain,
     listHotVaultKeychainBackupsWithMeta,
+    resetHotVaultBackupFully,
 } from '../../src/services/hotVaultKeychain';
 import { dispatchReset } from '../../src/helpers/navigation';
 
@@ -44,6 +46,7 @@ jest.mock('../../src/services/hotVaultKeychain', () => ({
     getHotVaultSeedFromKeychain: jest.fn(),
     listHotVaultKeychainBackupsWithMeta: jest.fn(),
     resetHotVaultBackupFully: jest.fn().mockResolvedValue(true),
+    backupHotVaultSeedWithMeta: jest.fn(),
 }));
 const mockScreenLayout = jest.fn();
 jest.mock('@Cypher/component-library', () => {
@@ -128,11 +131,11 @@ beforeEach(() => {
     jest.clearAllMocks();
     addAndSaveWallet = jest.fn();
     (listHotVaultKeychainBackupsWithMeta as jest.Mock).mockResolvedValue([
-        { walletID: ID_A, meta: { createdAt: Date.UTC(2026, 9, 3) } },
-        { walletID: ID_B, meta: { createdAt: Date.UTC(2026, 8, 27) } },
-        { walletID: ID_C, meta: null },
+        { ref: ID_A, meta: { createdAt: Date.UTC(2026, 9, 3) }, protection: 'gated' },
+        { ref: ID_B, meta: { createdAt: Date.UTC(2026, 8, 27) }, protection: 'gated' },
+        { ref: ID_C, meta: null, protection: 'gated' },
     ]);
-    (getHotVaultSeedFromKeychain as jest.Mock).mockImplementation(async (id: string) => ({ ok: true, mnemonic: seeds[id] }));
+    (getHotVaultSeedFromKeychain as jest.Mock).mockImplementation(async (id: string) => ({ ok: true, mnemonic: seeds[id], walletID: id }));
     jest.spyOn(HDSegwitBech32Wallet.prototype, '_binarySearchIterationForInternalAddress').mockResolvedValue(0);
     jest.spyOn(HDSegwitBech32Wallet.prototype, '_binarySearchIterationForExternalAddress').mockResolvedValue(3);
     jest.spyOn(HDSegwitBech32Wallet.prototype, '_fetchBalance').mockResolvedValue(undefined);
@@ -309,6 +312,54 @@ describe('Recover Hot Vault with several Keychain backups', () => {
         const shown = textOf(panel(root)[0]);
         expect(shown).toContain(facts(LEGAL).fingerprint);
         expect(shown).not.toContain(facts(ABANDON).fingerprint);
+    });
+});
+
+describe('Recover Hot Vault, a copy that opens without the fingerprint', () => {
+    beforeEach(() => {
+        (listHotVaultKeychainBackupsWithMeta as jest.Mock).mockResolvedValue([
+            { ref: ID_B, meta: { createdAt: Date.UTC(2026, 8, 27) }, protection: 'ungated' },
+        ]);
+        (backupHotVaultSeedWithMeta as jest.Mock).mockResolvedValue({ ok: true, ref: 'newhandle' });
+    });
+
+    test('its row says it is not fingerprint-protected', async () => {
+        const root = await open();
+        expect(textOf(root)).toContain(text.not_fingerprint_protected);
+    });
+
+    test('restoring re-saves it gated, removes the old copy, then imports', async () => {
+        const root = await open();
+        await pressNode(rows(root)[0]);
+        await act(async () => {
+            await new Promise(resolve => setTimeout(resolve, 80));
+        });
+        await pressNode(byTestID(root, 'keychainBackupRestore')[0]);
+        await act(async () => {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        });
+        // upgraded under the gated path with the original backup date, old copy removed
+        expect(backupHotVaultSeedWithMeta).toHaveBeenCalledWith(ID_B, LEGAL, expect.objectContaining({ createdAt: Date.UTC(2026, 8, 27) }));
+        expect(resetHotVaultBackupFully).toHaveBeenCalledWith(ID_B);
+        expect(addAndSaveWallet).toHaveBeenCalledTimes(1);
+        expect(addAndSaveWallet.mock.calls[0][0].getSecret()).toBe(LEGAL);
+    });
+
+    test('a copy that cannot be upgraded is left in place but still restores', async () => {
+        (backupHotVaultSeedWithMeta as jest.Mock).mockResolvedValue({ ok: false, kind: 'no-biometric-gate', storage: 'KeystoreAESCBC' });
+        const root = await open();
+        await pressNode(rows(root)[0]);
+        await act(async () => {
+            await new Promise(resolve => setTimeout(resolve, 80));
+        });
+        await pressNode(byTestID(root, 'keychainBackupRestore')[0]);
+        await act(async () => {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        });
+        expect(backupHotVaultSeedWithMeta).toHaveBeenCalled();
+        // no fingerprint to upgrade to, so the old copy is kept, not removed
+        expect(resetHotVaultBackupFully).not.toHaveBeenCalled();
+        expect(addAndSaveWallet).toHaveBeenCalledTimes(1);
     });
 });
 

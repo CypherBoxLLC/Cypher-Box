@@ -16,6 +16,7 @@ import type { RecoveryBucket, RecoveryReport } from '@secondts/bark-react-native
 import { ARK_NETWORK, createArkConfig, ESPLORA_URL, ESPLORA_URLS_BARK } from './config';
 import { arkDatadirHasWallet, deleteArkDatadir, ensureArkDatadir } from './datadir';
 import { ensureBackgroundArkSeed, recordSavedSeedConsent } from './backgroundKeychain';
+import { resolveArkSeedForRestore } from './seedResolve';
 import { ARK_VAULT_EXISTS } from './createErrors';
 
 const KEYCHAIN_SERVICE = 'ark-seed-phrase';
@@ -72,6 +73,55 @@ let lastRecoveryReport: RecoveryReport | undefined;
 
 export function getLastArkRecoveryReport(): RecoveryReport | undefined {
     return lastRecoveryReport;
+}
+
+/**
+ * Outcome of the most recent recovery open, from bark 0.7.0's
+ * `recoveryStatus()`:
+ *   'completed'  the scan ran; `getLastArkRecoveryReport()` holds its report
+ *   'failed'     the scan errored before producing a report, so funds may be
+ *                missing until a retry (bark logs it and lets open succeed)
+ *   'not-run'    no scan ran on this open
+ *   'unknown'    not recorded (no recovery open yet, or the call threw)
+ *
+ * This is what tells "the scan failed" apart from "the scan never ran", the
+ * question the report alone could not answer.
+ */
+export type ArkRecoveryOutcome = 'completed' | 'failed' | 'not-run' | 'unknown';
+
+let lastRecoveryOutcome: ArkRecoveryOutcome = 'unknown';
+
+export function getLastArkRecoveryOutcome(): ArkRecoveryOutcome {
+    return lastRecoveryOutcome;
+}
+
+/**
+ * Read bark's `RecoveryStatus` tagged enum (`NotRun` | `Failed{message}` |
+ * `InProgress{report}` | `Completed{report}`) without importing its tag enum,
+ * so this stays usable with a stubbed binding. An unrecognised shape is
+ * 'unknown', which the UI treats like a missing report: never as "nothing is
+ * missing".
+ */
+export function readArkRecoveryStatus(status: unknown): { outcome: ArkRecoveryOutcome; message?: string; report?: RecoveryReport } {
+    const s = status as { tag?: unknown; inner?: { message?: unknown; report?: RecoveryReport } } | null;
+    switch (s?.tag) {
+        case 'Completed':
+            return { outcome: 'completed', report: s.inner?.report };
+        case 'Failed':
+            return {
+                outcome: 'failed',
+                message: typeof s.inner?.message === 'string' ? s.inner.message : undefined,
+            };
+        case 'NotRun':
+            return { outcome: 'not-run' };
+        case 'InProgress':
+            // bark 0.9.0: recovery stopped before finishing and resumes on
+            // every sync. Treat like 'unknown' (funds may still be missing)
+            // until it completes; never as "nothing is missing".
+            return { outcome: 'unknown', report: s.inner?.report };
+        default:
+            return { outcome: 'unknown' };
+    }
 }
 
 // Lazy-require avoids the import cycle with `./movementWatcher`, which itself
@@ -208,13 +258,16 @@ export async function createArkWallet(
     //   - forceRescan = true  (recover-from-seed) -> skipRecovery = false (scan)
     //   - forceRescan = false (brand-new seed)    -> skipRecovery = true  (skip;
     //     a freshly generated seed has nothing on the mailbox to recover).
-    // After a recovery open we read `handle.recoveryReport()` for observability.
+    // After a recovery open we read `handle.recoveryStatus()` and
+    // `handle.recoveryReport()`.
     //
-    // ⚠ Phase 2 / Second.tech: confirm that an undefined/empty recoveryReport
-    // means "nothing to recover" and NOT "scan failed" — bark logs a failed scan
-    // and lets open succeed anyway, so the two are fund-safety-distinct (an
-    // empty report on a funded seed would silently hide funds). This unblocks the
-    // recovery-from-seed path that 0.11.3 could not wire (SDK had no rescan API).
+    // An undefined report used to be ambiguous: bark logs a failed scan and
+    // lets open succeed, so "nothing to recover" and "scan failed" looked the
+    // same, and the two are fund-safety-distinct (an empty report on a funded
+    // seed would silently hide funds). bark 0.7.0 answered it with
+    // `recoveryStatus()`: NotRun, Failed{message} or Completed{report}.
+    // bark 0.8.0 also asks the server for the seed's VTXOs by xpub first
+    // (server 0.8.0 RPCs) and raised the key gap limit from 50 to 250.
     const skipRecovery = !forceRescan;
 
     // runDaemon: false on the create/recover path too (matches openArkWallet).
@@ -333,13 +386,24 @@ export async function createArkWallet(
     }
     cachedMnemonic = mnemonic;
     if (__DEV__) console.log('[Ark] Opened-or-created wallet in datadir');
-    // bark 0.15.0: on a recovery open, surface the recovery-scan outcome. An
-    // undefined report means the scan was skipped OR failed (see the fund-safety
-    // note above); a present report buckets every VTXO the scan looked at.
+    // On a recovery open, surface the recovery-scan outcome. `recoveryStatus()`
+    // (bark 0.7.0) says whether the scan completed, failed or never ran; a
+    // present report buckets every VTXO the scan looked at.
     if (forceRescan && handle) {
         lastRecoveryReport = undefined;
+        lastRecoveryOutcome = 'unknown';
+        // No logging added here on purpose: this runs a few lines after the
+        // mnemonic is cached (repo rule on log calls near key material). The
+        // outcome reaches the user through RecoverArkScreen instead.
         try {
-            lastRecoveryReport = handle.recoveryReport();
+            const status = readArkRecoveryStatus(handle.recoveryStatus());
+            lastRecoveryOutcome = status.outcome;
+            if (status.report) lastRecoveryReport = status.report;
+        } catch {
+            lastRecoveryOutcome = 'unknown';
+        }
+        try {
+            lastRecoveryReport = handle.recoveryReport() ?? lastRecoveryReport;
             const report = lastRecoveryReport;
             if (!report) {
                 console.log('[Ark recover] recoveryReport: none (scan skipped, or scan failed outright)');
@@ -494,6 +558,7 @@ export async function clearArkWalletHandle(): Promise<void> {
     // a teardown reset a report could outlive its wallet and be read back after
     // a later non-recovery open.
     lastRecoveryReport = undefined;
+    lastRecoveryOutcome = 'unknown';
 }
 
 export function getArkOnchainHandle(): OnchainWalletInterface | null {
@@ -568,11 +633,16 @@ export async function ensureArkOnchainHandle(): Promise<OnchainWalletInterface> 
 
     let mnemonic = cachedMnemonic;
     if (!mnemonic) {
-        const creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
-        if (!creds || !creds.password) {
+        // Prefer the biometry-gated primary; fall back to the non-gated
+        // background-refresh copy when it is gone or unreadable (passcode
+        // removed, device migration, keystore fault), mirroring restore.ts so
+        // an on-chain action such as an Ark exit is not blocked by a lost
+        // primary entry while a readable copy of the same seed still exists.
+        const resolved = await resolveArkSeedForRestore();
+        if (!resolved.seed) {
             throw new Error('Ark seed not in Keychain, so the onchain wallet cannot start');
         }
-        mnemonic = creds.password;
+        mnemonic = resolved.seed;
     }
 
     await ensureUniffi();

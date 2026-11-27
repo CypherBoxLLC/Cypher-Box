@@ -41,7 +41,7 @@ import type { ExitClaimTransaction, ExitVtxo } from '@secondts/bark-react-native
 
 import useAuthStore from '@Cypher/stores/authStore';
 
-import { isActiveExit } from './barkState';
+import { classifyExitRecords } from './forcedExit';
 import { ensureArkOnchainHandle, getArkWalletHandle } from './walletHandle';
 import { runBroadcastCall } from './indeterminate';
 import loc from '../../../loc';
@@ -60,12 +60,27 @@ import loc from '../../../loc';
  *   - any store VTXO marked `exiting` — belt-and-suspenders for the window
  *     before the self-heal tick lands.
  *
+ * An exit the user did NOT start (bark 0.9.0's force-exit scan, see
+ * ./forcedExit.ts) does not count here. Those capsules are kept out of every
+ * cooperative spend one by one, by a bark lock and the per-call checks in
+ * ./forcedExitLock.ts, so the rest of the wallet keeps working. A single
+ * capsule forced on-chain by someone else used to freeze every send, swap and
+ * refresh for the whole timelock.
+ *
  * Throws with user-facing copy: callers surface `err.message` in the
  * estimate/send error toast, so the block explains itself.
  */
+/** A store row exiting for the USER's exit (a forced one does not count). */
+function hasUserExitingRow(rows: readonly unknown[] | undefined): boolean {
+    return (rows ?? []).some((v) => {
+        const r = v as { exiting?: boolean; exitForced?: boolean };
+        return !!r.exiting && !r.exitForced;
+    });
+}
+
 export function assertNoActiveArkExit(): void {
     const s = useAuthStore.getState();
-    const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
+    const exitingVtxo = hasUserExitingRow(s.arkVtxos);
     if (s.arkExitInProgress || exitingVtxo) {
         throw new Error(
             loc.cypherbox.services.ark_exit.exit_in_progress,
@@ -111,6 +126,12 @@ export async function startArkEmergencyExit(vtxoIds: readonly string[]): Promise
     // letting the first sync-cycle progress call fail with "not initialized".
     await ensureArkOnchainHandle();
     await handle.startExitForVtxos([...ids]);
+    // Remember that THIS device asked for these. bark 0.9.0's sync routes
+    // capsules another party force-exited on-chain into the same exit flow,
+    // and this list is how the app tells the user's exit from one they did not
+    // start (see ./forcedExit.ts). Pruned by the sync loop once bark's record
+    // for an id is terminal.
+    useAuthStore.getState().addArkExitStartedVtxoIds(ids);
 }
 
 /**
@@ -178,7 +199,13 @@ export async function fetchArkExitVtxos(): Promise<ExitVtxo[]> {
 }
 
 /**
- * Does bark's own DB hold any NON-TERMINAL exit record?
+ * Does bark's own DB hold any NON-TERMINAL exit record the USER started?
+ *
+ * Records the user did not start (bark 0.9.0's force-exit scan) are left out:
+ * they are handled capsule by capsule (./forcedExitLock.ts) and must not
+ * hold the wallet-wide lock. The split comes from `arkExitStartedVtxoIds`, see
+ * ./forcedExit.ts; an exit started before ids were tracked counts as the
+ * user's.
  *
  * The authoritative "is an exit live" signal, and deliberately independent of
  * zustand: the background-refresh wake runs headless and can execute before the
@@ -207,7 +234,11 @@ export async function hasActiveArkExitRecords(): Promise<boolean> {
         const handle = getArkWalletHandle();
         if (!handle) return false;
         const exits = await handle.getExitVtxos();
-        return (exits ?? []).some((v) => isActiveExit(v));
+        const s = useAuthStore.getState();
+        return classifyExitRecords(exits ?? [], {
+            startedIds: s.arkExitStartedVtxoIds ?? [],
+            exitStartedAt: s.arkExitStartedAt ?? null,
+        }).userStarted.length > 0;
     } catch {
         return false;
     }
@@ -224,7 +255,7 @@ export async function assertNoActiveArkExitAsync(
     action: string = loc.cypherbox.services.ark_exit.this_action,
 ): Promise<void> {
     const s = useAuthStore.getState();
-    const exitingVtxo = (s.arkVtxos ?? []).some((v) => (v as { exiting?: boolean }).exiting);
+    const exitingVtxo = hasUserExitingRow(s.arkVtxos);
     if (s.arkExitInProgress || exitingVtxo || (await hasActiveArkExitRecords())) {
         // shown to the user like its synchronous twin's message, so callers pass `action` in the app's language too
         throw new Error(
@@ -308,13 +339,28 @@ export async function claimArkExitsToAddress(
     }
 
     // 1. Build + sign the claim PSBT. Does NOT broadcast.
+    //
+    // bark 0.8.0 added `drainAll` as the SECOND argument:
+    // drainExits(vtxoIds, drainAll, address, feeRate). Sweeping everything
+    // claimable now has to be asked for explicitly, and an empty id list
+    // without it is an error rather than a sweep. The old three-argument call
+    // would shift every argument one place (the address into `drainAll`, the
+    // fee rate into `address`), so the claim, the step that already stalled
+    // exits once in August, would fail every drive tick.
     const claim: ExitClaimTransaction = await handle.drainExits(
         [],
+        true,
         dest,
         feeRateSatPerVb,
     );
     const feeSats = Number(claim.feeSats);
-    console.log(`[Ark exit] drainExits built claim PSBT, fee=${feeSats} sats`);
+    // `vtxoIds` (bark 0.8.0) names the exits the PSBT actually spends;
+    // `skippedVtxoIds` is empty when draining all. Optional-chained so a test
+    // double or an older binding without them still logs.
+    console.log(
+        `[Ark exit] drainExits built claim PSBT, fee=${feeSats} sats,`,
+        `spends=${claim.vtxoIds?.length ?? '?'} skipped=${claim.skippedVtxoIds?.length ?? 0}`,
+    );
 
     // 2 + 3. Finalize to a broadcastable tx hex.
     const txHex = await finalizeExitClaimPsbtToHex(claim.psbtBase64);
@@ -327,4 +373,75 @@ export async function claimArkExitsToAddress(
     console.log(`[Ark exit] claim broadcast txid=${txid}`);
 
     return { txid, feeSats, psbtBase64: claim.psbtBase64 };
+}
+
+// --- Cancelling an exit (bark 0.8.x `cancelExit`) ----------------------------
+
+/**
+ * Why a capsule's exit could not be cancelled. Mirrors bark's
+ * `ExitCancelFailure` without importing the SDK's enum, so this module stays
+ * loadable in unit tests that stub the binding.
+ *   not-exiting        no exit is tracked for this capsule (nothing to undo)
+ *   already-broadcast  an exit transaction is already out; the chain cannot
+ *                      be talked out of it, so the exit has to finish
+ *   too-late           the exit moved past its abortable window
+ *   unknown            a refusal shape this version does not recognise
+ */
+export type ArkExitCancelRefusal = 'not-exiting' | 'already-broadcast' | 'too-late' | 'unknown';
+
+export type ArkExitCancelOutcome =
+    | { vtxoId: string; canceled: true }
+    | { vtxoId: string; canceled: false; refusal: ArkExitCancelRefusal; txid?: string };
+
+const CANCEL_REFUSAL_BY_TAG: Record<string, ArkExitCancelRefusal> = {
+    NotExiting: 'not-exiting',
+    AlreadyBroadcast: 'already-broadcast',
+    TooLate: 'too-late',
+};
+
+/**
+ * Read bark's `ExitCancelResult` into a plain outcome.
+ *
+ * `canceled` is the only thing that frees the capsule. Every other shape,
+ * including one this version does not know, is a refusal: reading an unknown
+ * result as success would release the exit guard while an exit may still be
+ * broadcasting, which is the one direction that can cost the user money.
+ */
+export function readExitCancelResult(vtxoId: string, result: unknown): ArkExitCancelOutcome {
+    const r = result as { canceled?: unknown; reason?: { tag?: unknown; inner?: { txid?: unknown } } } | null;
+    if (r?.canceled === true) return { vtxoId, canceled: true };
+    const tag = typeof r?.reason?.tag === 'string' ? r.reason.tag : '';
+    const refusal = CANCEL_REFUSAL_BY_TAG[tag] ?? 'unknown';
+    const txid = typeof r?.reason?.inner?.txid === 'string' ? r.reason.inner.txid : undefined;
+    return txid ? { vtxoId, canceled: false, refusal, txid } : { vtxoId, canceled: false, refusal };
+}
+
+/**
+ * Try to cancel the exit of each capsule in `vtxoIds`.
+ *
+ * bark 0.8.x lets an exit be undone while it is still in its abortable
+ * window, before any exit transaction is broadcast. The capsule stays
+ * spendable either way; bark reports expected refusals in the result rather
+ * than throwing, and cancelling twice succeeds. A throw (handle busy, SDK
+ * error) is recorded as an `unknown` refusal for that capsule so one failure
+ * does not hide the others' outcomes.
+ *
+ * This only talks to bark. The caller decides what the app does next (clear
+ * the exit flags only when every live exit was cancelled), because a partly
+ * cancelled exit is still an exit and the spend guard must stay up for it.
+ */
+export async function cancelArkExits(vtxoIds: readonly string[]): Promise<ArkExitCancelOutcome[]> {
+    const handle = requireWallet();
+    const outcomes: ArkExitCancelOutcome[] = [];
+    for (const vtxoId of vtxoIds) {
+        if (!vtxoId) continue;
+        try {
+            const result = await handle.cancelExit(vtxoId);
+            outcomes.push(readExitCancelResult(vtxoId, result));
+        } catch (err: any) {
+            console.warn('[Ark exit] cancelExit threw for', String(vtxoId).slice(0, 12), '-', err?.message ?? err);
+            outcomes.push({ vtxoId, canceled: false, refusal: 'unknown' });
+        }
+    }
+    return outcomes;
 }

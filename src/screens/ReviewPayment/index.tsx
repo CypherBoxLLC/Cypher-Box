@@ -160,9 +160,9 @@ export default function ReviewPayment({ navigation, route }: Props) {
     // unreachable). Rendering the fee dropdown off an undefined object was
     // a hard crash in release builds. Self-heal: seed from the param, fetch
     // fresh rates if missing.
-    // Falls back to the static tiers when the caller did not pass any, for the
-    // same reason as ReviewWithdrawal: an absent value renders an empty
-    // selector, which is indistinguishable from a broken control.
+    // Falls back to the static tiers when the caller did not pass any: an absent
+    // value renders an empty selector, which is indistinguishable from a broken
+    // control.
     const [recommendedFee, setRecommendedFee] = useState<any>(
         recommendedFeeParam?.fastestFee != null ? recommendedFeeParam : FALLBACK_FEE_TIERS,
     );

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Alert, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
+import { Alert, Platform, TouchableOpacity, View, Image, ActivityIndicator } from "react-native";
 import { generateMnemonic as barkGenerateMnemonic } from "@secondts/bark-react-native";
 import { generateCheckedArkMnemonic } from "../../../class/seedHealth";
 import safetyErrorText from "../../helpers/safetyErrorText";
@@ -61,6 +61,10 @@ const config = {
       revocationEndpoint: "https://auth.strike.me/connect/revocation",
     },
 };
+
+// A Strike sign-in sheet closed this soon after opening is a plain cancel,
+// not a page that failed to load, so it gets no hint.
+const STRIKE_SIGNIN_QUICK_CANCEL_MS = 3000;
 
 export default function CheckingAccountLogin() {
   const {
@@ -156,8 +160,19 @@ export default function CheckingAccountLogin() {
     // The row is hidden where Strike is not offered; this guards any
     // other route into the same handler.
     if (!isStrikeAllowed()) return;
+    // Strike's sign-in page runs a Cloudflare check at the email step. It
+    // cannot finish inside the sign-in sheet while iOS Lockdown Mode is on
+    // (Safari's per-site exclusions do not reach the sheet), and on a slow
+    // phone pressing Next before the check completes gets Strike's generic
+    // "An error occurred" toast. Either way the user closes the sheet and
+    // AppAuth rejects with the same `authentication_failed` code a change
+    // of mind produces, so the hint is worded for both. A sheet closed
+    // within a few seconds of opening is a plain cancel and gets nothing.
+    const openedAt = Date.now();
+    let authorized = false;
     try {
       const result = await authorize(config);
+      authorized = true;
       const reStrikeTokenExchange = await strikeTokenExchange(result.authorizationCode, result.codeVerifier || '');
       setStrikeToken(reStrikeTokenExchange.access_token);
       setStrikeAuth(true);
@@ -185,6 +200,14 @@ export default function CheckingAccountLogin() {
       // }
     } catch (error) {
       console.error("OAuth error", error);
+      if (!authorized && Date.now() - openedAt >= STRIKE_SIGNIN_QUICK_CANCEL_MS) {
+        Alert.alert(
+          loc.cypherbox.account.checking_login.strike_signin_hint_title,
+          Platform.OS === 'ios'
+            ? loc.cypherbox.account.checking_login.strike_signin_hint_ios
+            : loc.cypherbox.account.checking_login.strike_signin_hint_android,
+        );
+      }
     }
   };
 
@@ -394,7 +417,9 @@ export default function CheckingAccountLogin() {
             <View style={[styles.sectionDivider, styles.sectionDividerSigner]} />
           </View>
           <Text style={styles.sectionSubtitle}>
-            {loc.cypherbox.account.checking_login.cold_signing_subtitle}
+            {Platform.OS === "ios"
+              ? loc.cypherbox.account.checking_login.cold_signing_subtitle_ios
+              : loc.cypherbox.account.checking_login.cold_signing_subtitle}
           </Text>
           <LoginOption
             label={loc.cypherbox.seed_signer.title}

@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState, useRef } from "react";
-import { Linking, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Linking, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import dayjs from "dayjs";
 import styles from "./styles";
 import loc from "../../../loc";
@@ -11,7 +11,7 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { colors, rtl } from "@Cypher/style-guide";
 import useAuthStore from "@Cypher/stores/authStore";
 import RBSheet from "react-native-raw-bottom-sheet";
-import { HDSegwitBech32Wallet, HDSegwitBech32Transaction } from "../../../class";
+import { HDSegwitBech32Wallet, HDSegwitBech32Transaction, TxVerificationError } from "../../../class";
 import { dispatchNavigate } from "@Cypher/helpers";
 import { NetworkTransactionFees } from "../../../models/networkTransactionFees";
 import { displayDestination, paidOutputAddress } from "@Cypher/helpers/addressDisplay";
@@ -180,7 +180,13 @@ export default function SendReceiveOnChain({ route }: Props) {
             rbfSheetRef.current?.open();
         } catch (error) {
             console.error('Accelerate prep error:', error);
-            alert(String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.accelerate_prep_failed, { error: error.message })));
+            if (error instanceof TxVerificationError) {
+                // The Electrum server's copy of this tx failed verification (wrong txid, or the signature on our input
+                // doesn't cover its outputs). Bumping it could pay an attacker, so the class refused; tell the user why.
+                Alert.alert(loc.errors.error, loc.cypherbox.payments.send_receive_on_chain.tx_unverified);
+            } else {
+                alert(String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.accelerate_prep_failed, { error: error.message })));
+            }
         }
         setIsRBFLoading(false);
     };
@@ -238,7 +244,11 @@ export default function SendReceiveOnChain({ route }: Props) {
             navigateToBroadcastScreen(feeRateNumber, newTx.getId(), isSent ? 'rbf' : 'cpfp');
         } catch (error) {
             console.error('Accelerate error:', error);
-            alert(String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.accelerate_failed, { error: safetyErrorText(error) })));
+            if (error instanceof TxVerificationError) {
+                Alert.alert(loc.errors.error, loc.cypherbox.payments.send_receive_on_chain.tx_unverified);
+            } else {
+                alert(String(loc.formatString(loc.cypherbox.payments.send_receive_on_chain.accelerate_failed, { error: safetyErrorText(error) })));
+            }
         }
         setIsRBFSubmitting(false);
     };

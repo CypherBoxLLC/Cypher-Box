@@ -132,7 +132,7 @@ const hotVault: any = {
 
 // names, the confirm word, and the version's "(build 1)" as Settings > Info has it
 const LATIN_NAMES = new Set(['Cypher', 'Box', 'SeedQR', 'PSBT', 'xpub', 'Sparrow', 'Pixel', 'Strike', 'CoinOS', 'Bark',
-    'Wi', 'Fi', 'Bluetooth', 'SEED', 'SIGNER', 'iPhone', 'Keychain', 'Keystore', 'build']);
+    'Wi', 'Fi', 'Bluetooth', 'SEED', 'SIGNING', 'iPhone', 'Keychain', 'Keystore', 'build']);
 // the seed's own data: a word pill, an address line, the key with its origin, the path, a fingerprint
 const isData = (line: string) =>
     /^(\d+\. [a-z]+|\d+ {2}bc1[a-z0-9]+|\[[0-9a-f]{8}\/[0-9h/]+\]zpub\w+|m\/[0-9'/]+‎?|[0-9A-F]{8})$/.test(line);

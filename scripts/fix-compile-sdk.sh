@@ -111,6 +111,25 @@ if [ -f "$WEBVIEW_KT" ] && grep -q "webView.loadUrl(args.getString(0))" "$WEBVIE
   echo "  Fixed react-native-webview: loadUrl(getString(0)) -> getString(0)!! (RN 0.77 nullable)"
 fi
 
+# react-native 0.77.3 codegen hidden-folder skip bug: findFilesWithExtension in
+# scripts/codegen/generate-artifacts-executor.js skips any absolute path that
+# CONTAINS "/." . The comment says "hidden folders", but the test matches ANY
+# ancestor directory whose name starts with ".". When the project is built from
+# a checkout nested under such a dot-prefixed directory, the fallback component
+# source-scan finds zero .mm files, so the six libraries WITHOUT
+# codegenConfig.ios.componentProvider (webview, blur, camera-kit, lottie,
+# safe-area-context, pager-view) register no Fabric component:
+# RCTThirdPartyComponentsProvider.mm drops 9 entries (43 vs 52) and those views
+# render blank on the New Architecture (e.g. a blank WebView). Fix to the
+# comment's real intent: skip only entries whose OWN name starts with ".".
+# Identical behavior on dot-free paths (normal checkouts, CI,
+# Android). Idempotent: the grep guard stops matching once the line is rewritten.
+RN_CODEGEN="node_modules/react-native/scripts/codegen/generate-artifacts-executor.js"
+if [ -f "$RN_CODEGEN" ] && grep -qF 'absolutePath.includes(`${path.sep}.`)' "$RN_CODEGEN"; then
+  sedi 's|absolutePath\.includes(`${path\.sep}\.`)|file.startsWith('\''.'\'')|' "$RN_CODEGEN"
+  echo "  Fixed react-native codegen: hidden-folder skip is now name-based (restores Fabric components under dot-prefixed paths)"
+fi
+
 # react-native-modal 13.0.1 (latest published; unmaintained) on RN 0.77: modal.js
 # componentWillUnmount calls BackHandler.removeEventListener (REMOVED in RN 0.77) ->
 # "TypeError: undefined is not a function" the instant any <Modal>/<BottomModal> closes,
@@ -160,6 +179,31 @@ if [ -f "$RNPUSH" ] && ! grep -q "canScheduleExactAlarms" "$RNPUSH"; then
     -e 's/                getAlarmManager().setExact(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent);/                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || getAlarmManager().canScheduleExactAlarms()) { getAlarmManager().setExact(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); } else { getAlarmManager().set(AlarmManager.RTC_WAKEUP, fireDate, pendingIntent); }/' \
     "$RNPUSH"
   echo "  Fixed react-native-push-notification: exact-alarm SecurityException (targetSdk 35) -> inexact fallback"
+fi
+
+# react-native-tcp-socket 5.6.2, Android: a TLS socket that checks the certificate
+# (tlsCheckValidity on, the default) checks only that the chain leads to an
+# authority the phone trusts, not who the certificate was issued to, so a valid
+# certificate for ANY other name passes. Electrum connections rely on this check
+# against someone posing as the server (blue_modules/GuardedElectrumClient.js),
+# and a certificate for some other name is free to get. Turn on hostname
+# verification (the certificate's names against the host dialed, as a browser
+# does) before the handshake; skipped with a custom CA (tlsCert), as upstream
+# does in 6.4.3. iOS checks the name already (kCFStreamSSLPeerName).
+# SSLParameters.setEndpointIdentificationAlgorithm needs API 24, our minSdk.
+# Idempotent: guarded on the one-line startHandshake call that the rewrite replaces.
+TCPSOCKET_JAVA="node_modules/react-native-tcp-socket/android/src/main/java/com/asterinet/react/tcpsocket/TcpSocketClient.java"
+if [ -f "$TCPSOCKET_JAVA" ] && ! grep -q 'setEndpointIdentificationAlgorithm("HTTPS")' "$TCPSOCKET_JAVA"; then
+  if grep -q 'if (isTls) ((SSLSocket) socket)\.startHandshake();' "$TCPSOCKET_JAVA"; then
+    sedi 's|if (isTls) ((SSLSocket) socket)\.startHandshake();|if (isTls) { final SSLSocket sslSocket = (SSLSocket) socket; if (!options.hasKey("tlsCert") \&\& (!options.hasKey("tlsCheckValidity") \|\| options.getBoolean("tlsCheckValidity"))) { final javax.net.ssl.SSLParameters sslParameters = sslSocket.getSSLParameters(); sslParameters.setEndpointIdentificationAlgorithm("HTTPS"); sslSocket.setSSLParameters(sslParameters); } sslSocket.startHandshake(); }|' "$TCPSOCKET_JAVA"
+    if grep -q 'setEndpointIdentificationAlgorithm("HTTPS")' "$TCPSOCKET_JAVA"; then
+      echo "  Fixed react-native-tcp-socket: TLS hostname verification on Android"
+    else
+      echo "  WARN: react-native-tcp-socket TLS hostname verification did NOT apply; inspect $TCPSOCKET_JAVA"
+    fi
+  else
+    echo "  WARN: react-native-tcp-socket TcpSocketClient.java has no startHandshake line to patch; TLS hostname verification on Android is missing"
+  fi
 fi
 
 # react-native 0.77.3 Fabric leak-tolerance patch: the upstream

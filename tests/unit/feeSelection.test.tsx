@@ -10,7 +10,7 @@
 
 import React from 'react';
 import renderer from 'react-test-renderer';
-import { FeeSelection } from '../../src/screens/ReviewWithdrawal/FeeSelection/FeeSelection';
+import { FeeSelection } from '../../src/screens/ReviewPayment/FeeSelection/FeeSelection';
 
 const TIERS = { fastestFee: 20, halfHourFee: 12, hourFee: 8, economyFee: 4, minimumFee: 1 };
 

@@ -1,5 +1,4 @@
 import RNFS from 'react-native-fs';
-import * as Keychain from 'react-native-keychain';
 
 import { ESPLORA_URLS_BARK } from './config';
 import {
@@ -10,9 +9,8 @@ import {
 import { getEsploraHealth, noteEsploraFailure } from './esploraHealth';
 import { ARK_DATADIR } from './datadir';
 import { cacheArkMnemonicForReopen, getArkWalletHandle, getCachedArkMnemonic, openArkWallet } from './walletHandle';
+import { resolveArkSeedForRestore } from './seedResolve';
 import loc from '../../../loc';
-
-const KEYCHAIN_SERVICE = 'ark-seed-phrase';
 
 /**
  * The ASP gRPC connection in `Wallet.open` fails intermittently on mobile
@@ -81,17 +79,19 @@ export async function restoreArkWalletFromDisk(): Promise<ArkRestoreResult> {
         return { restored: false, reason: 'no-datadir' };
     }
 
-    let creds: Awaited<ReturnType<typeof Keychain.getGenericPassword>>;
-    try {
-        creds = await Keychain.getGenericPassword({ service: KEYCHAIN_SERVICE });
-    } catch (err) {
-        return { restored: false, reason: 'no-keychain', error: err as Error };
+    const resolved = await resolveArkSeedForRestore();
+    if (!resolved.seed) {
+        return { restored: false, reason: 'no-keychain', error: resolved.primaryError };
     }
-    if (!creds || !creds.password) {
-        return { restored: false, reason: 'no-keychain' };
+    const seed = resolved.seed;
+    if (resolved.recoveredFromBackup) {
+        // The biometry-gated primary entry was gone or unreadable (passcode
+        // removed, device migration, or a keystore/TEE fault), but the
+        // non-gated background-refresh copy held the same seed. Reopen with it
+        // instead of routing the user to a destructive Reset while a readable
+        // copy of their own seed sits on the device.
+        console.warn('[Ark] primary seed entry unreadable; reopened via background-refresh copy');
     }
-
-    const seed = creds.password;
     // Cache the seed immediately so a later self-heal re-open
     // (reopenArkWalletFromCache) can retry WITHOUT another Keychain read —
     // the Ark seed entry is biometric-gated, so re-reading re-prompts FaceID.

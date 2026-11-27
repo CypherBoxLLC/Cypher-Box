@@ -17,6 +17,7 @@ import {
     fetchArkPendingRoundStates,
     refreshArkVtxosDelegatedAndSync,
 } from './refresh';
+import { isArkRoundInFlight } from './roundFlight';
 import { refreshFloorBlocks } from './exitTriage';
 import { classifyArkNetworkFault } from './networkFault';
 import { getArkWalletHandle } from './walletHandle';
@@ -204,8 +205,10 @@ export async function maybeSweepDustArkVtxos(
     try {
 
         const pending = await fetchArkPendingRoundStates();
-        if (pending.some((r) => r.ongoing)) {
-            console.log('[Ark dust sweep] skip: a round is already ongoing');
+        // bark 0.8: a delegated refresh waiting for its round reads
+        // ongoing=false; isArkRoundInFlight counts it.
+        if (pending.some((r) => isArkRoundInFlight(r))) {
+            console.log('[Ark dust sweep] skip: a round is already in flight');
             return;
         }
 
@@ -281,7 +284,7 @@ export async function maybeSweepDustArkVtxos(
             // the spendable set so the next plan is built without it, and this
             // is a correction rather than a transient fault, so it must not
             // touch the backoff.
-            const serverSpent = await recordServerSpentFromError(err);
+            const serverSpent = await recordServerSpentFromError(err, plan.ids);
             if (serverSpent?.state === 'spent') {
                 console.warn('[Ark dust sweep] dropped a server-spent vtxo from the plan:', serverSpent.vtxoId);
             } else if (err instanceof ArkRefreshInFlightError) {
@@ -465,8 +468,8 @@ export async function maybeSweepDueArkVtxos(
         // Belt-and-suspenders on top of refresh.ts's own guard: skip if a round
         // is genuinely ongoing so we don't waste a submit + log noise.
         const pending = await fetchArkPendingRoundStates();
-        if (pending.some((r) => r.ongoing)) {
-            console.log('[Ark sweep] skip: a round is already ongoing');
+        if (pending.some((r) => isArkRoundInFlight(r))) {
+            console.log('[Ark sweep] skip: a round is already in flight');
             return;
         }
 
@@ -505,7 +508,7 @@ export async function maybeSweepDueArkVtxos(
         // the spendable set so the next plan is built without it, and this
         // is a correction rather than a transient fault, so it must not
         // touch the backoff.
-        const serverSpent = await recordServerSpentFromError(err);
+        const serverSpent = await recordServerSpentFromError(err, ids);
         if (serverSpent?.state === 'spent') {
             console.warn('[Ark sweep] dropped a server-spent vtxo from the plan:', serverSpent.vtxoId);
         } else if (err instanceof ArkRefreshInFlightError) {

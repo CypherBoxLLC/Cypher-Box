@@ -16,7 +16,7 @@ import { Text } from 'react-native-elements';
 import { BlueCard, BlueReplaceFeeSuggestions, BlueSpacing, BlueSpacing20, BlueText } from '../../BlueComponents';
 import navigationStyle from '../../components/navigationStyle';
 import { BlueCurrentTheme } from '../../components/themes';
-import { HDSegwitBech32Transaction, HDSegwitBech32Wallet } from '../../class';
+import { HDSegwitBech32Transaction, HDSegwitBech32Wallet, TxVerificationError } from '../../class';
 import loc from '../../loc';
 import { BlueStorageContext } from '../../blue_modules/storage-context';
 import Notifications from '../../blue_modules/notifications';
@@ -120,9 +120,9 @@ export default class CPFP extends Component {
     });
     try {
       await this.checkPossibilityOfCPFP();
-    } catch (_) {
+    } catch (error) {
       // if anything goes wrong we just show "this is not bumpable" message
-      this.setState({ nonReplaceable: true, isLoading: false });
+      this.setState({ nonReplaceable: true, unverified: error instanceof TxVerificationError, isLoading: false });
     }
   }
 
@@ -217,7 +217,7 @@ export default class CPFP extends Component {
           <BlueSpacing20 />
           <BlueSpacing20 />
 
-          <BlueText h4>{loc.transactions.cpfp_no_bump}</BlueText>
+          <BlueText h4>{this.state.unverified ? loc.transactions.rbf_unverified : loc.transactions.cpfp_no_bump}</BlueText>
         </SafeArea>
       );
     }

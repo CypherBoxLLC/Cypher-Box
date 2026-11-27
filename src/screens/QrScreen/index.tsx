@@ -14,6 +14,7 @@ import { dispatchNavigate } from "@Cypher/helpers";
 import ImageText from "@Cypher/components/ImageText";
 import { GradientCard, ImageTextVertical } from "@Cypher/components";
 import { createInvoice } from "@Cypher/api/coinOSApis";
+import { describeCoinosFailure } from "@Cypher/services/coinos/apiResponse";
 import { createInvoice as createInvoiceStrike } from "@Cypher/api/strikeAPIs";
 import useAuthStore from "@Cypher/stores/authStore";
 import { rtl } from "@Cypher/style-guide";
@@ -51,7 +52,9 @@ export default function QrScreen({ route }: Props) {
             setHash(hash);
         } catch (error) {
             console.error('Error generating bitcoin address handleCreateInvoice QR:', error);
-            SimpleToast.show(type == 'bitcoin' ? loc.cypherbox.payments.qr_screen.bitcoin_address_failed : loc.cypherbox.payments.qr_screen.liquid_address_failed, SimpleToast.SHORT);
+            const fallback = type == 'bitcoin' ? loc.cypherbox.payments.qr_screen.bitcoin_address_failed : loc.cypherbox.payments.qr_screen.liquid_address_failed;
+            const message = describeCoinosFailure(error, fallback);
+            if (message) SimpleToast.show(message, message === fallback ? SimpleToast.SHORT : SimpleToast.LONG);
         } finally {
             setIsLoading(false);
         }

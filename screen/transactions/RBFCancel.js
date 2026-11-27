@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import { ActivityIndicator, View, ScrollView } from 'react-native';
 import { BlueSpacing20, BlueText } from '../../BlueComponents';
 import navigationStyle from '../../components/navigationStyle';
-import { HDSegwitBech32Transaction, HDSegwitBech32Wallet } from '../../class';
+import { HDSegwitBech32Transaction, HDSegwitBech32Wallet, TxVerificationError } from '../../class';
 import CPFP from './CPFP';
 import loc from '../../loc';
 import { BlueStorageContext } from '../../blue_modules/storage-context';
@@ -19,7 +19,12 @@ export default class RBFCancel extends CPFP {
       newFeeRate: '',
       nonReplaceable: false,
     });
-    await this.checkPossibilityOfRBFCancel();
+    try {
+      await this.checkPossibilityOfRBFCancel();
+    } catch (error) {
+      // if anything goes wrong we just show "this is not replaceable" message
+      this.setState({ nonReplaceable: true, unverified: error instanceof TxVerificationError, isLoading: false });
+    }
   }
 
   async checkPossibilityOfRBFCancel() {
@@ -96,7 +101,7 @@ export default class RBFCancel extends CPFP {
           <BlueSpacing20 />
           <BlueSpacing20 />
 
-          <BlueText h4>{loc.transactions.cancel_no}</BlueText>
+          <BlueText h4>{this.state.unverified ? loc.transactions.rbf_unverified : loc.transactions.cancel_no}</BlueText>
         </SafeArea>
       );
     }

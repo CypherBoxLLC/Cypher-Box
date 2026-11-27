@@ -88,7 +88,7 @@ import PaymentCode from './screen/wallets/paymentCode';
 import PaymentCodesList from './screen/wallets/paymentCodesList';
 import loc from './loc';
 import { useTheme } from './components/themes';
-import { AccountStatus, AdjustHotThreshold, CheckAccount, CheckingAccount, ColdStorage, ConfirmTransction, CopyInvoice, CreateCoinOSScreen, CreateInvoice, CreateVault, DownloadBlink, EditAmount, FeeRate, GetAddressScreen, HomeScreen, HotStorageVault, InfoBlink, LoginBlink, LoginBlinkPhone, LoginCoinOSScreen, PurchaseVault, QrScreen, ReceivedMethodScreen, ReviewPayment, SavingVault, SavingVaultCreated, SavingVaultIntro, SavingVaultIntroNew, SendReceiveOnChain, SendReceiveSuccessScreen, SendScreen, SplashScreen, ThresholdAdjust, Transaction, TransactionBroadCast, TransactionBroadCastNew, VerifyPhone, WelcomeScreen, WithdrawThreshold, WithdrawToSavingsVault, ReviewWithdrawal, RecoverSavingVault, GetStartedScreen, TermOfService, ConnectColdStorage, CheckingAccountNew, BuyBitcoin, InvoiceNew, PaymentSuccess, SwapAmount, CapsuleCatalog, EnableTwoFA, DisableTwoFA } from './src/screens';
+import { AccountStatus, AdjustHotThreshold, CheckAccount, CheckingAccount, ColdStorage, ConfirmTransction, CopyInvoice, CreateCoinOSScreen, CreateInvoice, CreateVault, DownloadBlink, EditAmount, FeeRate, GetAddressScreen, HomeScreen, HotStorageVault, InfoBlink, LoginBlink, LoginBlinkPhone, LoginCoinOSScreen, PurchaseVault, QrScreen, ReceivedMethodScreen, ReviewPayment, SavingVault, SavingVaultCreated, SavingVaultIntro, SavingVaultIntroNew, SendReceiveOnChain, SendReceiveSuccessScreen, SendScreen, SplashScreen, ThresholdAdjust, Transaction, TransactionBroadCast, TransactionBroadCastNew, VerifyPhone, WelcomeScreen, WithdrawThreshold, RecoverSavingVault, GetStartedScreen, TermOfService, ConnectColdStorage, CheckingAccountNew, BuyBitcoin, InvoiceNew, PaymentSuccess, SwapAmount, CapsuleCatalog, EnableTwoFA, DisableTwoFA } from './src/screens';
 import { CardStyleInterpolators, createStackNavigator } from '@react-navigation/stack';
 import Invoice from '@Cypher/screens/Invoice';
 import ChangeUsername from '@Cypher/screens/Account/ChangeUsername';
@@ -252,17 +252,6 @@ const WalletsRoot = () => {
         // },
       }} />
 
-      <WalletsStack.Screen name="WithdrawToSavingsVault" component={WithdrawToSavingsVault} options={{ headerShown: false }} />
-
-
-      <WalletsStack.Screen name="ReviewWithdrawal" component={ReviewWithdrawal} options={{
-        headerShown: false,
-        // transitionSpec: {
-        //   open: config,
-        //   close: config,
-        // },
-      }} />
-      
       <WalletsStack.Screen name="CheckingAccountIntro" component={CheckingAccountIntro} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CheckingAccountLogin" component={CheckingAccountLogin} options={{ headerShown: false }} />
       <WalletsStack.Screen name="CheckingAccountCreated" component={CheckingAccountCreated} options={{ headerShown: false }} />

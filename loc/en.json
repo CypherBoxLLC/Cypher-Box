@@ -265,6 +265,10 @@
     "electrum_select": "Select",
     "electrum_reset": "Reset to default",
     "electrum_unable_to_connect": "Unable to connect to {server}.",
+    "electrum_cert_refused_title": "Server not verified",
+    "electrum_cert_refused_default": "Cypher Box could not verify that {server} is the real server, so the connection was refused. Someone on this network may be intercepting your traffic. Try again on another network, or set your own server in Settings > Network.",
+    "electrum_cert_refused_saved": "Cypher Box could not verify the certificate of {server}, so the connection was refused. If this is your own server, open Settings > Network and use its TCP port, or give the server a certificate from a public authority. Self-signed certificates are not accepted.",
+    "electrum_cert_refused_test": "This phone does not trust the certificate {server} presented, so the server was not saved. Use its TCP port instead, or give the server a certificate from a public authority. Self-signed certificates are not accepted.",
     "electrum_history": "Server history",
     "electrum_reset_to_default": "Are you sure to want to reset your Electrum settings to default?",
     "electrum_clear": "Clear",
@@ -367,6 +371,7 @@
     "open_url_error": "Unable to open the link with the default browser. Please change your default browser and try again.",
     "rbf_explain": "We will replace this transaction with one with a higher fee so that it will be mined faster. This is called RBF—Replace by Fee.",
     "rbf_title": "Bump Fee (RBF)",
+    "rbf_unverified": "This transaction could not be verified, so it can't be bumped or canceled. Try connecting to a different Electrum server.",
     "status_bump": "Bump Fee",
     "status_cancel": "Cancel Transaction",
     "transactions_count": "Transactions Count",
@@ -1018,6 +1023,7 @@
         "offline": "Bark vault is offline. Capsule times shown are estimates until it reconnects.",
         "dust_warning": "Attention: you have dust ark capsules that might expire. Batch refresh or spend them {link}.",
         "dust_warning_link": "here",
+        "needs_refresh_warning": "{sats} sats can't be sent until they're refreshed. Refresh them {link}.",
         "notifications_off": "Notifications off. Capsules can expire without warning. Enable in Settings.",
         "exit_fees_missing": "Emergency Exit has no fees reserved. Fund it in the {link} so you can exit without the server.",
         "exit_fees_missing_link": "Vault tab",
@@ -1088,6 +1094,9 @@
       "checking_login": {
         "logging_in_strike": "Logging in to Strike...",
         "strike_auth_failed": "Strike authentication failed.",
+        "strike_signin_hint_title": "Strike sign-in didn't finish",
+        "strike_signin_hint_ios": "Strike's sign-in page could not finish its security check. If Lockdown Mode is on, turn it off in Settings, Privacy and Security, then try again. Give the page a few seconds to load before pressing Next.",
+        "strike_signin_hint_android": "Strike's sign-in page could not finish its security check. Give the page a few seconds to load before pressing Next, then try again.",
         "title": "Add a Lightning Wallet",
         "intro": "Pick a provider to power Lightning send/receive. Custodial accounts hold your bitcoin with a third party, while non-custodial wallets let you have full control over your keys and funds.",
         "non_custodial_header": "NON-CUSTODIAL  ·  LIGHTNING-ENABLED",
@@ -1103,7 +1112,8 @@
         "strike_region_notice": "Strike is not available in Cypher Box in your region. If Strike serves your country, you can use the Strike app directly, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address.",
         "coinos_region_notice": "CoinOS is not available in your region. You can use it directly at coinos.io, and pay to or from Cypher Box with a Lightning invoice or a bitcoin address.",
         "cold_signing_header": "COLD SIGNING  ·  OFFLINE PHONE",
-        "cold_signing_subtitle": "Turn an isolated phone that stays offline (an old phone you no longer use) into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign."
+        "cold_signing_subtitle": "Turn an isolated phone that stays offline (any Android phone works) into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign.",
+        "cold_signing_subtitle_ios": "Turn an isolated phone that stays offline into a cold signing device. The seed doesn't stay on the phone: it lives on your SeedQR backups, and you scan one to sign."
       },
       "checking_intro": {
         "title": "Lightning Account",
@@ -1389,6 +1399,8 @@
         "icloud_read_failed": "Couldn't read backup from iCloud Drive: {error}. Make sure iCloud Drive is enabled for Cypher Box, then tap again. The picker should show \"iCloud Drive → Cypher Box → ark-backup-{fingerprint}.cbark\".",
         "recovered_title": "Wallet recovered",
         "no_report_body": "Your wallet is back, but the capsule scan didn't report a result, so this isn't proof that nothing is missing. Keep your 12 words safe and don't reset this wallet. If you have an ark-backup file, restoring from it is the way to be sure.",
+        "scan_failed_title": "Wallet recovered, capsule scan failed",
+        "scan_failed_body": "Your wallet is back, but the capsule scan stopped with an error, so some funds may be missing. Keep your 12 words safe and don't reset this wallet. If you have an ark-backup file, restore from it as well.",
         "unresolved_title": "Wallet recovered, some capsules unresolved",
         "unresolved_none": "The Ark server listed capsules for this seed, but none of them could be resolved. ",
         "unresolved_some_one": "Brought back {count} capsule worth {sats} sats, but the scan couldn't account for everything. ",
@@ -1563,13 +1575,6 @@
         "coinos_withdraw_capped_button": "Withdraw {amount} sats instead",
         "coinos_outcome_unknown_title": "This withdrawal may already be on its way"
       },
-      "review_withdrawal": {
-        "title": "Review withdrawal",
-        "duplicate_withdrawal": "This withdrawal already went out a moment ago. Check your history rather than sending again.",
-        "withdrawal_indeterminate": "This withdrawal may already have been sent. Check your history before trying again.",
-        "withdrawn_amount": "Withdrawn amount:",
-        "edit_amount": "Edit amount"
-      },
       "fee_selection": {
         "fee_rates_loading": "Fee rates are still loading. If this does not clear, check your connection and try again."
       },
@@ -1601,6 +1606,7 @@
         "fee_rate_too_low": "New fee rate must be higher than current rate",
         "broadcast_rejected": "Broadcast rejected by the network",
         "accelerate_failed": "Failed to accelerate transaction: {error}",
+        "tx_unverified": "This transaction could not be verified, so it can't be accelerated. Connect to a different Electrum server under Settings > Network and try again.",
         "bitcoin_address_value": "Bitcoin Address: {address}",
         "received_to": "Received to: ",
         "confirmations": "Confirmations: ",
@@ -1811,6 +1817,7 @@
         "exit_started": "Emergency exit started ({amount})",
         "exit_complete": "Emergency exit complete",
         "exit_failed": "Emergency exit failed",
+        "exit_canceled": "Emergency exit cancelled",
         "refreshing_vtxo": "Refreshing {count} VTXO ({amount})",
         "refreshing_vtxos": "Refreshing {count} VTXOs ({amount})",
         "refresh_complete": "Refresh complete",
@@ -1993,6 +2000,7 @@
         "expiring": "expiring",
         "expired_short": "expired",
         "label_exiting": "Exiting on-chain\n(sweeps after the ~24h timelock)",
+        "label_exit_forced": "Exit forced on-chain\n(not started here; claims after the ~24h timelock)",
         "label_cancelling": "Cancelling\n(takes less than an hour)",
         "label_refresh_failed_one": "Refreshing or In-flight\n⚠️ {count} refresh attempt failed",
         "label_refresh_failed_other": "Refreshing or In-flight\n⚠️ {count} refresh attempts failed",
@@ -2348,6 +2356,15 @@
         "fee_reserve_onchain": "Fee reserve on-chain",
         "fee_reserve_desc": "Pays the miner fees for each capsule's exit and claim. If it runs out, the remaining capsules wait until you top it up.",
         "top_up_exit_fees": "Top up exit fees",
+        "cancel_exit": "Cancel exit",
+        "cancel_exit_title": "Cancel the emergency exit?",
+        "cancel_exit_body": "This works only before the exit has broadcast anything. A capsule whose exit is already on-chain can't be called back, and that exit will finish.",
+        "cancel_exit_keep": "Keep exiting",
+        "exit_canceled": "Exit cancelled. Your capsules can be spent again.",
+        "exit_cancel_partial": "Cancelled for {canceled} of {total} capsules. The others are already on-chain, so their exit will finish.",
+        "exit_cancel_too_late": "Too late to cancel: the exit is already on-chain and will finish.",
+        "exit_cancel_failed": "Couldn't cancel the exit. Try again in a moment.",
+        "exit_swept_note": "{sats} sats can't exit: the Ark server already swept those capsules after they expired. An exit can't get them back.",
         "starting_exit": "Starting exit…",
         "checking_exit_fees": "Checking exit fees…",
         "exit_fee_wallet": "Exit fee wallet (on-chain)",
@@ -2421,7 +2438,18 @@
         "amount_sats": "Amount (sats)",
         "convert_estimate": "About {net} sats will land on-chain after a {fee} sat fee.",
         "converting": "Converting…",
-        "convert_to_exit_fees": "Convert to exit fees"
+        "convert_to_exit_fees": "Convert to exit fees",
+        "exit_forced_note": "{sats} sats were pushed on-chain by an exit you did not start here. The wallet is claiming them to the destination below.",
+        "capsule_server_spent_row": "{sats} sats: {reason}, expires {expires}",
+        "server_spent_card_one": "{count} capsule holding {sats} sats is left out of the exit: the Ark server says it is already spent, but nothing on-chain confirms that. It expires {expires}. Re-check asks the server and the chain again.",
+        "server_spent_card_other": "{count} capsules holding {sats} sats are left out of the exit: the Ark server says they are already spent, but nothing on-chain confirms that. The soonest expires {expires}. Re-check asks the server and the chain again.",
+        "recheck": "Re-check",
+        "rechecking": "Re-checking…",
+        "recheck_title": "Capsule re-check",
+        "recheck_confirmed_one": "{count} capsule is now confirmed spent by your wallet and is no longer counted.",
+        "recheck_confirmed_other": "{count} capsules are now confirmed spent by your wallet and are no longer counted.",
+        "recheck_unchanged": "No change. The server still reports the capsule as spent and nothing on-chain confirms it. It stays listed with its expiry.",
+        "recheck_failed": "Could not re-check right now. Check your connection and try again."
       }
     },
     "vault": {
@@ -2558,14 +2586,6 @@
         "seed_para_3": "Keep this phone offline for good. If it ever connects to the internet, treat this seed as a hot wallet and plan to move your coins to a new seed.",
         "generate_seed": "Generate Seed"
       },
-      "withdraw_to_savings_vault": {
-        "title": "Coin Withdrawal",
-        "lightning_account": "Lightning Account",
-        "savings_vault": "Savings Vault",
-        "bitcoin_network": "Bitcoin Network",
-        "explanation": "The full pink bar represents the funds accumulated inside the Lightning Account. By clicking ‘Withdraw’ it will convert most of the funds into a real verifiable bitcoin ‘capsule’ (also known as a UTXO) filling one of the five slots in your Hot Vault, and leaving a small amount as pocket money for quick spending (Reserve Amount).",
-        "next": "Next"
-      },
       "capsule_catalog": {
         "title": "Capsule Cheat Sheet",
         "tier_white": "White",
@@ -2590,8 +2610,8 @@
         "rec_small": "• Use small capsules for everyday payments",
         "rec_large": "• Keep larger capsules for long-term saving",
         "rec_combine": "• Occasionally combine small capsules when fees are low, unless you plan to spend them soon",
-        "rec_label": "• Label your capsules when you receive them, especially KYC'd ones, so you can track and manage them strategically",
-        "kyc_warning": "⚠️ Never mix KYC and non-KYC capsules in the same transaction. Selecting a KYC capsule alongside a non-KYC one links them on-chain, compromising the privacy of your non-KYC coins."
+        "rec_label": "• Label your capsules when you receive them, with where they came from, so you can track and manage them strategically",
+        "kyc_warning": "⚠️ Never mix capsules from an exchange account with capsules you received directly, whether bought P2P, earned or gifted, in the same transaction. Selecting them together links them on-chain and compromises the privacy of both."
       },
       "connect_cold_storage": {
         "invalid_xpub_title": "Invalid Xpub",
@@ -2602,7 +2622,7 @@
         "scan": "Scan",
         "paste": "Paste",
         "import": "Import",
-        "offline_phone_hint": "Signing with an offline phone? On that phone, turn on Offline Seed-Signer mode, then create a seed or open Show a Seed's Public Key, and scan the public key it shows.",
+        "offline_phone_hint": "Signing with an offline phone? On that phone, turn on Offline Seed-Signing mode, then create a seed or open Show a Seed's Public Key, and scan the public key it shows.",
         "node_connected": "Node connected: {node}",
         "node_hint": "You're watching your Cold Vault wallet and broadcasting from your own chosen node.",
         "node_warning_title": "Privacy-security measure - connect node (optional):",
@@ -2627,6 +2647,7 @@
         "remove_failed_message_android": "The Keystore entry may still be present. Try again, or remove it from the vault’s Settings.",
         "backed_up_legacy": "Backed up (legacy)",
         "backed_up": "Backed up {date}",
+        "not_fingerprint_protected": "Not protected by your fingerprint. Recover it to save a protected copy.",
         "keychain_title": "Recover from iPhone Keychain",
         "keychain_title_android": "Recover from Android Keystore",
         "no_keychain_backup": "No Keychain backup found on this device. To use this, create a hot vault with \"Save to iPhone Keychain\" enabled, or turn it on later in vault settings.",
@@ -3119,7 +3140,14 @@
         "background_refresh": "Background refresh",
         "vault_not_open": "The vault is not open yet. It needs a connection to open, so check yours and reopen the vault, then try again.",
         "no_capsules_exitable": "No capsules can be exited right now.",
-        "vault_could_not_open": "The vault could not be opened. It needs a connection, so check yours, or switch between Wi-Fi and mobile data, then try again."
+        "vault_could_not_open": "The vault could not be opened. It needs a connection, so check yours, or switch between Wi-Fi and mobile data, then try again.",
+        "forced_exit_title": "A capsule is exiting on-chain",
+        "forced_exit_body_one": "{sats} sats in {count} capsule are being moved on-chain by an exit you did not start here. Another party published it, or it was started from another device holding this seed. Cypher Box is claiming the sats to {dest} once the timelock passes, about {wait}. Open the app from time to time: the claim only progresses while it is open.",
+        "forced_exit_body_other": "{sats} sats in {count} capsules are being moved on-chain by an exit you did not start here. Another party published it, or it was started from another device holding this seed. Cypher Box is claiming the sats to {dest} once the timelock passes, about {wait}. Open the app from time to time: the claim only progresses while it is open.",
+        "forced_exit_fees_short": "The exit pays Bitcoin miner fees from your on-chain fee wallet, which holds {held} sats of about {needed} needed. Top it up under Settings, Emergency Exit, or the exit will stall.",
+        "forced_exit_no_destination": "No destination is set yet, so the sats cannot be claimed. Open or create your Hot Vault and the wallet will use it.",
+        "forced_exit_wait_unknown": "a day or more",
+        "forced_exit_dest_unknown": "your exit destination"
       },
       "network_fault": {
         "chain_source": "Can't reach the Bitcoin network data provider. If you're on Wi-Fi, try mobile data, then try again.",
@@ -3177,7 +3205,8 @@
         "exclusion_refresh_before_exiting": "expiring soon, refresh it instead of exiting it",
         "exclusion_returns_nothing": "network fee is more than it holds",
         "exclusion_fees_dwarf_value": "costs far more in fees than it holds",
-        "exclusion_default": "cannot be exited"
+        "exclusion_default": "cannot be exited",
+        "exclusion_server_says_spent": "the Ark server says it is already spent, but nothing on-chain confirms that"
       },
       "ark_backup": {
         "not_valid_json": "That backup file is not valid JSON. Is it the right file?",
@@ -3287,6 +3316,24 @@
         "cold_storage": "Cold Storage",
         "received": "Received",
         "incoming": "Incoming"
+      },
+      "capsule_received": {
+        "title": "Capsule received",
+        "in_hot_vault": "In your Hot Vault",
+        "in_cold_vault": "In your Cold Vault",
+        "count": "{index} of {count}",
+        "label_placeholder": "Write a label or pick one below",
+        "label_separator": ", ",
+        "presets": {
+          "p2p": "P2P",
+          "exchange": "Exchange",
+          "income": "Income",
+          "gift": "Gift"
+        },
+        "save": "Save label",
+        "ignore": "Ignore",
+        "ignore_all": "Ignore all",
+        "save_failed": "Could not save the label. Try again."
       },
       "private_key_generator": {
         "tap_to_reveal": "Tap to reveal your seed phrase",
@@ -3428,8 +3475,8 @@
       "unsupported": "This vault's recovery phrase can't be turned into a SeedQR. SeedQR only works with standard English 12 or 24-word phrases."
     },
     "seed_signer": {
-      "title": "Offline Seed-Signer",
-      "mode": "Offline Seed-Signer mode",
+      "title": "Offline Seed-Signing",
+      "mode": "Offline Seed-Signing mode",
       "mode_on": "On",
       "create_seed": "Create a Seed",
       "show_key": "Show a Seed's Public Key",
@@ -3453,14 +3500,15 @@
         "lead": "Signs for a watch & broadcast only wallet that has this seed's public key: a Cypher Box Cold Vault, Sparrow or another app. You'll see what a transaction does before anything is signed."
       },
       "gate": {
-        "body": "Turns an isolated phone that stays offline (an old phone you no longer use) into a cold signing device for a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in to sign.",
-        "one_way": "There's no way back. Once it's on, this app is a seed-signer and nothing else, every time it opens. To use Cypher Box as a normal wallet again, you'll have to delete it and install it fresh.",
+        "body": "Turns an isolated phone that stays offline (any Android phone works) into a cold signing device for a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in to sign.",
+        "body_ios": "Turns an isolated phone that stays offline into a cold signing device for a watch-only wallet. The seed doesn't stay on the phone: you back it up as a SeedQR and scan it in to sign.",
+        "one_way": "There's no way back. Once it's on, this app is a seed-signing device and nothing else, every time it opens. To use Cypher Box as a normal wallet again, you'll have to delete it and install it fresh.",
         "before_title": "Before you turn it on",
         "dedicated": "• Use a dedicated phone: factory-reset it and install nothing else.",
         "update_first": "• Update the phone and install Cypher Box first, then take it offline for good.",
         "stay_offline": "• Keep Wi-Fi, mobile data and Bluetooth off from now on.",
         "fresh_install_title": "This needs a fresh install",
-        "fresh_install_body": "This app already has {contents}. Offline Seed-Signer mode only turns on in an empty app, so nothing is ever deleted by accident. Move or back up what's here, delete Cypher Box and install it fresh.",
+        "fresh_install_body": "This app already has {contents}. Offline Seed-Signing mode only turns on in an empty app, so nothing is ever deleted by accident. Move or back up what's here, delete Cypher Box and install it fresh.",
         "has_one_vault": "a wallet or vault",
         "has_vaults": "{count} wallets or vaults",
         "has_some_vaults": "some wallets or vaults",
@@ -3502,7 +3550,7 @@
         "discard_body_dice": "It isn't saved anywhere. You go back to your dice rolls, to add more, take some back or keep them, and the seed is made again from them.",
         "stay": "Stay",
         "discard": "Discard",
-        "created_title": "Seed-Signer created!",
+        "created_title": "Seed-Signing phone ready!",
         "created_body": "Your seed now lives only on your backup: the words on paper and the SeedQR. This phone forgets it when you leave this screen.",
         "whats_next": "What's next",
         "check_title": "Check your backup",
@@ -3560,7 +3608,7 @@
         "seedqr_backup": "Make a SeedQR Backup",
         "sign_from_backup": "Sign from a Backup Instead",
         "wipe": "Wipe Seed from This Phone",
-        "remove_copy_body": "The copy of this seed in this phone's secure storage is removed. The seed on this phone and your paper or SeedQR backup aren't affected. A seed-signer doesn't keep this second copy, so it can't be made again here.",
+        "remove_copy_body": "The copy of this seed in this phone's secure storage is removed. The seed on this phone and your paper or SeedQR backup aren't affected. A seed-signing phone doesn't keep this second copy, so it can't be made again here.",
         "wipe_title": "Wipe the seed from this phone?",
         "wipe_body": "This seed is removed from the app and from this phone's secure storage. After that only a backup kept elsewhere, on paper or as a SeedQR, can bring it back, so check you have one. Your coins aren't affected.\n\nIf this phone is ever stolen, getting a seed out of it is very difficult, but assume it's compromised and move your coins to a new seed.",
         "wipe_confirm": "Wipe",
@@ -3710,7 +3758,7 @@
       }
     },
     "sign_once": {
-      "turn_on_signer": "Turn on Offline Seed-Signer mode",
+      "turn_on_signer": "Turn on Offline Seed-Signing mode",
       "done": "Done",
       "save_file": "Save file",
       "copy": "Copy",
@@ -3752,7 +3800,7 @@
         "no_key_info": "This transaction doesn't say which key signs it. Export it again from your wallet with key details (derivation paths) included.",
         "backup_mismatch": "This backup doesn't belong to the wallet that made this transaction. Check the words, and the passphrase if you use one.",
         "vault_mismatch": "This transaction wasn't made for your Hot Vault. Sign it on the signing device it was made for.",
-        "on_signing_device": "This phone only signs for its own Hot Vault. Sign this transaction on your signing device: a hardware wallet, or an offline phone in Offline Seed-Signer mode.",
+        "on_signing_device": "This phone only signs for its own Hot Vault. Sign this transaction on your signing device: a hardware wallet, or an offline phone in Offline Seed-Signing mode.",
         "false_change": "An amount marked as coming back to your wallet goes to an address that isn't yours. Don't sign this transaction.",
         "nothing_signed": "Nothing in this transaction could be signed with this key.",
         "input_mismatch": "This transaction's amounts don't add up: an input's amount doesn't match the transaction it comes from. Don't sign it.",
@@ -3761,7 +3809,7 @@
         "unknown_multisig": "This transaction spends from a multisig wallet that isn't registered on this signer. Add the wallet's file under Multisig Wallets first, then sign again.",
         "unsupported_multisig": "This transaction spends from a kind of multisig the signer doesn't sign. It only signs native SegWit (P2WSH) multisig wallets.",
         "mixed_wallets": "This transaction spends from more than one wallet. Sign one wallet's transactions at a time.",
-        "multisig_hot_vault": "The Hot Vault doesn't sign multisig transactions. Sign this one on an offline phone in Offline Seed-Signer mode, with your SeedQR.",
+        "multisig_hot_vault": "The Hot Vault doesn't sign multisig transactions. Sign this one on an offline phone in Offline Seed-Signing mode, with your SeedQR.",
         "input_details": "This transaction's details about the coins it spends are missing or don't agree. Don't sign it: export it again from your wallet."
       }
     },
@@ -3790,7 +3838,7 @@
       "checklist_title": "Checklist for the signing wallet's phone",
       "why_body": "A signature becomes public once the transaction is sent. A tampered signing app can hide pieces of your recovery phrase inside its signatures, and someone watching the blockchain can put them back together, sometimes from a single transaction. Keeping the signing phone offline doesn't stop this: the signature itself carries the leak.",
       "why_title": "Why it matters",
-      "offline_phone_body": "This is for you. Example: an old phone, kept offline, runs Cypher Box in Offline Seed-Signer mode as your signing device: the seed lives on your SeedQR backups and is scanned in to sign. Your everyday phone holds a watch & broadcast only wallet made from the seed's public key: a Cypher Box Cold Vault, or another app such as Sparrow. It shows your balance, prepares transactions and broadcasts them once signed, but can't sign them.",
+      "offline_phone_body": "This is for you. Example: an old phone, kept offline, runs Cypher Box in Offline Seed-Signing mode as your signing device: the seed lives on your SeedQR backups and is scanned in to sign. Your everyday phone holds a watch & broadcast only wallet made from the seed's public key: a Cypher Box Cold Vault, or another app such as Sparrow. It shows your balance, prepares transactions and broadcasts them once signed, but can't sign them.",
       "offline_phone_title": "Signing on an offline phone with Cypher Box",
       "hardware_body": "A device like a Coldcard or Jade signs, not a phone. The phone checklist below isn't for you. Just install the device's firmware only from its maker, through their own app or website.",
       "hardware_title": "Cold Vault signed by a hardware wallet",
