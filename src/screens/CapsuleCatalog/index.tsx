@@ -125,7 +125,7 @@ export default function CapsuleCatalog() {
                     <Text h4 style={styles.bulletText}>{loc.cypherbox.vault.capsule_catalog.rec_label}</Text>
                 </View>
 
-                {/* KYC Warning */}
+                {/* Mixing warning */}
                 <View style={[styles.infoCard, { borderWidth: 1, borderColor: '#FF8C00' }]}>
                     <Text h4 style={[styles.infoText, { fontWeight: 'bold', color: '#FF8C00' }]}>
                         {loc.cypherbox.vault.capsule_catalog.kyc_warning}

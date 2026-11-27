@@ -8,23 +8,18 @@ import loc from '../../loc';
 export const MAX_CAPSULE_LABEL_LENGTH = 50;
 
 export type CapsulePreset = {
-  key: 'kyc' | 'kyc_free' | 'p2p' | 'exchange' | 'income' | 'gift';
+  key: 'p2p' | 'exchange' | 'income' | 'gift';
   text: string;
-  /** presets this one takes out of the label when picked */
-  excludes: string[];
 };
 
 /** The preset labels the capsule-received popup offers, in the app's language. */
 export function capsulePresetLabels(): CapsulePreset[] {
-  const kyc = loc.cypherbox.components.capsule_received.presets.kyc;
-  const kycFree = loc.cypherbox.components.capsule_received.presets.kyc_free;
+  const presets = loc.cypherbox.components.capsule_received.presets;
   return [
-    { key: 'kyc', text: kyc, excludes: [kycFree] },
-    { key: 'kyc_free', text: kycFree, excludes: [kyc] },
-    { key: 'p2p', text: loc.cypherbox.components.capsule_received.presets.p2p, excludes: [] },
-    { key: 'exchange', text: loc.cypherbox.components.capsule_received.presets.exchange, excludes: [] },
-    { key: 'income', text: loc.cypherbox.components.capsule_received.presets.income, excludes: [] },
-    { key: 'gift', text: loc.cypherbox.components.capsule_received.presets.gift, excludes: [] },
+    { key: 'p2p', text: presets.p2p },
+    { key: 'exchange', text: presets.exchange },
+    { key: 'income', text: presets.income },
+    { key: 'gift', text: presets.gift },
   ];
 }
 
@@ -42,16 +37,13 @@ const samePart = (a: string, b: string) => a.toLocaleLowerCase() === b.toLocaleL
 
 export const labelHasPreset = (label: string, preset: string): boolean => labelParts(label).some(part => samePart(part, preset));
 
-/**
- * Adds a preset to the label, or takes it out when it is already there. Adding
- * one also takes out the presets it excludes, so KYC and KYC-free never sit together.
- */
-export function togglePresetLabel(label: string, preset: string, excludes: string[] = [], separator = ', '): string {
+/** Adds a preset to the label, or takes it out when it is already there. */
+export function togglePresetLabel(label: string, preset: string, separator = ', '): string {
   const parts = labelParts(label);
   if (parts.some(part => samePart(part, preset))) {
     return parts.filter(part => !samePart(part, preset)).join(separator);
   }
-  return [...parts.filter(part => !excludes.some(other => samePart(part, other))), preset].join(separator);
+  return [...parts, preset].join(separator);
 }
 
 /**

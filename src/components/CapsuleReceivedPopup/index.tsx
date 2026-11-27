@@ -167,9 +167,9 @@ function CapsuleCard({ capsule, wallet, index, total, waiting, saveToDisk, onDon
   };
 
   // from the latest label, not this render's: quick taps on two chips must both count
-  const togglePreset = (text: string, excludes: string[]) =>
+  const togglePreset = (text: string) =>
     setLabel(current => {
-      const next = togglePresetLabel(current, text, excludes, separator);
+      const next = togglePresetLabel(current, text, separator);
       return next.length <= MAX_CAPSULE_LABEL_LENGTH ? next : current;
     });
 
@@ -233,7 +233,7 @@ function CapsuleCard({ capsule, wallet, index, total, waiting, saveToDisk, onDon
                 <TouchableOpacity
                   key={preset.key}
                   testID={`CapsulePreset-${preset.key}`}
-                  onPress={() => togglePreset(preset.text, preset.excludes)}
+                  onPress={() => togglePreset(preset.text)}
                   style={[styles.chip, selected && { backgroundColor: accent, borderColor: accent }]}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
