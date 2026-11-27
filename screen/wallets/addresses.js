@@ -207,15 +207,22 @@ const WalletAddresses = () => {
       navigation.goBack();
       return;
     }
-    // BUY-flow deposit picker: navigate back to the ReviewPayment
-    // screen we came from. CommonActions.navigate merges params into
-    // the existing instance, so ReviewPayment's `purchaseDest` and
-    // related state are preserved — the receiving useEffect picks up
-    // the new `selectedDepositAddress` and refreshes the inline UI.
+    // BUY-flow deposit picker: return to the ReviewPayment screen we came
+    // from. dispatchNavigate uses CommonActions.navigate WITHOUT merge, which
+    // REPLACES the target's params (StackRouter gates the merge branch on
+    // action.payload.merge; see commit that fixed the vault-display case
+    // above). A plain navigate here would wipe ReviewPayment's `type`,
+    // `value`, `purchaseDest` and fee tiers, collapsing the inline withdraw
+    // preview and its fee selector. navigate with merge:true overlays only
+    // the picked address; the receiving useEffect then reads it.
     if(selectForBuyDeposit){
-      dispatchNavigate('ReviewPayment', {
-        selectedDepositAddress: item.address,
-        selectedDepositVaultType: vaultTab ? 'cold' : 'hot',
+      navigation.navigate({
+        name: 'ReviewPayment',
+        params: {
+          selectedDepositAddress: item.address,
+          selectedDepositVaultType: vaultTab ? 'cold' : 'hot',
+        },
+        merge: true,
       });
       return;
     }
@@ -241,17 +248,26 @@ const WalletAddresses = () => {
         capsuleTotal
       });
     } else {
-      dispatchNavigate('ReviewPayment', {
-        value: value,
-        converted: converted,
-        isSats: isSats,
-        to: item.address,
-        fees: 0,
-        type: type,
-        feeForBamskki: 0,
-        recommendedFee,
-        wallet,
-        isWithdrawal: isWithdrawal
+      // merge:true so the fields this picker never carried back (receiveType,
+      // vaultTab, currency, matchedRate, total, strikeFees) survive on the
+      // existing ReviewPayment instance. A plain dispatchNavigate REPLACES
+      // params, which dropped them and degraded the fee breakdown and the
+      // "I verified the address" checkbox. Only the picked address changes.
+      navigation.navigate({
+        name: 'ReviewPayment',
+        params: {
+          value: value,
+          converted: converted,
+          isSats: isSats,
+          to: item.address,
+          fees: 0,
+          type: type,
+          feeForBamskki: 0,
+          recommendedFee,
+          wallet,
+          isWithdrawal: isWithdrawal,
+        },
+        merge: true,
       });
     }
     // navigate('ReceiveDetailsRoot', {
