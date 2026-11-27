@@ -24,7 +24,7 @@ import { BlueStorageContext } from "../../../blue_modules/storage-context";
 import { AbstractHDElectrumWallet } from "../../../class/wallets/abstract-hd-electrum-wallet";
 import BigNumber from "bignumber.js";
 import useAuthStore from "@Cypher/stores/authStore";
-import useAntiExfilStore from "@Cypher/stores/antiExfilStore";
+import useAntiExfilStore, { VERIFY_SIGNING_PHONE_AVAILABLE } from "@Cypher/stores/antiExfilStore";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { btc, SATS } from "@Cypher/helpers/coinosHelper";
@@ -966,8 +966,9 @@ export default function ColdStorage({ route, navigation }: Props) {
             <ScrollView style={styles.container} showsVerticalScrollIndicator={useLightningBridge || showFeeInfo} contentContainerStyle={{ paddingBottom: 100 }}>
             <View>
                 <Text style={styles.title} center>{labels.title}</Text>
-                {/* Cold Vault only: the signing phone proves each signature honest before anything is sent (screens/AntiExfilVerify) */}
-                {wallet?.type === WatchOnlyWallet.type && (
+                {/* Cold Vault only: the signing phone proves each signature honest before anything is sent (screens/AntiExfilVerify).
+                    Hidden until the next release (stores/antiExfilStore), which brings it back with a step guide. */}
+                {VERIFY_SIGNING_PHONE_AVAILABLE && wallet?.type === WatchOnlyWallet.type && (
                     <View style={styles.verifySigner}>
                         <View style={styles.verifySignerRow}>
                             <Text bold style={styles.verifySignerTitle}>{loc.cypherbox.anti_exfil.setting_title}</Text>
