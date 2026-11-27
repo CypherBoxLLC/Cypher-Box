@@ -133,7 +133,8 @@ npx react-native run-ios
 
 * ✅ Bark SDK upgrade (bark 0.6.1): capsules stay spendable while refreshing, dust consolidation, safer exit
 * ✅ 0.1.13: Offline Seed-Signing mode (dice seeds, SeedQR, multisig co-signer), expired Bark capsule recovery, Arabic
-* ⏳ **Bark SDK upgrade** to bark 0.8.1 (`@secondts/bark-react-native` 0.27): pre-signed emergency exits and fixes to coin selection in exits
+* ✅ 0.1.14: Electrum fake-transaction fix (verified Accelerate) and TLS certificate checking, Hot Vault keychain hardening, Bark SDK 0.9 (`@secondts/bark-react-native` 0.28) with a safer Emergency Exit, capsule labels
+* ⏳ **Pre-signed emergency exits** and coin-selection fixes in exits (bark upstream)
 * ⏳ **French translation**
 * ⏳ Coin flips and 20-sided dice for seeds, back once fully tested
 * ⏳ Revive the e2e test suite on RN 0.77
